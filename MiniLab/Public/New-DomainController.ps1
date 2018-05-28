@@ -198,30 +198,51 @@ function New-DomainController {
     
     #region >> Rename Computer
 
-    $RenameComputerSB = {
+    $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
         $UserAccount = Get-LocalUser -Name "Administrator"
         $UserAccount | Set-LocalUser -Password $args[0]
-        Rename-Computer -NewName $args[1] -LocalCredential $args[2] -Force -Restart -ErrorAction SilentlyContinue
+        $env:ComputerName
     }
-    $InvCmdRenameComputerSplatParams = @{
-        ComputerName    = $ServerIP
-        Credential      = $PSRemotingLocalAdminCredentials
-        ScriptBlock     = $RenameComputerSB
-        ArgumentList    = $LocalAdministratorAccountCredentials.Password,$DesiredHostName,$PSRemotingLocalAdminCredentials
-        ErrorAction     = "SilentlyContinue"
+    $InvCmdCheckSplatParams = @{
+        ComputerName            = $ServerIP
+        Credential              = $PSRemotingLocalAdminCredentials
+        ScriptBlock             = $InvCmdCheckSB
+        ArgumentList            = $LocalAdministratorAccountCredentials.Password
+        ErrorAction             = "Stop"
     }
     try {
-        Invoke-Command @InvCmdRenameComputerSplatParams
+        $RemoteHostName = Invoke-Command @InvCmdCheckSplatParams
     }
     catch {
-        Write-Error "Problem with renaming the $ServerIP to $DesiredHostName! Halting!"
+        Write-Error $_
         $global:FunctionResult = "1"
         return
     }
 
-    Write-Host "Sleeping for 5 minutes to give the Server a chance to restart after name change..."
-    Start-Sleep -Seconds 300
+    if ($RemoteHostName -ne $DesiredHostName) {
+        $RenameComputerSB = {
+            Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart -ErrorAction SilentlyContinue
+        }
+        $InvCmdRenameComputerSplatParams = @{
+            ComputerName    = $ServerIP
+            Credential      = $PSRemotingLocalAdminCredentials
+            ScriptBlock     = $RenameComputerSB
+            ArgumentList    = $DesiredHostName,$PSRemotingLocalAdminCredentials
+            ErrorAction     = "SilentlyContinue"
+        }
+        try {
+            Invoke-Command @InvCmdRenameComputerSplatParams
+        }
+        catch {
+            Write-Error "Problem with renaming the $ServerIP to $DesiredHostName! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        Write-Host "Sleeping for 5 minutes to give the Server a chance to restart after name change..."
+        Start-Sleep -Seconds 300
+    }
 
     #endregion >> Rename Computer
 
