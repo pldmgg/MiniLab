@@ -286,6 +286,10 @@ function Deploy-HyperVVagrantBoxManually {
         $null = New-Item -ItemType Directory -Path $DownloadedVMDir
     }
     Push-Location $DownloadedVMDir
+    while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath)) {
+        Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+        Start-Sleep -Seconds 5
+    }
     try {
         $null = & $TarCmd -xzvf $BoxFilePath 2>&1
     }

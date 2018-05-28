@@ -14,7 +14,7 @@ function Create-TwoTierPKI {
         [ValidatePattern("^([a-z0-9]+(-[a-z0-9]+)*\.)+([a-z]){2,}$")]
         [string]$NewDomain,
 
-        [Parameter(Mandatory=$False)]
+        [Parameter(Mandatory=$True)]
         [pscredential]$DomainAdminCredentials, # If creating a New Domain, this will be a New Domain Account
 
         [Parameter(Mandatory=$False)]
@@ -130,21 +130,29 @@ function Create-TwoTierPKI {
     }
 
     $FunctionsForSBUse = @(
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text 
-        ${Function:ResolveHost}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text 
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text 
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text 
-        ${Function:New-DomainController}.Ast.Extent.Text 
-        ${Function:New-RootCA}.Ast.Extent.Text 
-        ${Function:New-SubordinateCAs}.Ast.Extent.Text
+        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+        ${Function:GetDomainController}.Ast.Extent.Text
+        ${Function:GetElevation}.Ast.Extent.Text
+        ${Function:GetNativemath}.Ast.Extent.Text
+        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+        ${Function:InstallFeatureDism}.Ast.Extent.Text
+        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+        ${Function:NewUniqueString}.Ast.Extent.Text
+        ${Function:PauseForWarning}.Ast.Extent.Text
+        ${Function:ResolveHost}.Ast.Extent.Text
+        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+        ${Function:UnzipFile}.Ast.Extent.Text
+        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+        ${Function:Generate-Certificate}.Ast.Extent.Text
+        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+        ${Function:Manage-HyperVVM}.Ast.Extent.Text
+        ${Function:New-DomainController}.Ast.Extent.Text
+        ${Function:New-RootCA}.Ast.Extent.Text
+        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
+        ${Function:New-SubordinateCA}.Ast.Extent.Text
     )
-
-    # IMPORTANT NOTE: Throughout this script, 'RootCA' refers to the HostName of the Standalone Root CA Server and
-    # 'SubCA' refers to the HostName of the Enterprise Subordinate CA Server. If the HostNames of $IPofServerToBeRootCA
-    # and/or $IPofServerToBeSubCA do not match $RootCAHostName and $SubCAHostName below, they will be changed.
-    $RootCAHostName = "RootCA"
-    $SubCAHostName = "SubCA"
 
     #endregion >> Prep
 
@@ -195,20 +203,49 @@ function Create-TwoTierPKI {
 
         #region >> Deploy New VMs
 
+        # Prepare To Manage .box Files
+        if (!$(Test-Path "$VMStorageDirectory\BoxDownloads")) {
+            $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads" -Force
+        }
+        $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
+        if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
+            if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
+                # Download bsdtar from latest MSYS2 available on pldmgg github
+                $WindowsNativeLinuxUtilsZipUrl = "https://github.com/pldmgg/WindowsNativeLinuxUtils/raw/master/MSYS2_20161025/bsdtar.zip"
+                Invoke-WebRequest -Uri $WindowsNativeLinuxUtilsZipUrl -OutFile "$HOME\Downloads\bsdtar.zip"
+                Expand-Archive -Path "$HOME\Downloads\bsdtar.zip" -DestinationPath "$HOME\Downloads" -Force
+                $BsdTarDirectory = "$HOME\Downloads\bsdtar"
+    
+                if ($($env:Path -split ";") -notcontains $BsdTarDirectory) {
+                    if ($env:Path[-1] -eq ";") {
+                        $env:Path = "$env:Path$BsdTarDirectory"
+                    }
+                    else {
+                        $env:Path = "$env:Path;$BsdTarDirectory"
+                    }
+                }
+            }
+        }
+
         if ($NewDomain -and !$IPofServerToBeDomainController) {
             $DomainShortName = $($NewDomain -split "\.")[0]
 
             $NewDCVMDeploySB = {
+                [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+                $env:Path = $args[0]
+
                 # Load the functions we packed up
-                $args[0] | foreach { Invoke-Expression $_ }
+                $args[1] | foreach { Invoke-Expression $_ }
 
                 $DeployDCBoxSplatParams = @{
-                    VagrantBox              = $args[1]
+                    VagrantBox              = $args[2]
+                    BoxFilePath             = $args[3]
                     CPUs                    = 2
                     Memory                  = 4096
                     VagrantProvider         = "hyperv"
-                    VMName                  = $args[2] + "DC1"
-                    VMDestinationDirectory  = $args[3]
+                    VMName                  = $args[4] + "DC1"
+                    VMDestinationDirectory  = $args[5]
                 }
                 $DeployDCBoxResult = Deploy-HyperVVagrantBoxManually @DeployDCBoxSplatParams
                 $DeployDCBoxResult
@@ -218,7 +255,7 @@ function Create-TwoTierPKI {
             $NewDCVMDeployJobSplatParams = @{
                 Name            = $NewDCVMDeployJobName
                 Scriptblock     = $NewDCVMDeploySB
-                ArgumentList    = @($FunctionsForSBUse,$Windows2016VagrantBox,$DomainShortName,$VMStorageDirectory)
+                ArgumentList    = @($env:Path,$FunctionsForSBUse,$Windows2016VagrantBox,$BoxFileItem.FullName,$DomainShortName,$VMStorageDirectory)
             }
             $NewDCVMDeployJobInfo = Start-Job @NewDCVMDeployJobSplatParams
         }
@@ -230,16 +267,21 @@ function Create-TwoTierPKI {
                 $DomainShortName = $($ExistingDomain -split "\.")[0]
             }
             $NewRootCAVMDeploySB = {
+                [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+                $env:Path = $args[0]
+
                 # Load the functions we packed up
-                $args[0] | foreach { Invoke-Expression $_ }
+                $args[1] | foreach { Invoke-Expression $_ }
 
                 $DeployRootCABoxSplatParams = @{
-                    VagrantBox              = $args[1]
+                    VagrantBox              = $args[2]
+                    BoxFilePath             = $args[3]
                     CPUs                    = 2
                     Memory                  = 4096
                     VagrantProvider         = "hyperv"
-                    VMName                  = $args[2] + "RootCA"
-                    VMDestinationDirectory  = $args[3]
+                    VMName                  = $args[4] + "RootCA"
+                    VMDestinationDirectory  = $args[5]
                 }
                 $DeployRootCABoxResult = Deploy-HyperVVagrantBoxManually @DeployRootCABoxSplatParams
                 $DeployRootCABoxResult
@@ -249,7 +291,7 @@ function Create-TwoTierPKI {
             $NewRootCAVMDeployJobSplatParams = @{
                 Name            = $NewRootCAVMDeployJobName
                 Scriptblock     = $NewRootCAVMDeploySB
-                ArgumentList    = @($FunctionsForSBUse,$Windows2016VagrantBox,$DomainShortName,$VMStorageDirectory)
+                ArgumentList    = @($env:Path,$FunctionsForSBUse,$Windows2016VagrantBox,$BoxFileItem.FullName,$DomainShortName,$VMStorageDirectory)
             }
             $NewRootCAVMDeployJobInfo = Start-Job @NewRootCAVMDeployJobSplatParams
         }
@@ -261,16 +303,21 @@ function Create-TwoTierPKI {
                 $DomainShortName = $($ExistingDomain -split "\.")[0]
             }
             $NewSubCAVMDeploySB = {
+                [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+                $env:Path = $args[0]
+
                 # Load the functions we packed up
-                $args[0] | foreach { Invoke-Expression $_ }
+                $args[1] | foreach { Invoke-Expression $_ }
 
                 $DeploySubCABoxSplatParams = @{
-                    VagrantBox              = $args[1]
+                    VagrantBox              = $args[2]
+                    BoxFilePath             = $args[3]
                     CPUs                    = 2
                     Memory                  = 4096
                     VagrantProvider         = "hyperv"
-                    VMName                  = $args[2] + "SubCA"
-                    VMDestinationDirectory  = $args[3]
+                    VMName                  = $args[4] + "SubCA"
+                    VMDestinationDirectory  = $args[5]
                 }
                 $DeploySubCABoxResult = Deploy-HyperVVagrantBoxManually @DeploySubCABoxSplatParams
                 $DeploySubCABoxResult
@@ -280,7 +327,7 @@ function Create-TwoTierPKI {
             $NewSubCAVMDeployJobSplatParams = @{
                 Name            = $NewSubCAVMDeployJobName
                 Scriptblock     = $NewSubCAVMDeploySB
-                ArgumentList    = @($FunctionsForSBUse,$Windows2016VagrantBox,$DomainShortName,$VMStorageDirectory)
+                ArgumentList    = @($env:Path,$FunctionsForSBUse,$Windows2016VagrantBox,$BoxFileItem.FullName,$DomainShortName,$VMStorageDirectory)
             }
             $NewSubCAVMDeployJobInfo = Start-Job @NewSubCAVMDeployJobSplatParams
         }
@@ -729,13 +776,11 @@ function Create-TwoTierPKI {
     #endregion >> Create the Root and Subordinate CAs
 }
 
-
-
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKeEnT352EweyiStZYzCnkQ6t
-# 4Megggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU8jrn8a5ir8rjRtiHhVnRF/lC
+# fvygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -792,11 +837,11 @@ function Create-TwoTierPKI {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNb4MxlLTAhYm64X
-# P3XqgoLvpFOBMA0GCSqGSIb3DQEBAQUABIIBAMB/xLQEjVRiDd8trzuhYsSW7axJ
-# DXmrGAmk9mzGjGol7TRuJdtxyA4phYh0tSwiEjcE2XzWFtPmAm5ZTChBTSx3ZYiY
-# bUa9ZA/tH+xHyQhKECAgRX0GZcUVqMPdGMrWAJ8MIR6IaB7P6T9ODaC/AAI3/djn
-# p1GazF76jguccEieTXbMTf8LJVdyObtUiwuH09QZAzDX5i+wjbHXZIlG5jLUAzks
-# E54pQbcbZYycWQsixyCMcq/euk+2nDlqzbc/w3wul4m2cbGVKs3bgxC1/82QhOcM
-# TV60SQxzWTF6llCA9gpbgAyiD/V3c2A9qmMDUCc1iOnH/OINKTXb7lQ6sL0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDP18JypYS2yDNiD
+# ZZ9gQP9+F1L5MA0GCSqGSIb3DQEBAQUABIIBABu0qWSqsjW6m8w3cCk5OwPwSLaP
+# /g4fYsHuvH8lQU32hwP9NskICNw8c8NZX8zp5i0YLDma7cWPTt9/07YOzECCRHLy
+# OTSYwle/LRg74Qmx6xuntiMVsUK69rumPg5eXz69h2aRTpeEmF869DVgCydhBKNi
+# vFIv0k05O/1tGgo0BIFXjbfYbJohz3i+Nf+SAbu87HBKvUw5QVpxdqB3PV3zyacE
+# SMtxA4S79Rzp2iosH/BUcCV6YQdV2yGGeFpxl+qbx5k8tFJCdd+SQtVzpeAa0oLu
+# vWAXy/w7zEHBROEzP8lr1CbVLVvQ71RLyUIDG43wToHBWezPiHDnGePgWTk=
 # SIG # End signature block
