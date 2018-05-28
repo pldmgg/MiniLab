@@ -495,17 +495,25 @@ function Create-TwoTierPKI {
                 $null = W32tm /resync /rediscover /nowait
 
                 # Make sure the DNS Client points to $IPofServerToBeDomainController (and others from DHCP)
-                # CONTINUE HERE
+                $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+                $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+                $NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
+                $NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
+                $CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
+                $CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
+                $UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
+                $UpdatedDNSServerList.Insert(0,$args[0])
+                $null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
 
                 # Join Domain
-                Add-Computer -ComputerName $env:ComputerName -DomainName $args[0] -Credential $args[1] -Restart -Force
+                Add-Computer -ComputerName $env:ComputerName -DomainName $args[1] -Credential $args[2] -Restart -Force
             }
 
             $JoinDomainJobSB = {
                 $InvCmdJoinDomainSplatParams = @{
                     Credential      = $args[0]
                     ScriptBlock     = $args[1]
-                    ArgumentList    = $args[2],$args[3]
+                    ArgumentList    = $args[2],$args[3],$args[4]
                 }
                 try {
                     Invoke-Command @InvCmdJoinDomainSplatParams
@@ -515,14 +523,59 @@ function Create-TwoTierPKI {
                     $global:FunctionResult = "1"
                     return
                 }
+
+                # Sleep for 5 minutes and start trying to check the Domain on the Remote Host again
+                Start-Sleep -Seconds 300
+
+                $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCA"
+
+                # Try to create a PSSession to the Root CA for 15 minutes, then give up
+                $Counter = 0
+                while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+                    try {
+                        $RootCAPSSession = New-PSSession -ComputerName $args[5] -Credential $args[4] -Name $PSSessionName -ErrorAction SilentlyContinue
+                        if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+                    }
+                    catch {
+                        if ($Counter -le 60) {
+                            Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                            Start-Sleep -Seconds 15
+                        }
+                        else {
+                            Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($args[4].UserName)'! Halting!"
+                            $global:FunctionResult = "1"
+                            return
+                        }
+                    }
+                    $Counter++
+                }
+
+                if (!$RootCAPSSession) {
+                    Write-Error "Unable to create a PSSession to the Root CA Server at '$($args[5])'! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+
+                try {
+                    $DomainCheck = Invoke-Command -Session $RootCAPSSession -ScriptBlock {
+                        [pscustomobject]@{
+                            ComputerName        = $env:ComputerName
+                            DomainName          = $(Get-CimInstance win32_computersystem).Domain
+                        }
+                    }
+                }
+
+                $DomainCheck
             }
             $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $(Get-Job).Name
 
             $JoinRootCAArgList = @(
                 $PSRemotingCredentials
                 $JoinDomainSB
+                $IPofServerToBeDomainController
                 $FinalDomainName
                 $DomainAdminCredentials
+                $IPofServerToBeRootCA
             )
             $JoinRootCAJobSplatParams = @{
                 Name            = $JoinRootCAJobName
@@ -530,7 +583,6 @@ function Create-TwoTierPKI {
                 ArgumentList    = $JoinRootCAArgList
             }
             $JoinRootCAJobInfo = Start-Job @RenameDCJobSplatParams
-            # $JoinRootCAResult = Wait-Job -Job $JoinRootCAJobInfo | Receive-Job
         }
     }
 
@@ -554,15 +606,27 @@ function Create-TwoTierPKI {
         $JoinDomainSB = {
             # Synchronize time with time servers
             $null = W32tm /resync /rediscover /nowait
+            
+            # Make sure the DNS Client points to $IPofServerToBeDomainController (and others from DHCP)
+            $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+            $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+            $NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
+            $NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
+            $CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
+            $CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
+            $UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
+            $UpdatedDNSServerList.Insert(0,$args[0])
+            $null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
+
             # Join Domain
-            Add-Computer -ComputerName $env:ComputerName -DomainName $args[0] -Credential $args[1] -Restart -Force
+            Add-Computer -ComputerName $env:ComputerName -DomainName $args[1] -Credential $args[2] -Restart -Force
         }
 
         $JoinDomainJobSB = {
             $InvCmdJoinDomainSplatParams = @{
                 Credential      = $args[0]
                 ScriptBlock     = $args[1]
-                ArgumentList    = $args[2],$args[3]
+                ArgumentList    = $args[2],$args[3],$args[4]
             }
             try {
                 Invoke-Command @InvCmdJoinDomainSplatParams
@@ -572,14 +636,59 @@ function Create-TwoTierPKI {
                 $global:FunctionResult = "1"
                 return
             }
+
+            # Sleep for 5 minutes and start trying to check the Domain on the Remote Host again
+            Start-Sleep -Seconds 300
+
+            $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToSubCA"
+
+            # Try to create a PSSession to the Sub CA for 15 minutes, then give up
+            $Counter = 0
+            while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+                try {
+                    $SubCAPSSession = New-PSSession -ComputerName $args[5] -Credential $args[4] -Name $PSSessionName -ErrorAction SilentlyContinue
+                    if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+                }
+                catch {
+                    if ($Counter -le 60) {
+                        Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                        Start-Sleep -Seconds 15
+                    }
+                    else {
+                        Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($args[4].UserName)'! Halting!"
+                        $global:FunctionResult = "1"
+                        return
+                    }
+                }
+                $Counter++
+            }
+
+            if (!$SubCAPSSession) {
+                Write-Error "Unable to create a PSSession to the Sub CA Server at '$($args[5])'! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+
+            try {
+                $DomainCheck = Invoke-Command -Session $SubCAPSSession -ScriptBlock {
+                    [pscustomobject]@{
+                        ComputerName        = $env:ComputerName
+                        DomainName          = $(Get-CimInstance win32_computersystem).Domain
+                    }
+                }
+            }
+
+            $DomainCheck
         }
         $JoinSubCAJobName = NewUniqueString -PossibleNewUniqueString "JoinSubCA" -ArrayOfStrings $(Get-Job).Name
 
         $JoinSubCAArgList = @(
             $PSRemotingCredentials
             $JoinDomainSB
+            $IPofServerToBeDomainController
             $FinalDomainName
             $DomainAdminCredentials
+            $IPofServerToBeSubCA
         )
         $JoinSubCAJobSplatParams = @{
             Name            = $JoinSubCAJobName
@@ -589,11 +698,22 @@ function Create-TwoTierPKI {
         $JoinSubCAJobInfo = Start-Job @RenameDCJobSplatParams
     }
 
+    # Collect Job Output
     if ($JoinRootCAJobInfo) {
         $JoinRootCAResult = Wait-Job -Job $JoinRootCAJobInfo | Receive-Job
+        if ($JoinRootCAResult.DomainName -ne $FinalDomainName) {
+            Write-Error "Unable to determine if Root CA $IPofServerToBeRootCA joined Domain $FinalDomain! Halting!"
+            $global:FunctionResult = "1"
+            return 
+        }
     }
     if ($JoinSubCAJobInfo) {
         $JoinSubCAResult = Wait-Job -Job $JoinSubCAJobInfo | Receive-Job
+        if ($JoinSubCAResult.DomainName -ne $FinalDomainName) {
+            Write-Error "Unable to determine if Sub CA $IPofServerToBeSubCA joined Domain $FinalDomain! Halting!"
+            $global:FunctionResult = "1"
+            return 
+        }
     }
 
     #endregion >> Join the Servers To Be RootCA and SubCA to Domain If Necessary
