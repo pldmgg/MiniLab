@@ -26,6 +26,7 @@ param(
     }
 #>
 
+<#
 # Load CustomAssertions.psm1
 Import-Module "$env:BHProjectPath\Tests\CustomAssertions.psm1" -Force
 Add-AssertionOperator -Name 'BeTypeOrType' -Test $Function:BeTypeOrType
@@ -87,13 +88,16 @@ catch {
     return
 }
 
+
 $CurrentlyLoadedAssemblies = [System.AppDomain]::CurrentDomain.GetAssemblies()
+#>
 <#
 if (![bool]$($CurrentlyLoadedAssemblies.FullName -match "System.ServiceProcess,")) {
     Add-Type -AssemblyName "System.ServiceProcess"
 }
 #>
 
+<#
 $FakeUninstallWinSSHOutput = [pscustomobject]@{
     DirectoriesThatMightNeedToBeRemoved = [array]@("C:\Python36")
     ChocolateyInstalledProgramObjects   = [array]@([pscustomobject]@{ProgramName = "python"; Version = "3.6.0"})
@@ -125,6 +129,7 @@ function CommonTestSeries {
             $ActualPropertiesArray -contains $Item | Assert-True
         }
     }
+#>
 
     <#
     it "Should return a PSCustomObject Property DirectoriesThatMightNeedToBeRemoved of Type Object Array" {
@@ -143,6 +148,7 @@ function CommonTestSeries {
         $InputObject.RegistryProperties | Assert-Type System.Object[]
     }
     #>
+<#
 }
 
 function Cleanup {
@@ -210,6 +216,7 @@ $Functions = @(
     ${Function:CommonTestSeries}.Ast.Extent.Text
     ${Function:StartTesting}.Ast.Extent.Text
 )
+#>
 
 # Uninstall-WinSSH Params
 <#
@@ -217,6 +224,7 @@ $Functions = @(
 [switch]$KeepSSHAgent
 #>
 
+<#
 $TestSplatParams = @(
     @{
         KeepSSHAgent    = $False
@@ -288,6 +296,7 @@ InModuleScope WinSSH {
         }
     }
 }
+#>
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB

@@ -243,9 +243,7 @@ if ([bool]$(Get-Module -Name $env:BHProjectName -ErrorAction SilentlyContinue)) 
 
 ##### BEGIN Tasks Unique to this Module's Build #####
 
-Remove-Module WinSSH -Force -ErrorAction SilentlyContinue
-Remove-Module NTFSSecurity -Force -ErrorAction SilentlyContinue
-Remove-Module ProgramManagement -Force -ErrorAction SilentlyContinue
+Remove-Module MiniLab -Force -ErrorAction SilentlyContinue
 
 ##### END Tasks Unique to this Module's Build #####
 
@@ -290,8 +288,8 @@ exit ( [int]( -not $psake.build_success ) )
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU7Z3Z+gvxtlRW1rL2WMUnJvDt
-# phmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUzbVlmo3WXwqjUxtHOBYSPO1Z
+# dFSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -348,11 +346,11 @@ exit ( [int]( -not $psake.build_success ) )
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJqxqqdDNGNn8F4j
-# 3VyQmo94c0thMA0GCSqGSIb3DQEBAQUABIIBAF3sAryTi/0OHHwChSIXGi0Z9czd
-# Ilv9Ms/ZYVBTG5ZNrAc0X8g5m4l+4FJLeIfYBmODhxvyxaBMKHlR9s7YEN09OCy9
-# vLr14udE9w98z2pnBlC3ls1cFvMWj9EDJXweRINmbt7SMvCxm59rmfxF302OyJjr
-# 5GIL4M0GUeoNophlkXTP1AYrAt0uVqfakp0z5R9mnTAO/+kOkg7jMhfd/eFqsOWQ
-# RoBRMTxmH/SgrqZ4zlu3s2D4nZcdPbw6jr2LGxYa/JsMCI0EfTFzzDODwiVD1Ujc
-# JUL/OsvevFEeebyHrkbMDgpmSNQMdmn8bus+xFGuA6QJ7ajdpBTn+9kAgiA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIxwUaj8V6HG+Ttf
+# 0Kvw/xK5ehlIMA0GCSqGSIb3DQEBAQUABIIBAMOrDnHcbErmQoob4IhqedbpOD0G
+# /GH4nYY/Bk7pZca8QgfB2sZrPuQoe6ypW0tWt1Tlvelvl/hoxXOm3TPHr6CCY2FA
+# Q4+Fhrc/5RvzeDbJynnqf3mCmrL/3m8OAuYc/bmVGIIWISlGnVa+8wEYlDDQiz/8
+# 231CKXuLOXQab85IBrHTb8HSZHMKPhKK9alKEn3aPRA3sDwwYD4jGSubwhjvm4u3
+# UGDx7SG/igvYp3rZMBb0KfDz6zu0QikVluFhD3eqTtYokcnAjfJUIkoCGiFL4Sn5
+# MyOzFLJAfij3M6q/sRNmc5W3U9iyD1sUwXiGkybywiUUw7IgVd09HmFRN6w=
 # SIG # End signature block

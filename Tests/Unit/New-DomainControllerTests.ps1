@@ -26,6 +26,7 @@ param(
     }
 #>
 
+<#
 # Load CustomAssertions.psm1
 Import-Module "$env:BHProjectPath\Tests\CustomAssertions.psm1" -Force
 Add-AssertionOperator -Name 'BeTypeOrType' -Test $Function:BeTypeOrType
@@ -224,6 +225,7 @@ $Functions = @(
     ${Function:CommonTestSeries}.Ast.Extent.Text
     ${Function:StartTesting}.Ast.Extent.Text
 )
+#>
 
 # Install-WinSSH Params
 <#
@@ -261,6 +263,7 @@ $Functions = @(
 [switch]$Force
 #>
 
+<#
 $TestSplatParams = @(
     @{
         GiveWinSSHBinariesPathPriority  = $True
@@ -412,6 +415,7 @@ InModuleScope WinSSH {
         }
     }
 }
+#>
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
