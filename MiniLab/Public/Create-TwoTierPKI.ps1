@@ -36,16 +36,7 @@ function Create-TwoTierPKI {
         [string]$IPofServerToBeRootCA,
 
         [Parameter(Mandatory=$False)]
-        [string]$IPofServerToBeSubCA,
-
-        [Parameter(Mandatory=$True)]
-        [pscredential]$DomainAdminCredentials,
-
-        [Parameter(Mandatory=$True)]
-        [pscredential]$LocalAdminCredentials,
-
-        [Parameter(Mandatory=$False)]
-        [string]$CertDownloadDirectory = "$HOME\Downloads\DSCEncryptionCertsForCAServers"
+        [string]$IPofServerToBeSubCA
     )
 
     #region >> Helper Functions
@@ -171,7 +162,7 @@ function Create-TwoTierPKI {
             $VMStorageDirectoryDriveLetter = $VMStorageDirectory.Substring(0,1)
         }
 
-        if ($LocalDrives.Name -notcontain $VMStorageDirectoryDriveLetter) {
+        if ($LocalDrives.Name -notcontains $VMStorageDirectoryDriveLetter) {
             Write-Error "'$VMStorageDirectory' does not appear to be a local drive! VMs MUST be stored on a local drive! Halting!"
             $global:FunctionResult = "1"
             return
@@ -564,6 +555,11 @@ function Create-TwoTierPKI {
                         }
                     }
                 }
+                catch {
+                    Write-Error $_
+                    $global:FunctionResult = "1"
+                    return
+                }
 
                 $DomainCheck
             }
@@ -677,6 +673,11 @@ function Create-TwoTierPKI {
                     }
                 }
             }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
 
             $DomainCheck
         }
@@ -733,8 +734,8 @@ function Create-TwoTierPKI {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUAx6+4JttSI3OrpiZjLS62rIA
-# 0qygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKeEnT352EweyiStZYzCnkQ6t
+# 4Megggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -791,11 +792,11 @@ function Create-TwoTierPKI {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEWsmWx3CidfUChm
-# Nd6MzyY2IRDMMA0GCSqGSIb3DQEBAQUABIIBAGljw46YtOM60lDOAx9x1ro7WAp6
-# BQjrNNlbC8HVDWvZWCFueZgT1b+cN6EZ2cqof4XcOYMKICxmP+Ttqt2NbE7yukkm
-# SnLSVWwdUj0QYaM8YapcZwuuDOgImrmQJPlPGudfV7YSXB38i5xMKeGAJz9C+0Pk
-# UPreiN13Fv4FL98O4IoW/F1LdnRMQrjqU+YDD702KuM36kHlKoffKEqPTpSoB3fT
-# bU9gaJZ1a0uuyTzOYzSUL7pu3VHhbDijjMT6CcllLEVXPi8s1CfNtuaz6qEgQSTD
-# t4TZUCH19PbxKmVCyb8ToYN3AOvxbHwErUDX/Ap2dW5/6YpsBU/IYK0oMis=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNb4MxlLTAhYm64X
+# P3XqgoLvpFOBMA0GCSqGSIb3DQEBAQUABIIBAMB/xLQEjVRiDd8trzuhYsSW7axJ
+# DXmrGAmk9mzGjGol7TRuJdtxyA4phYh0tSwiEjcE2XzWFtPmAm5ZTChBTSx3ZYiY
+# bUa9ZA/tH+xHyQhKECAgRX0GZcUVqMPdGMrWAJ8MIR6IaB7P6T9ODaC/AAI3/djn
+# p1GazF76jguccEieTXbMTf8LJVdyObtUiwuH09QZAzDX5i+wjbHXZIlG5jLUAzks
+# E54pQbcbZYycWQsixyCMcq/euk+2nDlqzbc/w3wul4m2cbGVKs3bgxC1/82QhOcM
+# TV60SQxzWTF6llCA9gpbgAyiD/V3c2A9qmMDUCc1iOnH/OINKTXb7lQ6sL0=
 # SIG # End signature block
