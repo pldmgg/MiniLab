@@ -1363,8 +1363,6 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
             return
         }
 
-        Write-Host "This will take about 2 hours...go grab a coffee...or 2..."
-
         Invoke-CommandAs -Session $SubCAPSSession -ScriptBlock {
             Start-Transcript -Path "C:\NewSubCATask.log" -Append
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
@@ -1389,8 +1387,6 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
 
         } -As $DomainAdminCredentials
         #>
-
-        Write-Host "This will take about 1 hour...go grab a coffee..."
 
         $DomainAdminAccount = $DomainAdminCredentials.UserName
         $DomainAdminPwd = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DomainAdminCredentials.Password))
@@ -1526,8 +1522,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU4r1GkZA6QCsL9Qq6+TjYmHuj
-# zoSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUP1kzJT2+4Z1hzJH6ROTl1S++
+# O2Ggggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1584,11 +1580,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFERoyk0ejYitiZmF
-# GLmuijwNbmBkMA0GCSqGSIb3DQEBAQUABIIBAE/MW+Djkf7p/Wkg8dWxfXX7kHNO
-# 5CH6BSQHbAj7Rpz+0UnvC2Pu7yuYgLsAoALK43Vc4/QCA74TKzmjeB2ocJWrkDlK
-# Mr1EUj1EhJoFqVvXxCUeGtakCWwLf3uqXF3/VhGfWKXZ+/ifaHaFfy9rAVe7Xufy
-# aUKX8XSd7yusLQ1JB8K7szSv8TiFeJj3vv3jk9r+ERYEy+mQQcaoJxLwYBDNHb/d
-# JpyU2X9i3FSIlHiu4DpBiDLQw0CBwZ2YRH7ZAAPvRauFaQFO7PVKY9m93GH4DMCT
-# kyaaVlpW9y6NFHSAEf0QP+bOdsF/o+Gw0/xzkMkGWAA4MUWFKO06bos78GM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI1pvhlC7qVcMTa4
+# zII49YjxMwMuMA0GCSqGSIb3DQEBAQUABIIBAL6iUaS5kPq6FPal6B5hfNRjXdbZ
+# iZ6tzp7kEY0itCU55VSDTUKVcvZUQZFbtGMFWl+ffIOQs9ekUc6EdSwyMttu9Sqv
+# UD7Rc5tHc+ph9bSC3KY22wBuQW718cMZf3QA84DpadkmhdDfhu5s+8VtstDPtWZa
+# +gi55FWFIBUt6evb7txHcRUSPBOqUKT5xSOVMUhEjJeqPZuIewOUDNXXQmDDIMFB
+# D2R5ZDuFZc3iMZ68GWz65akoMHS3FiEHtw5t7oIxZW7XbMcq855EA7HWVnLV0eP+
+# AmFvhvk6Yg+DuDL9+AJ+AarsUWNgAiBsNErjLCx1bEbqoaZRk1+9KtXxDXs=
 # SIG # End signature block

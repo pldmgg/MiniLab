@@ -336,7 +336,12 @@ function Deploy-HyperVVagrantBoxManually {
         # .vhd/.vhdx so we don't have to deal with potential Hyper-V Version Incompatibilities
 
         $SwitchName = $vSwitchToUse.Name
-        $VMGen = 1
+        if ($VagrantBox -match "Win|Windows") {
+            $VMGen = 2
+        }
+        else {
+            $VMGen = 1
+        }
 
         # Create the NEW VM
         $NewTempVMParams = @{
@@ -376,11 +381,12 @@ function Deploy-HyperVVagrantBoxManually {
         return
     }
 
+    # Wait for up to 30 minutes for the new VM to report its IP Address
     $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
     $Counter = 0
-    while (!$NewVMIP -or $Counter -le 5) {
+    while (!$NewVMIP -or $Counter -le 30) {
         Write-Host "Waiting for VM $NewVMName to report its IP Address..."
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds 60
         $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
         $Counter++
     }
@@ -392,8 +398,12 @@ function Deploy-HyperVVagrantBoxManually {
         if (!$(Test-Path "$HOME\.ssh")) {
             New-Item -ItemType Directory -Path "$HOME\.ssh"
         }
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant" -OutFile "$HOME\.ssh\vagrant_unsecure_private_key"
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant.pub" -OutFile "$HOME\.ssh\vagrant_unsecure_public_key.pub"
+        if (!$(Test-Path "$HOME\.ssh\vagrant_unsecure_private_key")) {
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant" -OutFile "$HOME\.ssh\vagrant_unsecure_private_key"
+        }
+        if (!$(Test-Path "$HOME\.ssh\vagrant_unsecure_public_key.pub")) {
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant.pub" -OutFile "$HOME\.ssh\vagrant_unsecure_public_key.pub"
+        }
 
         if (!$(Test-Path "$HOME\.ssh\vagrant_unsecure_private_key")) {
             Write-Warning "There was a problem downloading the Unsecure Vagrant Private Key! You must use the Hyper-V Console with username/password vagrant/vagrant!"
@@ -421,8 +431,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUaXgKU7IWBgeyZDshyWnGMJTb
-# tnigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUJ9YsO58Lvpdpncd2W5xvt6zL
+# tjagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -479,11 +489,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBqWUe8DF7LMvD/z
-# /BHCS2BOtAe+MA0GCSqGSIb3DQEBAQUABIIBAFYD04AbvJ/EaTcVMMkdYdTUDFQm
-# vj0b34i3OLwXOlePbK/8smmNjuybcrryESBPZspJWI/34NciorJ6AW4U0HRVmJuZ
-# BeInHUkP1mLpYnEvvh6d15lxh1BmFHqb8x6epgIQEk0C97paO1lBCZ+2iszKe/sQ
-# JjmgIBO5Let2f8S4hbUBvrWsxrchWzW7yCrPf3R6rOY5q5d1b7QyKpb3vIQbA4ei
-# IlQ1niZuKUGy/YbBIXBoBW5OlNDtt0QQEhuYUNnDHd2NWGP7qbttqaXMK7vMOuyl
-# e9c+ALl8WT+OeyVByz8utYSGLC2jNki6cdYJd+Po+IQy7hhvQERpkUzw3Xw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJJrZ5EVfCZeb/yH
+# X7y3dxawX4slMA0GCSqGSIb3DQEBAQUABIIBAJyODsTkGVLZjHni9Lu0GNhDAUWC
+# Y7Tx6SMPvPyFUBfTEV3eR8aP86soCOhi/w9AJSRw79Mz3nkYN9Ikp7RSx8LOWb6k
+# mWF0+PhivLx+gBALOP+bRKc4RHowHnomnLeaYtIQ64QOIhVIXGqLgBJpNnQ56OhI
+# HkEw19Ik/MRlCm+LKT+ZTbt9nibdhpeAUQ0JLz1NhFBVQ4yAquQZSS/HCM9V/W6v
+# 1bOP973TEPWq9PV9nL9BKGL/q2NHEy7A7IDVlx633sZMcv+sNi850/o3k0MeLyfD
+# p17vIBChszTHEr151EZvAB1FPP3h0PuVjmBrPcB7GQs+uDBPgzJTCYMcWWo=
 # SIG # End signature block

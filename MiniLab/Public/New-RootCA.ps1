@@ -573,12 +573,12 @@ function New-RootCA {
         $CAType = "EnterpriseRootCA"
     }
     if (!$NewComputerTemplateCommonName) {
-        #$NewComputerTemplateCommonName = $DomainShortName + "Computer"
-        $NewComputerTemplateCommonName = "Machine"
+        $NewComputerTemplateCommonName = $DomainShortName + "Computer"
+        #$NewComputerTemplateCommonName = "Machine"
     }
     if (!$NewWebServerTemplateCommonName) {
-        #$NewWebServerTemplateCommonName = $DomainShortName + "WebServer"
-        $NewWebServerTemplateCommonName = "WebServer"
+        $NewWebServerTemplateCommonName = $DomainShortName + "WebServer"
+        #$NewWebServerTemplateCommonName = "WebServer"
     }
     if (!$FileOutputDirectory) {
         $FileOutputDirectory = "C:\NewRootCAOutput"
@@ -716,8 +716,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUq8HRoogtGrUokXq+d68daYH
-# LYigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU/AmFnzVD86jv9yraw/Wy9of5
+# XaCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -774,11 +774,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNcprXI1EU6C4Tia
-# BQBh6DN3u/hlMA0GCSqGSIb3DQEBAQUABIIBADOIbJG/Te3EwWkZHEAEiGl061cu
-# 1S/04DJQ7fcXlevs9DcomTwtvH2mK9zwIR34YlRjDWoiq+kw1WU15Cxgl6D44bws
-# LPDfMmwWnfPwrw1gzkJRY5uzLmf2XkrTfKd+lIazqXcyb4NQDQrhV/9joSfoKzw0
-# 5JgEifWEUcvO+4IvpF7aXuv/XQRxXGosnimeRUYmM6KLPdUj+OdDR64mo26JAoxm
-# CqKAOrKaWqMAn1xH3/+ZA5VQckn5mRCIvNmyol7BHX1jRdrZaibjnILeXhR1xGh5
-# m0MLAGEKInIk8kuy35fmdWbH9EYuyfqtHSYv6knx5veb2fKRsOXLm00syZA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKPTu3Tp4ouFn35w
+# /tOh8fpx7t2FMA0GCSqGSIb3DQEBAQUABIIBALEgSoyBzLz/rieZB5TQ7ArHhlI6
+# ft38PSK+udIfRYLfyBE8DaALQZjpTfIm8Uth1kuqY6MntVUdgu6+30S77D7uc7Os
+# CcvSH43GCnvRfCcqN6NdifaGDA/HBpYIM7JWtvGsL4T1X3TbkLFVtrhNPFO+kIQE
+# 6fOmF+XZN7SGe9pSiN7ePuJLDJRdVKe3M6A68fn83gf4VKqdisKn0Bz5WO0Y/iSo
+# KqpjYdhNqSgYrfAfv2H9sW15Xjc8+S7MpRZNHtVVtYhq8Wwf3oOQfGSb2KaVCrZ2
+# BdtzboJc6oU00x5iKzMXlHJ1z02qtuvw4xenUpfWirU0xbwyIOkTU19vCYE=
 # SIG # End signature block

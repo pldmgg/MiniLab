@@ -625,12 +625,46 @@ configuration NewDomainController {
         Start-DscConfiguration -Path $using:RemoteDSCDirectory -Force -Wait
     }
 
-    Invoke-Command -Session $(Get-PSSession -Name "To$DesiredHostName") -ScriptBlock $NewDomainControllerSB
+    try {
+        $NewDCDSCApplication = Invoke-Command -Session $(Get-PSSession -Name "To$DesiredHostName") -ScriptBlock $NewDomainControllerSB
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
 
     Write-Host "Sleeping for 5 minutes to give the new Domain Controller a chance to finish implementing config..."
     Start-Sleep -Seconds 300
 
-    Write-Host "Done" -ForegroundColor Green
+    # Try to use $NewDomainAdminCredentials to create a PSSession with the Domain Controller
+    # Try for maximum of 15 minutes and then give up
+    $Counter = 0
+    while (![bool]$(Get-PSSession -Name "ToDCPostDomainCreation" -ErrorAction SilentlyContinue)) {
+        try {
+            New-PSSession -ComputerName $ServerIP -Credential $NewDomainAdminCredentials -Name "ToDCPostDomainCreation" -ErrorAction SilentlyContinue
+            if (![bool]$(Get-PSSession -Name "ToDCPostDomainCreation" -ErrorAction SilentlyContinue)) {throw}
+        }
+        catch {
+            if ($Counter -le 60) {
+                Write-Warning "New-PSSession 'ToDCPostDomainCreation' failed. Trying again in 15 seconds..."
+                Start-Sleep -Seconds 15
+            }
+            else {
+                Write-Error "Unable to create new PSSession to 'ToDCPostDomainCreation' using New Domain Admin account '$($NewDomainAdminCredentials.UserName)'! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        $Counter++
+    }
+
+    if ([bool]$(Get-PSSession -Name "ToDCPostDomainCreation" -ErrorAction SilentlyContinue)) {
+        "DC Installation Success"
+    }
+    else {
+        "DC Installation Failure"
+    }
 
     #endregion >> Apply DomainController DSC Config
 }
@@ -638,8 +672,8 @@ configuration NewDomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUVfaNoZV1DAH0QcEb4TE9Oplq
-# Wwygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUm7XytCbzaD/sehJivRUe3E8A
+# Fyegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -696,11 +730,11 @@ configuration NewDomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFO5miy5MSi869zX7
-# HdQ5s6LoBHNtMA0GCSqGSIb3DQEBAQUABIIBABVW87ub1N5DzxcUpbZ/FceMNWmm
-# FagxMEDQ4NUagr2mi6kptGjFqtBkZCXqIiKV5MaU3a1lBFuspjhInETNp/pykWxc
-# OC5XuUOj8mPRciyPN4/rA9YrmrhkvqGlYWjEOlp/o9ejcxjwjAeqybQne4xDyjDg
-# v9EnqPoYn7vX8iv8PO/WfJ9Cgr6T6psiaOlSuI+IrZk6eAgRxGah05lqOSKjtesr
-# ROpuwsN+bvwPfnkwKWE+ontNDxK7BU3LXdmnhxoS+i4UXLU7qbgL50ubmI0c1/iS
-# Ds61w1Ws3TGc5OR/tHe0NuQt73LZWFL8iXMaEPtQTk60AGd2SBehr22xzg0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEAXF1lVhr9HLjH7
+# Uwb+1nrri9YLMA0GCSqGSIb3DQEBAQUABIIBAB2tPUFUH5qsvHhtE9k93uIEXObk
+# 4pBap1t8VUnOinS7tsAyrGE3+RfmT9h1kXil8hhjr4BPql4LZjz1YN7ExaQp3Eyh
+# 2+m7g2ZolKyXXnlhaG7NFYPWqjKEOodf0jWeRjqCW6nuieVKfjaRPUkTU3qMLGaG
+# qy+o1mGmfKwSXkaXwzaSqTOlOoonkS+mQkzqdfALgp2uz5yFfzT1/Ii4l2YwcXSu
+# fcvR4QSbur/Z+OEfNPvu5cmzBBoDssvQiNSpz/Fg+VnymOyingbNsw1OspEn1WZb
+# 77aOXqZBeDJgpSQlgnpfkft6Xp2L2kWo8f5gtvB7IEcyFzqCAaNZt2MGO2s=
 # SIG # End signature block

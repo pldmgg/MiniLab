@@ -165,7 +165,7 @@ foreach ($FileItem in $FilesToAnalyze) {
     $contents = Get-Content -Path $FileItem.FullName -ErrorAction Stop
     $errors = $null
     $null = [System.Management.Automation.PSParser]::Tokenize($contents, [ref]$errors)
-    if ($errors.Count -gt 0) {
+    if ($errors.Count -gt 0 -and $FileItem.Name -ne "$env:BHProjectName.psm1") {
         $null = $InvalidPowerShell.Add($FileItem)
     }
 }
@@ -288,8 +288,8 @@ exit ( [int]( -not $psake.build_success ) )
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUzbVlmo3WXwqjUxtHOBYSPO1Z
-# dFSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU07lzfrefVJZeuitx6YRi6AZG
+# sw+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -346,11 +346,11 @@ exit ( [int]( -not $psake.build_success ) )
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIxwUaj8V6HG+Ttf
-# 0Kvw/xK5ehlIMA0GCSqGSIb3DQEBAQUABIIBAMOrDnHcbErmQoob4IhqedbpOD0G
-# /GH4nYY/Bk7pZca8QgfB2sZrPuQoe6ypW0tWt1Tlvelvl/hoxXOm3TPHr6CCY2FA
-# Q4+Fhrc/5RvzeDbJynnqf3mCmrL/3m8OAuYc/bmVGIIWISlGnVa+8wEYlDDQiz/8
-# 231CKXuLOXQab85IBrHTb8HSZHMKPhKK9alKEn3aPRA3sDwwYD4jGSubwhjvm4u3
-# UGDx7SG/igvYp3rZMBb0KfDz6zu0QikVluFhD3eqTtYokcnAjfJUIkoCGiFL4Sn5
-# MyOzFLJAfij3M6q/sRNmc5W3U9iyD1sUwXiGkybywiUUw7IgVd09HmFRN6w=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNb/jyiJIHoKIybB
+# KRWlLLNNJVKoMA0GCSqGSIb3DQEBAQUABIIBAIkGo2k1b7KicustNQYhaRV1Nt0M
+# mTcToHXSMNSxuMDT4hERw8DpvGwj2D4vH5BIlcPJ5oPGnbhHGV2/YJCtztJzR3Je
+# qZ8TjvTKEYGSaDhZuc8LVBq6F+vYbSyE05yGFifXS/u1dpewmMRZLlgU/Bn0pxii
+# bcD1P00h6+lIkhTk+TAy2uBCOzDx3daMns8u/wt2rCzk+zQdH8tSz/CxnOvqA04y
+# YPq8AycYHkDKZR5vwKeswDtIfh7CJftOf+aW+OINPZOpHFjRJ/XrQiUhlFwQWnTK
+# JY9SMrV1YLYrNGbNH9ffICJXkGYvZAo9qy0C5EM+4FJSuiz5LDK9ngAiICI=
 # SIG # End signature block
