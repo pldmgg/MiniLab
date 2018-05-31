@@ -69,11 +69,13 @@ PowerShellVersion = '5.1'
 # NestedModules = @()
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-FunctionsToExport = 'Create-TwoTierPKI','Deploy-HyperVVagrantBoxManually',
+FunctionsToExport = 'Create-Domain','Create-RootCA','Create-SubordinateCA','Create-TwoTierPKI',
+                    'Create-TwoTierPKIRedux','Deploy-HyperVVagrantBoxManually',
                     'Generate-Certificate','Get-DSCEncryptionCert',
-                    'Get-VagrantBoxManualDownload','Manage-HyperVVM',
+                    'Get-VagrantBoxManualDownload','Invoke-Parallel',
+                    'Join-DomainEx','Manage-HyperVVM',
                     'New-DomainController', 'New-RootCA',
-                    'New-SelfSignedCertificateEx','New-SubordinateCA'
+                    'New-SelfSignedCertificateEx','New-SubordinateCA','Rename-HostEx'
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 CmdletsToExport = '*'

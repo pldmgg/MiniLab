@@ -39,6 +39,1725 @@ catch {
 
 
 
+function Create-Domain {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [switch]$CreateNewVMs,
+
+        [Parameter(Mandatory=$False)]
+        [string]$VMStorageDirectory,
+
+        [Parameter(Mandatory=$False)]
+        [string]$Windows2016VagrantBox = "jborean93/WindowsServer2016", # Alternate - StefanScherer/windows_2016
+
+        [Parameter(Mandatory=$True)]
+        [ValidatePattern("^([a-z0-9]+(-[a-z0-9]+)*\.)+([a-z]){2,}$")]
+        [string]$NewDomain,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$DomainAdminCredentials,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$LocalAdministratorAccountCredentials,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$PSRemotingCredentials,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeDomainController,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipHyperVInstallCheck
+    )
+
+    #region >> Helper Functions
+
+    # TestIsValidIPAddress
+    # ResolveHost
+    # Deploy-HyperVVagrantBoxManually
+    # Get-VagrantBoxManualDownload
+    # New-DomainController
+
+    #endregion >> Helper Functions
+
+    #region >> Prep
+
+    $StartTime = Get-Date
+
+    $ElevationCheck = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (!$ElevationCheck) {
+        Write-Error "You must run the build.ps1 as an Administrator (i.e. elevated PowerShell Session)! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+
+    if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
+        $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
+    }
+
+    if (!$PSBoundParameters['CreateNewVMs'] -and $PSBoundParameters['VMStorageDirectory']) {
+        $CreateNewVMs = $True
+    }
+
+    if (!$PSBoundParameters['LocalAdministratorAccountCredentials']) {
+        if (!$IPofServerToBeDomainController) {
+            $PromptMsg = "Please enter the *desired* password for the Local 'Administrator' account on the server that will become the new Domain Controller"
+        }
+        else {
+            $PromptMsg = "Please enter the password for the Local 'Administrator' Account on $IPofServerToBeDomainController"
+        }
+        $LocalAdministratorAccountPassword = Read-Host -Prompt $PromptMsg -AsSecureString
+        $LocalAdministratorAccountCredentials = [pscredential]::new("Administrator",$LocalAdministratorAccountPassword)
+    }
+
+    if (!$CreateNewVMs -and $PSBoundParameters['NewDomain'] -and !$PSBoundParameters['IPofServerToBeDomainController']) {
+        $PromptMsg = "Please enter the IP Address of the existing Server that will become the new Domain Controller"
+        $IPofServerToBeDomainController = Read-Host -Prompt $PromptMsg
+    }
+
+    if ($CreateNewVMs -and $PSBoundParameters['IPofServerToBeDomainController']) {
+        $ErrMsg = "The parameter -IPofServerToBeDomainController was used in conjunction with " +
+        "parameters that indicate that a new VM should be deployed (i.e. -CreateNewVMs and/or " +
+        "-VMStorageDirectory). Please only use the -IPofServerToBeDomainController if " +
+        "that server are already exists on the network. Halting!"
+        Write-Error $ErrMsg
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$CreateNewVMs -and ! $PSBoundParameters['IPofServerToBeDomainController']) {
+        Write-Error "The $($MyInvocation.MyCommand.Name) function requires either the -CreateNewVMs or -IPOfServerToBeDomainController parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    <#
+    if ($PSBoundParameters['IPofServerToBeDomainController']) {
+        # Make sure we can reach RemoteHost IP(s) via WinRM/WSMan
+        if (![bool]$(Test-Connection -Protocol WSMan -ComputerName $IPofServerToBeDomainController -Count 1 -ErrorAction SilentlyContinue)) {
+            Write-Error "Unable to reach '$IPofServerToBeDomainController' via WinRM/WSMan! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    #>
+
+    $FunctionsForSBUse = @(
+        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+        ${Function:GetDomainController}.Ast.Extent.Text
+        ${Function:GetElevation}.Ast.Extent.Text
+        ${Function:GetFileLockProcess}.Ast.Extent.Text
+        ${Function:GetNativePath}.Ast.Extent.Text
+        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+        ${Function:InstallFeatureDism}.Ast.Extent.Text
+        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+        ${Function:NewUniqueString}.Ast.Extent.Text
+        ${Function:PauseForWarning}.Ast.Extent.Text
+        ${Function:ResolveHost}.Ast.Extent.Text
+        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+        ${Function:UnzipFile}.Ast.Extent.Text
+        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+        ${Function:Generate-Certificate}.Ast.Extent.Text
+        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+        ${Function:Manage-HyperVVM}.Ast.Extent.Text
+        ${Function:New-DomainController}.Ast.Extent.Text
+        ${Function:New-RootCA}.Ast.Extent.Text
+        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
+        ${Function:New-SubordinateCA}.Ast.Extent.Text
+    )
+
+    $FinalDomainName = $NewDomain
+    $DomainShortName = $($FinalDomainName -split '\.')[0]
+
+    #endregion >> Prep
+
+    # Create the new VMs if desired
+    if ($CreateNewVMs) {
+        # Check to Make Sure Hyper-V is installed
+        if (!$SkipHyperVInstallCheck) {
+            try {
+                $HyperVFeaturesInstallResults = InstallHyperVFeatures -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallHyperVFeatures function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+            try {
+                $InstallContainersFeatureDismResult = InstallFeatureDism -Feature Containers -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallFeatureDism function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+    
+            if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
+                if (!$AllowRestarts) {
+                    Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    Write-Output "RestartNeeded"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Restart-Computer -Confirm:$False -Force
+                }
+            }
+        }
+
+        #region >> Hardware Resource Check
+
+        # Make sure we have at least 35GB of Storage and 6GB of READILY AVAILABLE Memory
+        # Check Storage...
+        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
+            $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
+        }
+        else {
+            $VMStorageDirectoryDriveLetter = $VMStorageDirectory.Substring(0,1)
+        }
+
+        if ($LocalDrives.Name -notcontains $VMStorageDirectoryDriveLetter) {
+            Write-Error "'$VMStorageDirectory' does not appear to be a local drive! VMs MUST be stored on a local drive! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        $VMStorageDirectoryDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$VMStorageDirectoryDriveLetter`:'"
+        
+        if ($([Math]::Round($VMStorageDirectoryDriveInfo.FreeSpace / 1MB)-2000) -lt 35000) {
+            Write-Error "Drive '$VMStorageDirectoryDriveLetter' does not have at least 100GB of free space available! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Check Memory...
+        $OSInfo = Get-CimInstance Win32_OperatingSystem
+        $TotalMemory = $OSInfo.TotalVisibleMemorySize
+        $MemoryAvailable = $OSInfo.FreePhysicalMemory
+        $TotalMemoryInGB = [Math]::Round($TotalMemory / 1MB)
+        $MemoryAvailableInGB = [Math]::Round($MemoryAvailable / 1MB)
+        if ($MemoryAvailableInGB -lt 6 -and !$ForceWithLowMemory) {
+            $MemoryErrorMsg = "The Hyper-V hypervisor $env:ComputerName should have at least 6GB of memory " +
+            "readily available in order to run the new VMs. It currently only has about $MemoryAvailableInGB " +
+            "GB available for immediate use. Halting!"
+            Write-Error $MemoryErrorMsg
+            $global:FunctionResult = "1"
+            return
+        }
+
+        #endregion >> Hardware Resource Check
+
+        #region >> Deploy New VMs
+
+        $StartVMDeployment = Get-Date
+
+        # Prepare To Manage .box Files
+        if (!$(Test-Path "$VMStorageDirectory\BoxDownloads")) {
+            $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads" -Force
+        }
+        $BoxNameRegex = [regex]::Escape($($Windows2016VagrantBox -split '/')[0])
+        $BoxFileAlreadyPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -File -Filter "*.box" | Where-Object {$_.Name -match $BoxNameRegex}
+        $DecompressedBoxDirectoryPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -Directory | Where-Object {$_.Name -match $BoxNameRegex}
+        if ([bool]$DecompressedBoxDirectoryPresentCheck) {
+            $DecompressedBoxDirectoryItem = $DecompressedBoxDirectoryPresentCheck
+            $DecompressedBoxDir = $DecompressedBoxDirectoryItem.FullName
+        }
+        elseif ([bool]$BoxFileAlreadyPresentCheck) {
+            $BoxFileItem = $BoxFileAlreadyPresentCheck
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+        else {
+            $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+
+        $NewVMDeploySBAsString = @"
+[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+`$env:Path = '$env:Path'
+
+# Load the functions we packed up
+`$args | foreach { Invoke-Expression `$_ }
+
+`$DeployBoxSplatParams = @{
+    VagrantBox                  = '$Windows2016VagrantBox'
+    CPUs                        = 2
+    Memory                      = 4096
+    VagrantProvider             = "hyperv"
+    VMName                      = '$DomainShortName' + "DC1"
+    VMDestinationDirectory      = '$VMStorageDirectory'
+    SkipHyperVInstallCheck      = `$True
+    CopyDecompressedDirectory   = `$True
+}
+
+if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
+    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
+    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
+    }
+}
+
+`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+`$DeployBoxResult
+"@
+        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+
+        if (!$IPofServerToBeDomainController) {
+            $DomainShortName = $($NewDomain -split "\.")[0]
+            Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
+
+            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $(Get-Job).Name
+
+            $NewDCVMDeployJobSplatParams = @{
+                Name            = $NewDCVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
+            }
+            $NewDCVMDeployJobInfo = Start-Job @NewDCVMDeployJobSplatParams
+        
+            $NewDCVMDeployResult = Wait-Job -Job $NewDCVMDeployJobInfo | Receive-Job
+
+            while (![bool]$(Get-VM -Name "$DomainShortName`DC1" -ErrorAction SilentlyContinue)) {
+                Write-Host "Waiting for $DomainShortName`DC1 VM to be deployed..."
+                Start-Sleep -Seconds 15
+            }
+
+            $IPofServerToBeDomainController = $NewDCVMDeployResult.VMIPAddress
+            if (!$IPofServerToBeDomainController) {
+                $IPofServerToBeDomainController = $(Get-VM -Name "$DomainShortName`DC1").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+            }
+        }
+
+        [System.Collections.ArrayList]$VMsNotReportingIP = @()
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+            $null = $VMsNotReportingIP.Add("$DomainShortName`DC1")
+        }
+
+        if ($VMsNotReportingIP.Count -gt 0) {
+            Write-Error "The following VMs did NOT report thier IP Addresses within 30 minutes:`n$($VMsNotReportingIP -join "`n")`nHalting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Make sure IP is a valid IPv4 address
+        if (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+            Write-Error "'$IPofServerToBeDomainController' is NOT a valid IPv4 IP Address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        Write-Host "Finished Deploying New VMs..."
+
+        #endregion >> Deploy New VMs
+    }
+
+    #region >> Update WinRM/WSMAN
+
+    Write-Host "Updating WinRM/WSMan to allow for PSRemoting to Servers ..."
+    try {
+        $null = Enable-PSRemoting -Force -ErrorAction Stop
+    }
+    catch {
+        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+
+        try {
+            $null = Enable-PSRemoting -Force
+        }
+        catch {
+            Write-Error $_
+            Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
+    if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
+        $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+    }
+
+    # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
+    $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+    [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
+
+    [System.Collections.ArrayList]$ItemsToAddToWSMANTrustedHosts = @(
+        $IPofServerToBeDomainController
+    )
+
+    foreach ($NetItem in $ItemsToAddToWSMANTrustedHosts) {
+        if ($CurrentTrustedHostsAsArray -notcontains $NetItem) {
+            $null = $CurrentTrustedHostsAsArray.Add($NetItem)
+        }
+    }
+    $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
+    Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+
+    Write-Host "Finished updating WinRM/WSMan..."
+
+    #endregion >> Update WinRM/WSMAN
+
+
+    #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+    Write-Host "Attempting New PSSession to Server To Become DC for up to 30 minutes to ensure it is ready..."
+    $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToDC1Check"
+    $Counter = 0
+    while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+        try {
+            $DCPSSession = New-PSSession -ComputerName $IPofServerToBeDomainController -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+            if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+        }
+        catch {
+            if ($Counter -le 120) {
+                Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                Start-Sleep -Seconds 15
+            }
+            else {
+                Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        $Counter++
+    }
+
+    # Clear the PSSessions
+    Get-PSSession | Remove-PSSession
+
+    if ($CreateNewVMs) {
+        $EndVMDeployment = Get-Date
+        $TotalTime = $EndVMDeployment - $StartVMDeployment
+        Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
+    }
+
+    #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+        
+        
+    #region >> Prep New Domain Controller
+
+    $DomainShortName = $($NewDomain -split "\.")[0]
+    $DomainSNLower = $DomainShortName.ToLowerInvariant()
+    if (!$IPofServerToBeDomainController) {
+        $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        $PSRemotingCredentials = [pscredential]::new("vagrant",$VagrantVMPassword)
+    }
+    if (![bool]$LocalAdministratorAccountCredentials) {
+        $LocalAdministratorAccountPassword = Read-Host -Prompt "Please enter password for the Local 'Administrator' Account on $IPofServerToBeDomainController" -AsSecureString
+        $LocalAdministratorAccountCredentials = [pscredential]::new("Administrator",$LocalAdministratorAccountPassword)
+    }
+    if (!$PSRemotingCredentials) {
+        $PSRemotingCredentials = $LocalAdministratorAccountCredentials
+    }
+    if (!$DomainAdminCredentials) {
+        $DomainAdminUserAcct = $DomainSNLower + '\' + $DomainSNLower + 'admin'
+        $DomainAdminPassword = ConvertTo-SecureString 'P@ssword321!' -AsPlainText -Force
+        $DomainAdminCredentials = [pscredential]::new($DomainAdminUserAcct,$DomainAdminPassword)
+    }
+
+    #region >> Rename Server To Be Domain Controller If Necessary
+
+    # Check current HostName (and also set the local Administrator account password)
+    $InvCmdCheckSB = {
+        # Make sure the Local 'Administrator' account has its password set
+        $UserAccount = Get-LocalUser -Name "Administrator"
+        $UserAccount | Set-LocalUser -Password $args[0]
+        $env:ComputerName
+    }
+    $InvCmdCheckSplatParams = @{
+        ComputerName            = $IPofServerToBeDomainController
+        Credential              = $PSRemotingCredentials
+        ScriptBlock             = $InvCmdCheckSB
+        ArgumentList            = $LocalAdministratorAccountCredentials.Password
+        ErrorAction             = "Stop"
+    }
+    try {
+        $RemoteHostNameDC = Invoke-Command @InvCmdCheckSplatParams
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $RenameComputerJobSB = {
+        $RenameComputerSBAsString = 'Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart'
+        $RenameComputerSB = [scriptblock]::Create($RenameComputerSBAsString)
+
+        $InvCmdRenameComputerSplatParams = @{
+            ComputerName    = $args[0]
+            Credential      = $args[1]
+            ScriptBlock     = $RenameComputerSB
+            ArgumentList    = $args[2],$args[1]
+            ErrorAction     = "Stop"
+        }
+
+        try {
+            $null = Invoke-Command @InvCmdRenameComputerSplatParams
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    $DesiredHostNameDC = $DomainShortName + "DC1"
+
+    # Rename the Server that will become the DC
+    if ($RemoteHostNameDC -ne $DesiredHostNameDC) {
+        Write-Host "Renaming '$IPofServerToBeDomainController' from '$RemoteHostNameDC' to '$DesiredHostNameDC'..."
+        
+        $RenameDCJobName = NewUniqueString -PossibleNewUniqueString "RenameDC" -ArrayOfStrings $(Get-Job).Name
+
+        $RenameDCArgList = @(
+            $IPofServerToBeDomainController
+            $PSRemotingCredentials
+            $DesiredHostNameDC
+        )
+        $RenameDCJobSplatParams = @{
+            Name            = $RenameDCJobName
+            Scriptblock     = $RenameComputerJobSB
+            ArgumentList    = $RenameDCArgList
+        }
+        $RenameDCJobInfo = Start-Job @RenameDCJobSplatParams
+    }
+
+    if ($RenameDCJobInfo) {
+        $RenameDCResult = Wait-Job -Job $RenameDCJobInfo | Receive-Job
+
+        Write-Host "Sleeping for 5 minutes to give '$IPofServerToBeDomainController' time to reboot after name change..."
+        Start-Sleep -Seconds 300
+    
+        # Try to make a PSSession for 15 minutes to verify the Host Name was changed
+        Write-Host "Trying to remote into DC1 at $IPofServerToBeDomainController after HostName change..."
+        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToDC1PostRename"
+        $Counter = 0
+        while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+            try {
+                $DCPSSession = New-PSSession -ComputerName $IPofServerToBeDomainController -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+            }
+            catch {
+                if ($Counter -le 60) {
+                    Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                    Start-Sleep -Seconds 15
+                }
+                else {
+                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+            $Counter++
+        }
+    
+        # Verify the name of the Remote Host has been changed
+        try {
+            $NewHostNameCheckSplatParams = @{
+                Session             = $DCPSSession
+                ScriptBlock         = {$env:ComputerName}
+            }
+            $RemoteHostNameDC = Invoke-Command @NewHostNameCheckSplatParams 
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    
+        if ($RemoteHostNameDC -ne $DesiredHostNameDC) {
+            Write-Error "Failed to rename Server to become Domain Controller '$IPofServerToBeDomainController'! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    #endregion >> Rename Server To Be Domain Controller If Necessary
+
+    #endregion >> Prep New Domain Controller
+
+
+    #region >> Make the Domain Controller
+
+    Write-Host "Creating the New Domain Controller..."
+    $NewDomainControllerSplatParams = @{
+        DesiredHostName                         = $DesiredHostNameDC
+        NewDomainName                           = $NewDomain
+        NewDomainAdminCredentials               = $DomainAdminCredentials
+        ServerIP                                = $IPofServerToBeDomainController
+        PSRemotingLocalAdminCredentials         = $PSRemotingCredentials
+        LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
+    }
+    $NewDomainControllerResults = New-DomainController @NewDomainControllerSplatParams
+
+    if (![bool]$($NewDomainControllerResults -match "DC Installation Success")) {
+        Write-Error "Unable to determine if creation of the New Domain Controller '$DesiredHostNameDC' at '$IPofServerToBeDomainController' was successfule! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $EndTime = Get-Date
+    $TotalAllOpsTime = $EndTime - $StartTime
+    Write-Host "All operations for the $($MyInvocation.MyCommand.Name) function took $($TotalAllOpsTime.Hours) hours and $($TotalAllOpsTime.Minutes) minutes" -ForegroundColor Yellow
+
+    $NewDomainControllerResults
+
+    #endregion >> Make the Domain Controller
+
+}
+
+
+function Create-RootCA {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [switch]$CreateNewVMs,
+
+        [Parameter(Mandatory=$False)]
+        [string]$VMStorageDirectory,
+
+        [Parameter(Mandatory=$False)]
+        [string]$Windows2016VagrantBox = "jborean93/WindowsServer2016", # Alternate - StefanScherer/windows_2016
+
+        [Parameter(Mandatory=$True)]
+        [ValidatePattern("^([a-z0-9]+(-[a-z0-9]+)*\.)+([a-z]){2,}$")]
+        [string]$ExistingDomain,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$DomainAdminCredentials,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$PSRemotingCredentials,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeRootCA,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofDomainController,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipHyperVInstallCheck
+    )
+
+    #region >> Helper Functions
+
+    # TestIsValidIPAddress
+    # ResolveHost
+    # GetDomainController
+    # Deploy-HyperVVagrantBoxManually
+    # Get-VagrantBoxManualDownload
+    # New-RootCA
+
+    #endregion >> Helper Functions
+
+    #region >> Prep
+
+    $StartTime = Get-Date
+
+    $ElevationCheck = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (!$ElevationCheck) {
+        Write-Error "You must run the build.ps1 as an Administrator (i.e. elevated PowerShell Session)! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+
+    if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
+        $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
+    }
+
+    if (!$PSBoundParameters['CreateNewVMs'] -and $PSBoundParameters['VMStorageDirectory']) {
+        $CreateNewVMs = $True
+    }
+
+    if ($CreateNewVMs -and $PSBoundParameters['IPofServerToBeRootCA']) {
+        $ErrMsg = "The parameter-IPofServerToBeRootCA, and was used in conjunction with parameters " +
+        "that indicate that a new VM should be deployed (i.e. -CreateNewVMs and/or -VMStorageDirectory) " +
+        "Please only use -IPofServerToBeRootCA if that server are already exists on the network. Halting!"
+        Write-Error $ErrMsg
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$CreateNewVMs -and ! $PSBoundParameters['IPofServerToBeRootCA']) {
+        Write-Error "The $($MyInvocation.MyCommand.Name) function requires either the -CreateNewVMs or -IPOfServerToBeRootCA parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    <#
+    if ($PSBoundParameters['IPofServerToBeRootCA']) {
+        # Make sure we can reach RemoteHost IP(s) via WinRM/WSMan
+        if (![bool]$(Test-Connection -Protocol WSMan -ComputerName $IPofServerToBeRootCA -Count 1 -ErrorAction SilentlyContinue)) {
+            Write-Error "Unable to reach '$IPofServerToBeRootCA' via WinRM/WSMan! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    #>
+
+    if (!$PSBoundParameters['IPofDomainController']) {
+        # Make sure we can Resolve the Domain/Domain Controller
+        try {
+            [array]$ResolveDomain = Resolve-DNSName -Name $ExistingDomain -ErrorAction Stop
+            $IPofDomainController = $ResolveDomain[0].IPAddress
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    if (!$(TestIsValidIPAddress -IPAddress $IPofDomainController)) {
+        Write-Error "'$IPOfDomainController' is NOT a valid IPv4 address! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $FunctionsForSBUse = @(
+        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+        ${Function:GetDomainController}.Ast.Extent.Text
+        ${Function:GetElevation}.Ast.Extent.Text
+        ${Function:GetFileLockProcess}.Ast.Extent.Text
+        ${Function:GetNativePath}.Ast.Extent.Text
+        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+        ${Function:InstallFeatureDism}.Ast.Extent.Text
+        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+        ${Function:NewUniqueString}.Ast.Extent.Text
+        ${Function:PauseForWarning}.Ast.Extent.Text
+        ${Function:ResolveHost}.Ast.Extent.Text
+        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+        ${Function:UnzipFile}.Ast.Extent.Text
+        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+        ${Function:Generate-Certificate}.Ast.Extent.Text
+        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+        ${Function:Manage-HyperVVM}.Ast.Extent.Text
+        ${Function:New-DomainController}.Ast.Extent.Text
+        ${Function:New-RootCA}.Ast.Extent.Text
+        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
+        ${Function:New-SubordinateCA}.Ast.Extent.Text
+    )
+
+    $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
+    $DomainShortName = $($FinalDomainName -split '\.')[0]
+
+    #endregion >> Prep
+
+    # Create the new VMs if desired
+    if ($CreateNewVMs) {
+        # Check to Make Sure Hyper-V is installed
+        if (!$SkipHyperVInstallCheck) {
+            try {
+                $HyperVFeaturesInstallResults = InstallHyperVFeatures -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallHyperVFeatures function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+            try {
+                $InstallContainersFeatureDismResult = InstallFeatureDism -Feature Containers -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallFeatureDism function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+    
+            if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
+                if (!$AllowRestarts) {
+                    Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    Write-Output "RestartNeeded"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Restart-Computer -Confirm:$False -Force
+                }
+            }
+        }
+
+        #region >> Hardware Resource Check
+
+        # Make sure we have at least 35GB of Storage and 6GB of READILY AVAILABLE Memory
+        # Check Storage...
+        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
+            $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
+        }
+        else {
+            $VMStorageDirectoryDriveLetter = $VMStorageDirectory.Substring(0,1)
+        }
+
+        if ($LocalDrives.Name -notcontains $VMStorageDirectoryDriveLetter) {
+            Write-Error "'$VMStorageDirectory' does not appear to be a local drive! VMs MUST be stored on a local drive! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        $VMStorageDirectoryDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$VMStorageDirectoryDriveLetter`:'"
+        
+        if ($([Math]::Round($VMStorageDirectoryDriveInfo.FreeSpace / 1MB)-2000) -lt 35000) {
+            Write-Error "Drive '$VMStorageDirectoryDriveLetter' does not have at least 100GB of free space available! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Check Memory...
+        $OSInfo = Get-CimInstance Win32_OperatingSystem
+        $TotalMemory = $OSInfo.TotalVisibleMemorySize
+        $MemoryAvailable = $OSInfo.FreePhysicalMemory
+        $TotalMemoryInGB = [Math]::Round($TotalMemory / 1MB)
+        $MemoryAvailableInGB = [Math]::Round($MemoryAvailable / 1MB)
+        if ($MemoryAvailableInGB -lt 6 -and !$ForceWithLowMemory) {
+            $MemoryErrorMsg = "The Hyper-V hypervisor $env:ComputerName should have at least 12GB of memory " +
+            "readily available in order to run the new VMs. It currently only has about $MemoryAvailableInGB " +
+            "GB available for immediate use. Halting!"
+            Write-Error $MemoryErrorMsg
+            $global:FunctionResult = "1"
+            return
+        }
+
+        #endregion >> Hardware Resource Check
+
+        #region >> Deploy New VMs
+
+        $StartVMDeployment = Get-Date
+
+        # Prepare To Manage .box Files
+        if (!$(Test-Path "$VMStorageDirectory\BoxDownloads")) {
+            $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads" -Force
+        }
+        $BoxNameRegex = [regex]::Escape($($Windows2016VagrantBox -split '/')[0])
+        $BoxFileAlreadyPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -File -Filter "*.box" | Where-Object {$_.Name -match $BoxNameRegex}
+        $DecompressedBoxDirectoryPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -Directory | Where-Object {$_.Name -match $BoxNameRegex}
+        if ([bool]$DecompressedBoxDirectoryPresentCheck) {
+            $DecompressedBoxDirectoryItem = $DecompressedBoxDirectoryPresentCheck
+            $DecompressedBoxDir = $DecompressedBoxDirectoryItem.FullName
+        }
+        elseif ([bool]$BoxFileAlreadyPresentCheck) {
+            $BoxFileItem = $BoxFileAlreadyPresentCheck
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+        else {
+            $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+
+        $NewVMDeploySBAsString = @"
+[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+`$env:Path = '$env:Path'
+
+# Load the functions we packed up
+`$args | foreach { Invoke-Expression `$_ }
+
+`$DeployBoxSplatParams = @{
+    VagrantBox                  = '$Windows2016VagrantBox'
+    CPUs                        = 2
+    Memory                      = 4096
+    VagrantProvider             = "hyperv"
+    VMName                      = '$DomainShortName' + "RootCA"
+    VMDestinationDirectory      = '$VMStorageDirectory'
+    SkipHyperVInstallCheck      = `$True
+    CopyDecompressedDirectory   = `$True
+}
+
+if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
+    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
+    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
+    }
+}
+
+`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+`$DeployBoxResult
+"@
+        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+
+        if (!$IPofServerToBeRootCA) {
+            $DomainShortName = $($ExistingDomain -split "\.")[0]
+
+            Write-Host "Deploying New Root CA VM '$DomainShortName`RootCA'..."
+            
+            $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $(Get-Job).Name
+
+            $NewRootCAVMDeployJobSplatParams = @{
+                Name            = $NewRootCAVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
+            }
+            $NewRootCAVMDeployJobInfo = Start-Job @NewRootCAVMDeployJobSplatParams
+
+            $NewRootCAVMDeployResult = Wait-Job -Job $NewRootCAVMDeployJobInfo | Receive-Job
+            $IPofServerToBeRootCA = $NewRootCAVMDeployResult.VMIPAddress
+
+            while (![bool]$(Get-VM -Name "$DomainShortName`RootCA" -ErrorAction SilentlyContinue)) {
+                Write-Host "Waiting for $DomainShortName`RootCA VM to be deployed..."
+                Start-Sleep -Seconds 15
+            }
+
+            if (!$IPofServerToBeRootCA) {
+                $IPofServerToBeRootCA = $(Get-VM -Name "$DomainShortName`RootCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+            }
+        }
+
+        [System.Collections.ArrayList]$VMsNotReportingIP = @()
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
+            $null = $VMsNotReportingIP.Add("$DomainShortName`RootCA")
+        }
+
+        if ($VMsNotReportingIP.Count -gt 0) {
+            Write-Error "The following VMs did NOT report thier IP Addresses within 30 minutes:`n$($VMsNotReportingIP -join "`n")`nHalting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Make sure IP is a valid IPv4 address
+        if (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
+            Write-Error "'$IPofServerToBeRootCA' is NOT a valid IPv4 IP Address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        Write-Host "Finished Deploying New VMs..."
+
+        #endregion >> Deploy New VMs
+    }
+
+    #region >> Update WinRM/WSMAN
+
+    Write-Host "Updating WinRM/WSMan to allow for PSRemoting to Servers ..."
+    try {
+        $null = Enable-PSRemoting -Force -ErrorAction Stop
+    }
+    catch {
+        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+
+        try {
+            $null = Enable-PSRemoting -Force
+        }
+        catch {
+            Write-Error $_
+            Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
+    if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
+        $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+    }
+
+    # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
+    $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+    [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
+
+    [System.Collections.ArrayList]$ItemsToAddToWSMANTrustedHosts = @(
+        $IPofServerToBeRootCA
+    )
+
+    foreach ($NetItem in $ItemsToAddToWSMANTrustedHosts) {
+        if ($CurrentTrustedHostsAsArray -notcontains $NetItem) {
+            $null = $CurrentTrustedHostsAsArray.Add($NetItem)
+        }
+    }
+    $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
+    Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+
+    Write-Host "Finished updating WinRM/WSMan..."
+
+    #endregion >> Update WinRM/WSMAN
+
+
+    #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+    Write-Host "Attempting New PSSession to Remote Hosts for up to 30 minutes to ensure they are ready..."
+
+    $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCACheck"
+    $Counter = 0
+    while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+        try {
+            $RootCAPSSession = New-PSSession -ComputerName $IPofServerToBeRootCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+            if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+        }
+        catch {
+            if ($Counter -le 120) {
+                Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                Start-Sleep -Seconds 15
+            }
+            else {
+                Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        $Counter++
+    }
+
+    # Clear the PSSessions
+    Get-PSSession | Remove-PSSession
+
+    if ($CreateNewVMs) {
+        $EndVMDeployment = Get-Date
+        $TotalTime = $EndVMDeployment - $StartVMDeployment
+        Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
+    }
+
+    #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+
+    #region >> Join the Servers to Domain And Rename If Necessary
+
+    # Check if DC and RootCA should be the same server. If not, then need to join RootCA to Domain.
+    if ($IPofDomainController -ne $IPofServerToBeRootCA) {
+        $JoinDomainJobSB = {
+            $JoinDomainSBAsString = @'
+# Synchronize time with time servers
+$null = W32tm /resync /rediscover /nowait
+
+# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)
+$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
+$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
+$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
+$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
+$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
+$UpdatedDNSServerList.Insert(0,$args[0])
+$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
+
+$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList
+[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder
+$UpdatedDNSSuffixList.Insert(0,$args[2])
+Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList
+
+# Try resolving the Domain for 30 minutes
+$Counter = 0
+while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {
+    Write-Host "Waiting for DNS to resolve Domain Controller..."
+    Start-Sleep -Seconds 15
+    $Counter++
+}
+if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {
+    Write-Error "Unable to resolve Domain $($args[2])! Halting!"
+    $global:FunctionResult = "1"
+    return
+}
+
+# Join Domain
+Rename-Computer -NewName $args[1]
+Start-Sleep -Seconds 10
+Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart
+'@
+            
+            $JoinDomainSB = [scriptblock]::Create($JoinDomainSBAsString)
+    
+            $InvCmdJoinDomainSplatParams = @{
+                ComputerName    = $args[0]
+                Credential      = $args[1]
+                ScriptBlock     = $JoinDomainSB
+                ArgumentList    = $args[2],$args[3],$args[4],$args[5]
+            }
+            try {
+                Invoke-Command @InvCmdJoinDomainSplatParams
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        # Check if RootCA is already part of $ExistingDomain/$NewDomain
+        $InvCmdRootCADomainSplatParams = @{
+            ComputerName        = $IPofServerToBeRootCA
+            Credential          = $PSRemotingCredentials
+            ScriptBlock         = {$(Get-CimInstance win32_computersystem).Domain}
+            ErrorAction         = "Stop"
+        }
+        try {
+            $RootCADomain = Invoke-Command @InvCmdRootCADomainSplatParams
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+
+        if ($RootCADomain -ne $ExistingDomain) {
+            Write-Host "Joining the Root CA to the Domain..."
+            $DesiredHostNameRootCA = $DomainShortName + "RootCA"
+
+            $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $(Get-Job).Name
+
+            $JoinRootCAArgList = @(
+                $IPofServerToBeRootCA
+                $PSRemotingCredentials
+                $IPofDomainController
+                $DesiredHostNameRootCA
+                $ExistingDomain
+                $DomainAdminCredentials
+            )
+            $JoinRootCAJobSplatParams = @{
+                Name            = $JoinRootCAJobName
+                Scriptblock     = $JoinDomainJobSB
+                ArgumentList    = $JoinRootCAArgList
+            }
+            $JoinRootCAJobInfo = Start-Job @JoinRootCAJobSplatParams
+            
+            $JoinRootCAResult = Wait-Job -Job $JoinRootCAJobInfo | Receive-Job
+
+            # Verify Root CA is Joined to Domain
+            # Try to create a PSSession to the Root CA for 15 minutes, then give up
+            Write-Host "Trying to remote into RootCA at '$IPofServerToBeRootCA' with Domain Admin Credentials after Joining Domain..."
+            $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCAPostDomainJoin"
+            $Counter = 0
+            while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+                try {
+                    $RootCAPSSessionPostDomainJoin = New-PSSession -ComputerName $IPofServerToBeRootCA -Credential $DomainAdminCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                    if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+                }
+                catch {
+                    if ($Counter -le 60) {
+                        Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                        Start-Sleep -Seconds 15
+                    }
+                    else {
+                        Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($DomainAdminCredentials.UserName)'! Halting!"
+                        $global:FunctionResult = "1"
+                        return
+                    }
+                }
+                $Counter++
+            }
+
+            if (!$RootCAPSSessionPostDomainJoin) {
+                Write-Error "Unable to create a PSSession to the Root CA Server at '$IPofServerToBeRootCA' using Domain Admin Credentials $($DomainAdminCredentials.UserName)! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+    }
+
+    #endregion >> Join the Servers to Domain And Rename If Necessary
+
+
+    #region >> Create the Root CA
+
+    # Remove All Existing PSSessions
+    Get-PSSession | Remove-PSSession
+
+    Write-Host "Creating the New Root CA..."
+    $NewRootCAResult = New-RootCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofServerToBeRootCA
+
+    #endregion >> Create the Root CA
+
+    $EndTime = Get-Date
+    $TotalAllOpsTime = $EndTime - $StartTime
+    Write-Host "All operations for the $($MyInvocation.MyCommand.Name) function took $($TotalAllOpsTime.Hours) hours and $($TotalAllOpsTime.Minutes) minutes" -ForegroundColor Yellow
+
+    $NewRootCAResult
+
+}
+
+
+function Create-SubordinateCA {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [switch]$CreateNewVMs,
+
+        [Parameter(Mandatory=$False)]
+        [string]$VMStorageDirectory,
+
+        [Parameter(Mandatory=$False)]
+        [string]$Windows2016VagrantBox = "jborean93/WindowsServer2016", # Alternate - StefanScherer/windows_2016
+
+        [Parameter(Mandatory=$True)]
+        [ValidatePattern("^([a-z0-9]+(-[a-z0-9]+)*\.)+([a-z]){2,}$")]
+        [string]$ExistingDomain,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$DomainAdminCredentials,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$PSRemotingCredentials,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeSubCA,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofDomainController,
+
+        [Parameter(Mandatory=$True)]
+        [string]$IPofRootCA,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipHyperVInstallCheck
+    )
+
+    #region >> Helper Functions
+
+    # TestIsValidIPAddress
+    # ResolveHost
+    # GetDomainController
+    # Deploy-HyperVVagrantBoxManually
+    # Get-VagrantBoxManualDownload
+    # New-SubordinateCA
+
+    #endregion >> Helper Functions
+
+    #region >> Prep
+
+    $StartTime = Get-Date
+
+    $ElevationCheck = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (!$ElevationCheck) {
+        Write-Error "You must run the build.ps1 as an Administrator (i.e. elevated PowerShell Session)! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+
+    if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
+        $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
+    }
+
+    if (!$PSBoundParameters['CreateNewVMs'] -and $PSBoundParameters['VMStorageDirectory']) {
+        $CreateNewVMs = $True
+    }
+
+    if ($CreateNewVMs -and $PSBoundParameters['IPofServerToBeSubCA']) {
+        $ErrMsg = "The parameter-IPofServerToBeSubCA, and was used in conjunction with parameters " +
+        "that indicate that a new VM should be deployed (i.e. -CreateNewVMs and/or -VMStorageDirectory) " +
+        "Please only use -IPofServerToBeSubCA if that server are already exists on the network. Halting!"
+        Write-Error $ErrMsg
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$CreateNewVMs -and ! $PSBoundParameters['IPofServerToBeSubCA']) {
+        Write-Error "The $($MyInvocation.MyCommand.Name) function requires either the -CreateNewVMs or -IPOfServerToBeSubCA parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    <#
+    if ($PSBoundParameters['IPofServerToBeSubCA']) {
+        # Make sure we can reach RemoteHost IP(s) via WinRM/WSMan
+        if (![bool]$(Test-Connection -Protocol WSMan -ComputerName $IPofServerToBeSubCA -Count 1 -ErrorAction SilentlyContinue)) {
+            Write-Error "Unable to reach '$IPofServerToBeSubCA' via WinRM/WSMan! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    #>
+
+    if (!$PSBoundParameters['IPofDomainController']) {
+        # Make sure we can Resolve the Domain/Domain Controller
+        try {
+            [array]$ResolveDomain = Resolve-DNSName -Name $ExistingDomain -ErrorAction Stop
+            $IPofDomainController = $ResolveDomain[0].IPAddress
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    if (!$(TestIsValidIPAddress -IPAddress $IPofDomainController)) {
+        Write-Error "'$IPOfDomainController' is NOT a valid IPv4 address! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$(TestIsValidIPAddress -IPAddress $IPofRootCA)) {
+        Write-Error "'$IPofRootCA' is NOT a valid IPv4 address! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $FunctionsForSBUse = @(
+        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+        ${Function:GetDomainController}.Ast.Extent.Text
+        ${Function:GetElevation}.Ast.Extent.Text
+        ${Function:GetFileLockProcess}.Ast.Extent.Text
+        ${Function:GetNativePath}.Ast.Extent.Text
+        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+        ${Function:InstallFeatureDism}.Ast.Extent.Text
+        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+        ${Function:NewUniqueString}.Ast.Extent.Text
+        ${Function:PauseForWarning}.Ast.Extent.Text
+        ${Function:ResolveHost}.Ast.Extent.Text
+        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+        ${Function:UnzipFile}.Ast.Extent.Text
+        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+        ${Function:Generate-Certificate}.Ast.Extent.Text
+        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+        ${Function:Manage-HyperVVM}.Ast.Extent.Text
+        ${Function:New-DomainController}.Ast.Extent.Text
+        ${Function:New-RootCA}.Ast.Extent.Text
+        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
+        ${Function:New-SubordinateCA}.Ast.Extent.Text
+    )
+
+    $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
+    $DomainShortName = $($FinalDomainName -split '\.')[0]
+
+    #endregion >> Prep
+
+    # Create the new VMs if desired
+    if ($CreateNewVMs) {
+        # Check to Make Sure Hyper-V is installed
+        if (!$SkipHyperVInstallCheck) {
+            try {
+                $HyperVFeaturesInstallResults = InstallHyperVFeatures -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallHyperVFeatures function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+            try {
+                $InstallContainersFeatureDismResult = InstallFeatureDism -Feature Containers -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallFeatureDism function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+    
+            if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
+                if (!$AllowRestarts) {
+                    Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    Write-Output "RestartNeeded"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Restart-Computer -Confirm:$False -Force
+                }
+            }
+        }
+
+        #region >> Hardware Resource Check
+
+        # Make sure we have at least 35GB of Storage and 6GB of READILY AVAILABLE Memory
+        # Check Storage...
+        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
+            $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
+        }
+        else {
+            $VMStorageDirectoryDriveLetter = $VMStorageDirectory.Substring(0,1)
+        }
+
+        if ($LocalDrives.Name -notcontains $VMStorageDirectoryDriveLetter) {
+            Write-Error "'$VMStorageDirectory' does not appear to be a local drive! VMs MUST be stored on a local drive! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        $VMStorageDirectoryDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$VMStorageDirectoryDriveLetter`:'"
+        
+        if ($([Math]::Round($VMStorageDirectoryDriveInfo.FreeSpace / 1MB)-2000) -lt 35000) {
+            Write-Error "Drive '$VMStorageDirectoryDriveLetter' does not have at least 100GB of free space available! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Check Memory...
+        $OSInfo = Get-CimInstance Win32_OperatingSystem
+        $TotalMemory = $OSInfo.TotalVisibleMemorySize
+        $MemoryAvailable = $OSInfo.FreePhysicalMemory
+        $TotalMemoryInGB = [Math]::Round($TotalMemory / 1MB)
+        $MemoryAvailableInGB = [Math]::Round($MemoryAvailable / 1MB)
+        if ($MemoryAvailableInGB -lt 6 -and !$ForceWithLowMemory) {
+            $MemoryErrorMsg = "The Hyper-V hypervisor $env:ComputerName should have at least 12GB of memory " +
+            "readily available in order to run the new VMs. It currently only has about $MemoryAvailableInGB " +
+            "GB available for immediate use. Halting!"
+            Write-Error $MemoryErrorMsg
+            $global:FunctionResult = "1"
+            return
+        }
+
+        #endregion >> Hardware Resource Check
+
+        #region >> Deploy New VMs
+
+        $StartVMDeployment = Get-Date
+
+        # Prepare To Manage .box Files
+        if (!$(Test-Path "$VMStorageDirectory\BoxDownloads")) {
+            $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads" -Force
+        }
+        $BoxNameRegex = [regex]::Escape($($Windows2016VagrantBox -split '/')[0])
+        $BoxFileAlreadyPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -File -Filter "*.box" | Where-Object {$_.Name -match $BoxNameRegex}
+        $DecompressedBoxDirectoryPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -Directory | Where-Object {$_.Name -match $BoxNameRegex}
+        if ([bool]$DecompressedBoxDirectoryPresentCheck) {
+            $DecompressedBoxDirectoryItem = $DecompressedBoxDirectoryPresentCheck
+            $DecompressedBoxDir = $DecompressedBoxDirectoryItem.FullName
+        }
+        elseif ([bool]$BoxFileAlreadyPresentCheck) {
+            $BoxFileItem = $BoxFileAlreadyPresentCheck
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+        else {
+            $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+
+        $NewVMDeploySBAsString = @"
+[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+`$env:Path = '$env:Path'
+
+# Load the functions we packed up
+`$args | foreach { Invoke-Expression `$_ }
+
+`$DeployBoxSplatParams = @{
+    VagrantBox                  = '$Windows2016VagrantBox'
+    CPUs                        = 2
+    Memory                      = 4096
+    VagrantProvider             = "hyperv"
+    VMName                      = '$DomainShortName' + "SubCA"
+    VMDestinationDirectory      = '$VMStorageDirectory'
+    SkipHyperVInstallCheck      = `$True
+    CopyDecompressedDirectory   = `$True
+}
+
+if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
+    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
+    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
+    }
+}
+
+`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+`$DeployBoxResult
+"@
+        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+
+        if (!$IPofServerToBeSubCA) {
+            $DomainShortName = $($ExistingDomain -split "\.")[0]
+
+            Write-Host "Deploying New Subordinate CA VM '$DomainShortName`SubCA'..."
+
+            $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $(Get-Job).Name
+
+            $NewSubCAVMDeployJobSplatParams = @{
+                Name            = $NewSubCAVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
+            }
+            $NewSubCAVMDeployJobInfo = Start-Job @NewSubCAVMDeployJobSplatParams
+
+            $NewSubCAVMDeployResult = Wait-Job -Job $NewSUbCAVMDeployJobInfo | Receive-Job
+            $IPofServerToBeSubCA = $NewSubCAVMDeployResult.VMIPAddress
+
+            while (![bool]$(Get-VM -Name "$DomainShortName`SubCA" -ErrorAction SilentlyContinue)) {
+                Write-Host "Waiting for $DomainShortName`SubCA VM to be deployed..."
+                Start-Sleep -Seconds 15
+            }
+
+            if (!$IPofServerToBeSubCA) {
+                $IPofServerToBeSubCA = $(Get-VM -Name "$DomainShortName`SubCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+            }
+        }
+
+        [System.Collections.ArrayList]$VMsNotReportingIP = @()
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
+            $null = $VMsNotReportingIP.Add("$DomainShortName`SubCA")
+        }
+
+        if ($VMsNotReportingIP.Count -gt 0) {
+            Write-Error "The following VMs did NOT report thier IP Addresses within 30 minutes:`n$($VMsNotReportingIP -join "`n")`nHalting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Make sure IP is a valid IPv4 address
+        if (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
+            Write-Error "'$IPofServerToBeSubCA' is NOT a valid IPv4 IP Address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        Write-Host "Finished Deploying New VMs..."
+
+        #endregion >> Deploy New VMs
+    }
+
+    #region >> Update WinRM/WSMAN
+
+    Write-Host "Updating WinRM/WSMan to allow for PSRemoting to Servers ..."
+    try {
+        $null = Enable-PSRemoting -Force -ErrorAction Stop
+    }
+    catch {
+        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+
+        try {
+            $null = Enable-PSRemoting -Force
+        }
+        catch {
+            Write-Error $_
+            Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
+    if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
+        $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+    }
+
+    # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
+    $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+    [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
+
+    [System.Collections.ArrayList]$ItemsToAddToWSMANTrustedHosts = @(
+        $IPofServerToBeSubCA
+    )
+
+    foreach ($NetItem in $ItemsToAddToWSMANTrustedHosts) {
+        if ($CurrentTrustedHostsAsArray -notcontains $NetItem) {
+            $null = $CurrentTrustedHostsAsArray.Add($NetItem)
+        }
+    }
+    $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
+    Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+
+    Write-Host "Finished updating WinRM/WSMan..."
+
+    #endregion >> Update WinRM/WSMAN
+
+
+    #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+    Write-Host "Attempting New PSSession to Remote Hosts for up to 30 minutes to ensure they are ready..."
+
+    $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToSubCACheck"
+    $Counter = 0
+    while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+        try {
+            $SubCAPSSession = New-PSSession -ComputerName $IPofServerToBeSubCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+            if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+        }
+        catch {
+            if ($Counter -le 120) {
+                Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                Start-Sleep -Seconds 15
+            }
+            else {
+                Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        $Counter++
+    }
+
+    # Clear the PSSessions
+    Get-PSSession | Remove-PSSession
+
+    if ($CreateNewVMs) {
+        $EndVMDeployment = Get-Date
+        $TotalTime = $EndVMDeployment - $StartVMDeployment
+        Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
+    }
+
+    #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+
+    #region >> Join the Servers to Domain And Rename If Necessary
+
+    $JoinDomainJobSB = {
+        $JoinDomainSBAsString = @'
+# Synchronize time with time servers
+$null = W32tm /resync /rediscover /nowait
+
+# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)
+$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
+$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
+$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
+$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
+$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
+$UpdatedDNSServerList.Insert(0,$args[0])
+$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
+
+$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList
+[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder
+$UpdatedDNSSuffixList.Insert(0,$args[2])
+Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList
+
+# Try resolving the Domain for 30 minutes
+$Counter = 0
+while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {
+Write-Host "Waiting for DNS to resolve Domain Controller..."
+Start-Sleep -Seconds 15
+$Counter++
+}
+if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {
+Write-Error "Unable to resolve Domain $($args[2])! Halting!"
+$global:FunctionResult = "1"
+return
+}
+
+# Join Domain
+Rename-Computer -NewName $args[1]
+Start-Sleep -Seconds 10
+Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart
+'@
+        
+        $JoinDomainSB = [scriptblock]::Create($JoinDomainSBAsString)
+
+        $InvCmdJoinDomainSplatParams = @{
+            ComputerName    = $args[0]
+            Credential      = $args[1]
+            ScriptBlock     = $JoinDomainSB
+            ArgumentList    = $args[2],$args[3],$args[4],$args[5]
+        }
+        try {
+            Invoke-Command @InvCmdJoinDomainSplatParams
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    # Check if SubCA is already part of $ExistingDomain/$NewDomain
+    $InvCmdSubCADomainSplatParams = @{
+        ComputerName        = $IPofServerToBeSubCA
+        Credential          = $PSRemotingCredentials
+        ScriptBlock         = {$(Get-CimInstance win32_computersystem).Domain}
+        ErrorAction         = "Stop"
+    }
+    try {
+        $SubCADomain = Invoke-Command @InvCmdSubCADomainSplatParams
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if ($SubCADomain -ne $ExistingDomain) {
+        Write-Host "Joining the Sub CA to the Domain..."
+        $DesiredHostNameSubCA = $DomainShortName + "SubCA"
+
+        $JoinSubCAJobName = NewUniqueString -PossibleNewUniqueString "JoinSubCA" -ArrayOfStrings $(Get-Job).Name
+
+        $JoinSubCAArgList = @(
+            $IPofServerToBeSubCA
+            $PSRemotingCredentials
+            $IPofDomainController
+            $DesiredHostNameSubCA
+            $ExistingDomain
+            $DomainAdminCredentials
+        )
+        $JoinSubCAJobSplatParams = @{
+            Name            = $JoinSubCAJobName
+            Scriptblock     = $JoinDomainJobSB
+            ArgumentList    = $JoinSubCAArgList
+        }
+        $JoinSubCAJobInfo = Start-Job @JoinSubCAJobSplatParams
+        
+        $JoinSubCAResult = Wait-Job -Job $JoinSubCAJobInfo | Receive-Job
+
+        # Verify Sub CA is Joined to Domain
+        # Try to create a PSSession to the Sub CA for 15 minutes, then give up
+        Write-Host "Trying to remote into SubCA at '$IPofServerToBeSubCA' with Domain Admin Credentials after Joining Domain..."
+        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToSubCAPostDomainJoin"
+        $Counter = 0
+        while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+            try {
+                $SubCAPSSessionPostDomainJoin = New-PSSession -ComputerName $IPofServerToBeSubCA -Credential $DomainAdminCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+            }
+            catch {
+                if ($Counter -le 60) {
+                    Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                    Start-Sleep -Seconds 15
+                }
+                else {
+                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($DomainAdminCredentials.UserName)'! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+            $Counter++
+        }
+
+        if (!$SubCAPSSessionPostDomainJoin) {
+            Write-Error "Unable to create a PSSession to the Sub CA Server at '$IPofServerToBeSubCA' using Domain Admin Credentials $($DomainAdminCredentials.UserName)! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    #endregion >> Join the Servers to Domain And Rename If Necessary
+
+
+    #region >> Create the Sub CA
+
+    # Remove All Existing PSSessions
+    Get-PSSession | Remove-PSSession
+
+    Write-Host "Creating the New Subordinate CA..."
+    $NewSubCAResult = New-SubordinateCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofRootCA -SubCAIPOrFQDN $IPofServerToBeSubCA
+
+    #endregion >> Create the Sub CA
+
+    $EndTime = Get-Date
+    $TotalAllOpsTime = $EndTime - $StartTime
+    Write-Host "All operations for the $($MyInvocation.MyCommand.Name) function took $($TotalAllOpsTime.Hours) hours and $($TotalAllOpsTime.Minutes) minutes" -ForegroundColor Yellow
+
+    $NewSubCAResult
+
+}
+
+
 function Create-TwoTierPKI {
     [CmdletBinding()]
     Param (
@@ -171,7 +1890,7 @@ function Create-TwoTierPKI {
         return
     }
 
-    if ($PSBoundParameters['IPofServerToBeDomainController'] -and $PSBoundParameters['$IPofServerToBeRootCA']) {
+    if ($PSBoundParameters['IPofServerToBeDomainController'] -and $PSBoundParameters['IPofServerToBeRootCA']) {
         if ($IPofServerToBeDomainController -eq $IPofServerToBeRootCA) {
             $DCIsRootCA = $True
         }
@@ -626,7 +2345,7 @@ function Create-TwoTierPKI {
         Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
     }
 
-    #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+    #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
         
         
     #region >> Prep New Domain Controller
@@ -1038,6 +2757,799 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 }
 
 
+function Create-TwoTierPKIRedux {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [switch]$CreateNewVMs,
+
+        [Parameter(Mandatory=$False)]
+        [string]$VMStorageDirectory,
+
+        [Parameter(Mandatory=$False)]
+        [string]$Windows2016VagrantBox = "jborean93/WindowsServer2016", # Alternate - StefanScherer/windows_2016
+
+        [Parameter(Mandatory=$False)]
+        [ValidatePattern("^([a-z0-9]+(-[a-z0-9]+)*\.)+([a-z]){2,}$")]
+        [string]$NewDomain,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$DomainAdminCredentials, # If creating a New Domain, this will be a New Domain Account
+
+        [Parameter(Mandatory=$False)]
+        [pscredential]$LocalAdministratorAccountCredentials,
+
+        [Parameter(Mandatory=$False)]
+        [pscredential]$PSRemotingCredentials, # These credentials must grant access to ALL Servers
+
+        [Parameter(Mandatory=$False)]
+        [string]$ExistingDomain,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$DCIsRootCA,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeDomainController,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeRootCA,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeSubCA,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipHyperVInstallCheck
+    )
+
+    #region >> Helper Functions
+
+    # TestIsValidIPAddress
+    # ResolveHost
+    # GetDomainController
+    # Deploy-HyperVVagrantBoxManually
+    # Get-VagrantBoxManualDownload
+    # New-DomainController
+    # New-RootCA
+    # New-SubordinateCA
+
+    #endregion >> Helper Functions
+
+    #region >> Prep
+
+    $StartTime = Get-Date
+
+    $ElevationCheck = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (!$ElevationCheck) {
+        Write-Error "You must run the build.ps1 as an Administrator (i.e. elevated PowerShell Session)! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+
+    if ($($PSBoundParameters['CreateNewVMs'] -or $PSBoundParameters['NewDomain']) -and
+    !$PSBoundParameters['VMStorageDirectory']
+    ) {
+        $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
+    }
+
+    if (!$PSBoundParameters['CreateNewVMs'] -and
+    $($PSBoundParameters['VMStorageDirectory'] -or $PSBoundParameters['NewDomain'])
+    ) {
+        $CreateNewVMs = $True
+    }
+
+    if ($PSBoundParameters['NewDomain'] -and !$PSBoundParameters['LocalAdministratorAccountCredentials']) {
+        if (!$IPofServerToBeDomainController) {
+            $PromptMsg = "Please enter the *desired* password for the Local 'Administrator' account on the server that will become the new Domain Controller"
+        }
+        else {
+            $PromptMsg = "Please enter the password for the Local 'Administrator' Account on $IPofServerToBeDomainController"
+        }
+        $LocalAdministratorAccountPassword = Read-Host -Prompt $PromptMsg -AsSecureString
+        $LocalAdministratorAccountCredentials = [pscredential]::new("Administrator",$LocalAdministratorAccountPassword)
+    }
+
+    if ($($PSBoundParameters['IPofServerToBeRootCA'] -and !$PSBoundParameters['IPofServerToBeSubCA']) -or
+    $(!$PSBoundParameters['IPofServerToBeRootCA'] -and $PSBoundParameters['IPofServerToBeSubCA'])
+    ) {
+        Write-Error "You must use BOTH -IPofServerToBeRootCA and -IPofServerToBeSubCA parameters or NEITHER of them! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+    
+    if ($PSBoundParameters['NewDomain'] -and $PSBoundParameters['ExistingDomain']) {
+        Write-Error "Please use *either* the -NewDomain parameter *or* the -ExistingDomain parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$PSBoundParameters['NewDomain'] -and !$PSBoundParameters['ExistingDomain']) {
+        Write-Error "The $($MyInvocation.MyCommand.Name) function requires either the -ExistingDomain or the -NewDomain parameters! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$CreateNewVMs -and $PSBoundParameters['NewDomain'] -and !$PSBoundParameters['IPofServerToBeDomainController']) {
+        $PromptMsg = "Please enter the IP Address of the existing Windows Server that will become the new Domain Controller"
+        $IPofServerToBeDomainController = Read-Host -Prompt $PromptMsg
+        while (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+            Write-Warning "'$IPofServerToBeDomainController' is NOT a valid IPv4 address!"
+            $IPofServerToBeDomainController = Read-Host -Prompt $PromptMsg
+        }
+    }
+
+    if ($CreateNewVMs -and 
+    $($PSBoundParameters['IPofServerToBeDomainController'] -or $PSBoundParameters['ExistingDomain']) -and
+    $PSBoundParameters['IPofServerToBeRootCA'] -and $PSBoundParameters['IPofServerToBeSubCA']
+    ) {
+        $ErrMsg = "The parameters -IPofServerToBeDomainController, -IPofServerToBeRootCA, and " +
+        "-IPofServerToBeSubCA were used in conjunction with parameters that indicate that new VMs " +
+        "should be deployed (i.e. -CreateNewVMs, -VMStorageDirectory, or -NewDomain). Please only " +
+        "use -IPofServer* parameters if those servers are already exist. Halting!"
+        Write-Error $ErrMsg
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$CreateNewVMs -and !$PSBoundParameters['IPofServerToBeRootCA']) {
+        $PromptMsg = = "Please enter the IP Address of the existing Windows Server that will become the new Root CA"
+        $IPofServerToBeRootCA = Read-Host -Prompt $PromptMsg
+        while (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
+            Write-Warning "'$IPofServerToBeRootCA' is NOT a valid IPv4 address!"
+            $IPofServerToBeRootCA = Read-Host -Prompt $PromptMsg
+        }
+    }
+
+    if (!$CreateNewVMs -and !$PSBoundParameters['IPofServerToBeSubCA']) {
+        $PromptMsg = = "Please enter the IP Address of the existing Windows Server that will become the new Root CA"
+        $IPofServerToBeSubCA = Read-Host -Prompt $PromptMsg
+        while (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
+            Write-Warning "'$IPofServerToBeSubCA' is NOT a valid IPv4 address!"
+            $IPofServerToBeSubCA = Read-Host -Prompt $PromptMsg
+        }
+    }
+
+    if ($PSBoundParameters['IPofServerToBeDomainController'] -and $PSBoundParameters['IPofServerToBeRootCA']) {
+        if ($IPofServerToBeDomainController -eq $IPofServerToBeRootCA) {
+            $DCIsRootCA = $True
+        }
+    }
+
+    if (!$PSBoundParameters['NewDomain']) {
+        if (!$PSBoundParameters['IPofServerToBeDomainController']) {
+            # Make sure we can Resolve the Domain/Domain Controller
+            try {
+                [array]$ResolveDomain = Resolve-DNSName -Name $ExistingDomain -ErrorAction Stop
+                $IPofServerToBeDomainController = $ResolveDomain[0].IPAddress
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+            Write-Error "'$IPofServerToBeDomainController' is NOT a valid IPv4 address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    $FunctionsForSBUse = @(
+        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+        ${Function:GetDomainController}.Ast.Extent.Text
+        ${Function:GetElevation}.Ast.Extent.Text
+        ${Function:GetFileLockProcess}.Ast.Extent.Text
+        ${Function:GetNativePath}.Ast.Extent.Text
+        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+        ${Function:InstallFeatureDism}.Ast.Extent.Text
+        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+        ${Function:NewUniqueString}.Ast.Extent.Text
+        ${Function:PauseForWarning}.Ast.Extent.Text
+        ${Function:ResolveHost}.Ast.Extent.Text
+        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+        ${Function:UnzipFile}.Ast.Extent.Text
+        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+        ${Function:Generate-Certificate}.Ast.Extent.Text
+        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+        ${Function:Manage-HyperVVM}.Ast.Extent.Text
+        ${Function:New-DomainController}.Ast.Extent.Text
+        ${Function:New-RootCA}.Ast.Extent.Text
+        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
+        ${Function:New-SubordinateCA}.Ast.Extent.Text
+        ${Function:Create-Domain}.Ast.Extent.Text
+        ${Function:Create-RootCA}.Ast.Extent.Text
+        ${Function:Create-SubordinateCA}.Ast.Extent.Text
+    )
+
+    $CreateDCSplatParams = @{
+        PSRemotingCredentials                   = $PSRemotingCredentials
+        DomainAdminCredentials                  = $DomainAdminCredentials
+        LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
+    }
+
+    $CreateRootCASplatParams = @{
+        PSRemotingCredentials                   = $PSRemotingCredentials
+        DomainAdminCredentials                  = $DomainAdminCredentials
+    }
+
+    $CreateSubCASplatParams = @{
+        PSRemotingCredentials                   = $PSRemotingCredentials
+        DomainAdminCredentials                  = $DomainAdminCredentials
+    }
+
+    $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
+    $DomainShortName = $($FinalDomainName -split '\.')[0]
+
+    #endregion >> Prep
+
+
+    # Create the new VMs if desired
+    if ($CreateNewVMs) {
+        # Check to Make Sure Hyper-V is installed
+        if (!$SkipHyperVInstallCheck) {
+            try {
+                $HyperVFeaturesInstallResults = InstallHyperVFeatures -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallHyperVFeatures function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+            try {
+                $InstallContainersFeatureDismResult = InstallFeatureDism -Feature Containers -ParentFunction $MyInvocation.MyCommand.Name
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The InstallFeatureDism function (as executed by the $($MyInvocation.MyCommand.Name) function) failed! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+    
+            if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
+                if (!$AllowRestarts) {
+                    Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    Write-Output "RestartNeeded"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Restart-Computer -Confirm:$False -Force
+                }
+            }
+        }
+
+        #region >> Hardware Resource Check
+
+        # Make sure we have at least 100GB of Storage and 12GB of READILY AVAILABLE Memory
+        # Check Storage...
+        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
+            $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
+        }
+        else {
+            $VMStorageDirectoryDriveLetter = $VMStorageDirectory.Substring(0,1)
+        }
+
+        if ($LocalDrives.Name -notcontains $VMStorageDirectoryDriveLetter) {
+            Write-Error "'$VMStorageDirectory' does not appear to be a local drive! VMs MUST be stored on a local drive! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        $VMStorageDirectoryDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$VMStorageDirectoryDriveLetter`:'"
+        
+        if ($([Math]::Round($VMStorageDirectoryDriveInfo.FreeSpace / 1MB)-2000) -lt 100000) {
+            Write-Error "Drive '$VMStorageDirectoryDriveLetter' does not have at least 100GB of free space available! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Check Memory...
+        $OSInfo = Get-CimInstance Win32_OperatingSystem
+        $TotalMemory = $OSInfo.TotalVisibleMemorySize
+        $MemoryAvailable = $OSInfo.FreePhysicalMemory
+        $TotalMemoryInGB = [Math]::Round($TotalMemory / 1MB)
+        $MemoryAvailableInGB = [Math]::Round($MemoryAvailable / 1MB)
+        if ($MemoryAvailableInGB -lt 12 -and !$ForceWithLowMemory) {
+            $MemoryErrorMsg = "The Hyper-V hypervisor $env:ComputerName should have at least 12GB of memory " +
+            "readily available in order to run the new VMs. It currently only has about $MemoryAvailableInGB " +
+            "GB available for immediate use. Halting!"
+            Write-Error $MemoryErrorMsg
+            $global:FunctionResult = "1"
+            return
+        }
+
+        #endregion >> Hardware Resource Check
+
+        #region >> Deploy New VMs
+
+        $StartVMDeployment = Get-Date
+
+        # Prepare To Manage .box Files
+        if (!$(Test-Path "$VMStorageDirectory\BoxDownloads")) {
+            $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads" -Force
+        }
+        $BoxNameRegex = [regex]::Escape($($Windows2016VagrantBox -split '/')[0])
+        $BoxFileAlreadyPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -File -Filter "*.box" | Where-Object {$_.Name -match $BoxNameRegex}
+        $DecompressedBoxDirectoryPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -Directory | Where-Object {$_.Name -match $BoxNameRegex}
+        if ([bool]$DecompressedBoxDirectoryPresentCheck) {
+            $DecompressedBoxDirectoryItem = $DecompressedBoxDirectoryPresentCheck
+            $DecompressedBoxDir = $DecompressedBoxDirectoryItem.FullName
+        }
+        elseif ([bool]$BoxFileAlreadyPresentCheck) {
+            $BoxFileItem = $BoxFileAlreadyPresentCheck
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+        else {
+            $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
+            $BoxFilePath = $BoxFileItem.FullName
+        }
+
+        if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
+            if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
+                # Download bsdtar from latest MSYS2 available on pldmgg github
+                $WindowsNativeLinuxUtilsZipUrl = "https://github.com/pldmgg/WindowsNativeLinuxUtils/raw/master/MSYS2_20161025/bsdtar.zip"
+                Invoke-WebRequest -Uri $WindowsNativeLinuxUtilsZipUrl -OutFile "$HOME\Downloads\bsdtar.zip"
+                Expand-Archive -Path "$HOME\Downloads\bsdtar.zip" -DestinationPath "$HOME\Downloads" -Force
+                $BsdTarDirectory = "$HOME\Downloads\bsdtar"
+    
+                if ($($env:Path -split ";") -notcontains $BsdTarDirectory) {
+                    if ($env:Path[-1] -eq ";") {
+                        $env:Path = "$env:Path$BsdTarDirectory"
+                    }
+                    else {
+                        $env:Path = "$env:Path;$BsdTarDirectory"
+                    }
+                }
+                $TarCmd = "bsdtar"
+            }
+            else {
+                $TarCmd = "tar"
+            }
+        }
+        
+        if ($BoxFileItem) {
+            if (!$(Test-Path "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)")) {
+                $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            }
+
+            # Extract the .box File
+            Push-Location "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                Start-Sleep -Seconds 5
+            }
+            try {
+                $null = & $TarCmd -xzvf $BoxFilePath 2>&1
+            }
+            catch {
+                Write-Error $_
+                #Remove-Item $BoxFilePath -Force
+                $global:FunctionResult = "1"
+                return
+            }
+            Pop-Location
+
+            $DecompressedBoxDir = "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+        }
+
+        # Make sure $BoxFilePath doesn't exist as a variable so that the below VM Deployment scriptblock
+        # copies the $DecompressedBoxDir
+        Remove-Variable -Name 'BoxFilePath' -Force -ErrorAction SilentlyContinue
+
+        $ErrMsg = "Unable to find the decompressed Vagrant Box directory! Halting!"
+        if (!$DecompressedBoxDir) {
+            Write-Error $ErrMsg
+            $global:FunctionResult = "1"
+            return
+        }
+        if ($DecompressedBoxDir) {
+            if (!$(Test-Path $DecompressedBoxDir)) {
+                Write-Error $ErrMsg
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        $NewVMDeploySBAsString = @"
+[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+`$env:Path = '$env:Path'
+
+# Load the functions we packed up
+`$args | foreach { Invoke-Expression `$_ }
+
+`$DeployBoxSplatParams = @{
+    VagrantBox                  = '$Windows2016VagrantBox'
+    CPUs                        = 2
+    Memory                      = 4096
+    VagrantProvider             = "hyperv"
+    VMName                      = '$DomainShortName' + "replaceme"
+    VMDestinationDirectory      = '$VMStorageDirectory'
+    SkipHyperVInstallCheck      = `$True
+    CopyDecompressedDirectory   = `$True
+}
+
+if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
+    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
+    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
+    }
+}
+
+`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+`$DeployBoxResult
+"@
+
+        if ($NewDomain -and !$IPofServerToBeDomainController) {
+            $DomainShortName = $($NewDomain -split "\.")[0]
+            Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
+
+            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $(Get-Job).Name
+
+            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','DC1'
+            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
+
+            $NewDCVMDeployJobSplatParams = @{
+                Name            = $NewDCVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
+            }
+            $NewDCVMDeployJobInfo = Start-Job @NewDCVMDeployJobSplatParams
+        }
+        if (!$IPofServerToBeRootCA -and !$DCIsRootCA) {
+            if ($NewDomain) {
+                $DomainShortName = $($NewDomain -split "\.")[0]
+            }
+            if ($ExistingDomain) {
+                $DomainShortName = $($ExistingDomain -split "\.")[0]
+            }
+            Write-Host "Deploying New Root CA VM '$DomainShortName`RootCA'..."
+
+            $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $(Get-Job).Name
+
+            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','RootCA'
+            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
+
+            $NewRootCAVMDeployJobSplatParams = @{
+                Name            = $NewRootCAVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
+            }
+            $NewRootCAVMDeployJobInfo = Start-Job @NewRootCAVMDeployJobSplatParams
+        }
+        if (!$IPofServerToBeSubCA) {
+            if ($NewDomain) {
+                $DomainShortName = $($NewDomain -split "\.")[0]
+            }
+            if ($ExistingDomain) {
+                $DomainShortName = $($ExistingDomain -split "\.")[0]
+            }
+            Write-Host "Deploying New Subordinate CA VM '$DomainShortName`SubCA'..."
+
+            $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $(Get-Job).Name
+
+            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','SubCA'
+            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
+
+            $NewSubCAVMDeployJobSplatParams = @{
+                Name            = $NewSubCAVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
+            }
+            $NewSubCAVMDeployJobInfo = Start-Job @NewSubCAVMDeployJobSplatParams
+        }
+
+        if ($NewDomain -and !$IPofServerToBeDomainController) {
+            $NewDCVMDeployResult = Wait-Job -Job $NewDCVMDeployJobInfo | Receive-Job
+
+            while (![bool]$(Get-VM -Name "$DomainShortName`DC1" -ErrorAction SilentlyContinue)) {
+                Write-Host "Waiting for $DomainShortName`DC1 VM to be deployed..."
+                Start-Sleep -Seconds 15
+            }
+
+            $IPofServerToBeDomainController = $NewDCVMDeployResult.VMIPAddress
+            if (!$IPofServerToBeDomainController) {
+                $IPofServerToBeDomainController = $(Get-VM -Name "$DomainShortName`DC1").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+            }
+        }
+        if (!$IPofServerToBeRootCA) {
+            if ($DCIsRootCA) {
+                $IPofServerToBeRootCA = $IPofServerToBeDomainController
+            }
+
+            if (!$DCIsRootCA) {
+                $NewRootCAVMDeployResult = Wait-Job -Job $NewRootCAVMDeployJobInfo | Receive-Job
+                $IPofServerToBeRootCA = $NewRootCAVMDeployResult.VMIPAddress
+                
+                while (![bool]$(Get-VM -Name "$DomainShortName`RootCA" -ErrorAction SilentlyContinue)) {
+                    Write-Host "Waiting for $DomainShortName`RootCA VM to be deployed..."
+                    Start-Sleep -Seconds 15
+                }
+
+                if (!$IPofServerToBeRootCA) {
+                    $IPofServerToBeRootCA = $(Get-VM -Name "$DomainShortName`RootCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                }
+            }
+        }
+        if (!$IPofServerToBeSubCA) {
+            $NewSubCAVMDeployResult = Wait-Job -Job $NewSubCAVMDeployJobInfo | Receive-Job
+            $IPofServerToBeSubCA = $NewSubCAVMDeployResult.VMIPAddress
+
+            while (![bool]$(Get-VM -Name "$DomainShortName`SubCA" -ErrorAction SilentlyContinue)) {
+                Write-Host "Waiting for $DomainShortName`SubCA VM to be deployed..."
+                Start-Sleep -Seconds 15
+            }
+
+            if (!$IPofServerToBeSubCA) {
+                $IPofServerToBeSubCA = $(Get-VM -Name "$DomainShortName`SubCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+            }
+        }
+
+        [System.Collections.ArrayList]$VMsNotReportingIP = @()
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+            $null = $VMsNotReportingIP.Add("$DomainShortName`DC1")
+        }
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
+            $null = $VMsNotReportingIP.Add("$DomainShortName`RootCA")
+        }
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
+            $null = $VMsNotReportingIP.Add("$DomainShortName`SubCA")
+        }
+
+        if ($VMsNotReportingIP.Count -gt 0) {
+            Write-Error "The following VMs did NOT report thier IP Addresses within 30 minutes:`n$($VMsNotReportingIP -join "`n")`nHalting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        Write-Host "Finished Deploying New VMs..."
+
+        if ($NewDomain) {
+            Write-Host "IP of DC is $IPOfServerToBeDomainController"
+        }
+        Write-Host "IP of Root CA is $IPOfServerToBeRootCA"
+        Write-Host "IP of Sub CA is $IPOfServerToBeSubCA"
+
+        #region >> Update WinRM/WSMAN
+
+        Write-Host "Updating WinRM/WSMan to allow for PSRemoting to Servers ..."
+        try {
+            $null = Enable-PSRemoting -Force -ErrorAction Stop
+        }
+        catch {
+            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+
+            try {
+                $null = Enable-PSRemoting -Force
+            }
+            catch {
+                Write-Error $_
+                Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
+        if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
+            $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+        }
+
+        # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
+        $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+        [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
+
+        [System.Collections.ArrayList]$ItemsToAddToWSMANTrustedHosts = @(
+            $IPofServerToBeRootCA
+            $IPofServerToBeSubCA
+        )
+        if ($IPofServerToBeDomainController) {
+            $null = $ItemsToAddToWSMANTrustedHosts.Add($IPofServerToBeDomainController)
+        }
+        foreach ($NetItem in $ItemsToAddToWSMANTrustedHosts) {
+            if ($CurrentTrustedHostsAsArray -notcontains $NetItem) {
+                $null = $CurrentTrustedHostsAsArray.Add($NetItem)
+            }
+        }
+        $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
+        Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+
+        Write-Host "Finished updating WinRM/WSMan..."
+
+        #endregion >> Update WinRM/WSMAN
+
+
+        #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+        Write-Host "Attempting New PSSession to Remote Hosts for up to 30 minutes to ensure they are ready..."
+        if ($NewDomain) {
+            $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToDC1Check"
+            $Counter = 0
+            while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+                try {
+                    $DCPSSession = New-PSSession -ComputerName $IPofServerToBeDomainController -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                    if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+                }
+                catch {
+                    if ($Counter -le 120) {
+                        Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                        Start-Sleep -Seconds 15
+                    }
+                    else {
+                        Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                        $global:FunctionResult = "1"
+                        $DCPSRemotingFailure
+                        return
+                    }
+                }
+                $Counter++
+            }
+        }
+        if ($DCPSRemotingFailure) {
+            Write-Host "Tried to remote into DC1 with the following parameters:"
+            $IPofServerToBeDomainController
+            $PSRemotingCredentials
+            $global:FunctionResult = "1"
+            return
+        }
+
+        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCACheck"
+        $Counter = 0
+        while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+            try {
+                $RootCAPSSession = New-PSSession -ComputerName $IPofServerToBeRootCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+            }
+            catch {
+                if ($Counter -le 120) {
+                    Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                    Start-Sleep -Seconds 15
+                }
+                else {
+                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                    $global:FunctionResult = "1"
+                    $RootCAPSRemotingFailure = $True
+                    return
+                }
+            }
+            $Counter++
+        }
+
+        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToSubCACheck"
+        $Counter = 0
+        while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+            try {
+                $SubCAPSSession = New-PSSession -ComputerName $IPofServerToBeSubCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+            }
+            catch {
+                if ($Counter -le 60) {
+                    Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                    Start-Sleep -Seconds 15
+                }
+                else {
+                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+            $Counter++
+        }
+
+        # Clear the PSSessions
+        Get-PSSession | Remove-PSSession
+
+        $EndVMDeployment = Get-Date
+
+        if ($StartVMDeployment -and $EndVMDeployment) {
+            $TotalTime = $EndVMDeployment - $StartVMDeployment
+            Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
+        }
+
+        #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+        # Finish setting splat params for Create-Domain, Create-RootCA, and Create-SubordinateCA functions...
+        if ($NewDomain) {
+            $CreateDCSplatParams.Add("IPofServerToBeDomainController",$IPofServerToBeDomainController)
+            $CreateDCSplatParams.Add("NewDomain",$FinalDomainName)
+
+            Write-Host "Splat Params for Create-Domain are:" -ForegroundColor Yellow
+            $CreateDCSplatParams
+        }
+
+        $CreateRootCASplatParams.Add("IPofServerToBeRootCA",$IPofServerToBeRootCA)
+        $CreateRootCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
+        $CreateRootCASplatParams.Add("ExistingDomain",$FinalDomainName)
+        Write-Host "Splat Params for Create-RootCA are:" -ForegroundColor Yellow
+        $CreateRootCASplatParams
+
+        $CreateSubCASplatParams.Add("IPofServerToBeSubCA",$IPofServerToBeSubCA)
+        $CreateSubCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
+        $CreateSubCASplatParams.Add("IPofRootCA",$IPofServerToBeRootCA)
+        $CreateSubCASplatParams.Add("ExistingDomain",$FinalDomainName)
+        Write-Host "Splat Params for Create-SubordinateCA are:" -ForegroundColor Yellow
+        $CreateSubCASplatParams
+
+        
+        #endregion >> Deploy New VMs
+    }
+
+    #region >> Create the Services
+
+    # Can't Invoke-Parallel because Root CA depends on DC and SubCA Depends on Root CA...
+    <#
+    $ArrayOfPSObjects = @(
+        [pscustomobject]@{
+            Purpose             = "ForDC"
+            FunctionsForSBUse   = $FunctionsForSBUse
+            SplatParams         = $CreateDCSplatParams
+        }
+        [pscustomobject]@{
+            Purpose             = "ForRootCA"
+            FunctionsForSBUse   = $FunctionsForSBUse
+            SplatParams         = $CreateRootCASplatParams
+        }
+        [pscustomobject]@{
+            Purpose             = "ForSubCA"
+            FunctionsForSBUse   = $FunctionsForSBUse
+            SplatParams         = $CreateSubCASplatParams
+        }
+    )
+
+    $ArrayOfPSObjects | Invoke-Parallel {
+        # Load the functions we packed up
+        foreach ($func in $_.FunctionsForSBUse) { Invoke-Expression $func }
+        $SplatParams = $_.SplatParams
+
+        if ($_.Purpose -eq "ForDC") {
+            Create-Domain @SplatParams
+        }
+        if ($_.Purpose -eq "ForRootCA") {
+            Create-RootCA @SplatParams
+        }
+        if ($_.Purpose -eq "ForSubCA") {
+            Create-SubCA @SplatParams
+        }
+    }
+    #>
+    
+    if ($NewDomain) {
+        $CreateDCResult = Create-Domain @CreateDCSplatParams
+    }
+
+    $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
+
+    $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
+
+    $EndTime = Get-Date
+    $TotalAllOpsTime = $EndTime - $StartTime
+    Write-Host "All operations for the $($MyInvocation.MyCommand.Name) function took $($TotalAllOpsTime.Hours) hours and $($TotalAllOpsTime.Minutes) minutes" -ForegroundColor Yellow
+
+    $Output = @{
+        CreateRootCAResult      = $CreateRootCAResult
+        CreateSubCAResult       = $CreateSubCAResult
+    }
+    if ($CreateDCResult) {
+        $Output.Add("CreateDCResult",$CreateDCResult)
+    }
+
+    [pscustomobject]$Output
+
+    #end >> Create the Services
+}
+
+
 <#
     .SYNOPSIS
         This function downloads the specified Vagrant Virtual Machine from https://app.vagrantup.com
@@ -1138,6 +3650,9 @@ function Deploy-HyperVVagrantBoxManually {
         [Parameter(Mandatory=$False)]
         [string]$BoxFilePath,
 
+        [Parameter(Mandatory=$False)]
+        [string]$DecompressedBoxDirectory,
+
         [Parameter(Mandatory=$True)]
         [ValidateSet("hyperv")]
         [string]$VagrantProvider,
@@ -1170,7 +3685,10 @@ function Deploy-HyperVVagrantBoxManually {
 
         [Parameter(Mandatory=$False)]
         [ValidateSet("Vagrant")]
-        [string]$Repository
+        [string]$Repository,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$CopyDecompressedDirectory
     )
 
     #region >> Variable/Parameter Transforms and PreRun Prep
@@ -1283,7 +3801,7 @@ function Deploy-HyperVVagrantBoxManually {
 
     #region >> Main Body
 
-    if (!$BoxFilePath) {
+    if (!$BoxFilePath -and !$DecompressedBoxDirectory) {
         $GetVagrantBoxSplatParams = @{
             VagrantBox          = $VagrantBox
             VagrantProvider     = $VagrantProvider
@@ -1312,7 +3830,8 @@ function Deploy-HyperVVagrantBoxManually {
     
         $BoxFilePath = $DownloadedBoxFilePath
     }
-    else {
+
+    if ($BoxFilePath) {
         if (!$(Test-Path $BoxFilePath)) {
             Write-Error "The path $BoxFilePath was not found! Halting!"
             $global:FunctionResult = "1"
@@ -1320,33 +3839,54 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
-    # Extract the .box File
-    $DownloadedVMDir = "$TemporaryDownloadDirectory\$NewVMName"
-    if (!$(Test-Path $DownloadedVMDir)) {
-        $null = New-Item -ItemType Directory -Path $DownloadedVMDir
+    if (!$DecompressedBoxDirectory) {
+        $DownloadedVMDir = "$TemporaryDownloadDirectory\$NewVMName"
+        if (!$(Test-Path $DownloadedVMDir)) {
+            $null = New-Item -ItemType Directory -Path $DownloadedVMDir
+        }
+        
+        # Extract the .box File
+        Push-Location $DownloadedVMDir
+        while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+            Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+            Start-Sleep -Seconds 5
+        }
+        try {
+            $null = & $TarCmd -xzvf $BoxFilePath 2>&1
+        }
+        catch {
+            Write-Error $_
+            #Remove-Item $BoxFilePath -Force
+            $global:FunctionResult = "1"
+            return
+        }
+        Pop-Location
+
+        $DecompressedBoxDirectory = $DownloadedVMDir
     }
-    Push-Location $DownloadedVMDir
-    while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath)) {
-        Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-        Start-Sleep -Seconds 5
+
+    if ($DecompressedBoxDirectory) {
+        if (!$(Test-Path $DecompressedBoxDirectory)) {
+            Write-Error "The path $DecompressedBoxDirectory was not found! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
     }
-    try {
-        $null = & $TarCmd -xzvf $BoxFilePath 2>&1
-    }
-    catch {
-        Write-Error $_
-        #Remove-Item $BoxFilePath -Force
-        $global:FunctionResult = "1"
-        return
-    }
-    Pop-Location
 
     try {
-        Write-Host "Moving decompressed VM from '$DownloadedVMDir' to '$VMDestinationDirectory'..."
-        if (Test-Path "$VMDestinationDirectory\$($DownloadedVMDir | Split-Path -Leaf)") {
-            Remove-Item -Path "$VMDestinationDirectory\$($DownloadedVMDir | Split-Path -Leaf)" -Recurse -Force
+        if ($CopyDecompressedDirectory) {
+            Write-Host "Copying decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory\$NewVMName'..."
+            $ItemsToCopy = Get-ChildItem $DecompressedBoxDirectory
+            $ItemsToCopy | foreach {Copy-Item -Path $_.FullName -Recurse -Destination "$VMDestinationDirectory\$NewVMName" -Force -ErrorAction SilentlyContinue}
         }
-        Move-Item -Path $DownloadedVMDir -Destination $VMDestinationDirectory -Force -ErrorAction Stop
+        else {
+            Write-Host "Moving decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory'..."
+            if (Test-Path "$VMDestinationDirectory\$NewVMName") {
+                Remove-Item -Path "$VMDestinationDirectory\$NewVMName" -Recurse -Force
+            }
+            Move-Item -Path $DecompressedBoxDirectory -Destination $VMDestinationDirectory -Force -ErrorAction Stop
+            Rename-Item -Path "$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -NewName $NewVMName
+        }
 
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
         $ExternalvSwitches = Get-VMSwitch -SwitchType External
@@ -1455,7 +3995,7 @@ function Deploy-HyperVVagrantBoxManually {
         Write-Host "To login to the Vagrant VM, use 'ssh -i `"$HOME\.ssh\vagrant_unsecure_private_key`" vagrant@$NewVMIP' OR use the Hyper-V Console GUI with username/password vagrant/vagrant"
     }
 
-    [pscustomobject]@{
+    $Output = @{
         VMName                  = $NewVMName
         VMIPAddress             = $NewVMIP
         CreateVMOutput          = $CreateVMOutput
@@ -1464,6 +4004,11 @@ function Deploy-HyperVVagrantBoxManually {
         HyperVVMLocation        = $VMDestinationDirectory
         ExternalSwitchCreated   = if ($ExternalSwitchCreated) {$True} else {$False}
     }
+    if ($MoveDecompressedDir) {
+        $Output.Add("DecompressedBoxFileLocation",$DecompressedBoxFileLocation.FullName)
+    }
+
+    [pscustomobject]$Output
 
     #endregion >> Main Body
 }
@@ -5323,6 +7868,566 @@ function Get-VagrantBoxManualDownload {
     Get-Item "$DownloadDirectory\$OutFileName"
 
     ##### END Main Body #####
+}
+
+
+function Invoke-Parallel {
+    <#
+    .SYNOPSIS
+        Function to control parallel processing using runspaces
+
+    .DESCRIPTION
+        Function to control parallel processing using runspaces
+
+            Note that each runspace will not have access to variables and commands loaded in your session or in other runspaces by default.
+            This behaviour can be changed with parameters.
+
+    .PARAMETER ScriptFile
+        File to run against all input objects.  Must include parameter to take in the input object, or use $args.  Optionally, include parameter to take in parameter.  Example: C:\script.ps1
+
+    .PARAMETER ScriptBlock
+        Scriptblock to run against all computers.
+
+        You may use $Using:<Variable> language in PowerShell 3 and later.
+
+            The parameter block is added for you, allowing behaviour similar to foreach-object:
+                Refer to the input object as $_.
+                Refer to the parameter parameter as $parameter
+
+    .PARAMETER InputObject
+        Run script against these specified objects.
+
+    .PARAMETER Parameter
+        This object is passed to every script block.  You can use it to pass information to the script block; for example, the path to a logging folder
+
+            Reference this object as $parameter if using the scriptblock parameterset.
+
+    .PARAMETER ImportVariables
+        If specified, get user session variables and add them to the initial session state
+
+    .PARAMETER ImportModules
+        If specified, get loaded modules and pssnapins, add them to the initial session state
+
+    .PARAMETER Throttle
+        Maximum number of threads to run at a single time.
+
+    .PARAMETER SleepTimer
+        Milliseconds to sleep after checking for completed runspaces and in a few other spots.  I would not recommend dropping below 200 or increasing above 500
+
+    .PARAMETER RunspaceTimeout
+        Maximum time in seconds a single thread can run.  If execution of your code takes longer than this, it is disposed.  Default: 0 (seconds)
+
+        WARNING:  Using this parameter requires that maxQueue be set to throttle (it will be by default) for accurate timing.  Details here:
+        http://gallery.technet.microsoft.com/Run-Parallel-Parallel-377fd430
+
+    .PARAMETER NoCloseOnTimeout
+        Do not dispose of timed out tasks or attempt to close the runspace if threads have timed out. This will prevent the script from hanging in certain situations where threads become non-responsive, at the expense of leaking memory within the PowerShell host.
+
+    .PARAMETER MaxQueue
+        Maximum number of powershell instances to add to runspace pool.  If this is higher than $throttle, $timeout will be inaccurate
+
+        If this is equal or less than throttle, there will be a performance impact
+
+        The default value is $throttle times 3, if $runspaceTimeout is not specified
+        The default value is $throttle, if $runspaceTimeout is specified
+
+    .PARAMETER LogFile
+        Path to a file where we can log results, including run time for each thread, whether it completes, completes with errors, or times out.
+
+    .PARAMETER AppendLog
+        Append to existing log
+
+    .PARAMETER Quiet
+        Disable progress bar
+
+    .EXAMPLE
+        Each example uses Test-ForPacs.ps1 which includes the following code:
+            param($computer)
+
+            if(test-connection $computer -count 1 -quiet -BufferSize 16){
+                $object = [pscustomobject] @{
+                    Computer=$computer;
+                    Available=1;
+                    Kodak=$(
+                        if((test-path "\\$computer\c$\users\public\desktop\Kodak Direct View Pacs.url") -or (test-path "\\$computer\c$\documents and settings\all users\desktop\Kodak Direct View Pacs.url") ){"1"}else{"0"}
+                    )
+                }
+            }
+            else{
+                $object = [pscustomobject] @{
+                    Computer=$computer;
+                    Available=0;
+                    Kodak="NA"
+                }
+            }
+
+            $object
+
+    .EXAMPLE
+        Invoke-Parallel -scriptfile C:\public\Test-ForPacs.ps1 -inputobject $(get-content C:\pcs.txt) -runspaceTimeout 10 -throttle 10
+
+            Pulls list of PCs from C:\pcs.txt,
+            Runs Test-ForPacs against each
+            If any query takes longer than 10 seconds, it is disposed
+            Only run 10 threads at a time
+
+    .EXAMPLE
+        Invoke-Parallel -scriptfile C:\public\Test-ForPacs.ps1 -inputobject c-is-ts-91, c-is-ts-95
+
+            Runs against c-is-ts-91, c-is-ts-95 (-computername)
+            Runs Test-ForPacs against each
+
+    .EXAMPLE
+        $stuff = [pscustomobject] @{
+            ContentFile = "windows\system32\drivers\etc\hosts"
+            Logfile = "C:\temp\log.txt"
+        }
+
+        $computers | Invoke-Parallel -parameter $stuff {
+            $contentFile = join-path "\\$_\c$" $parameter.contentfile
+            Get-Content $contentFile |
+                set-content $parameter.logfile
+        }
+
+        This example uses the parameter argument.  This parameter is a single object.  To pass multiple items into the script block, we create a custom object (using a PowerShell v3 language) with properties we want to pass in.
+
+        Inside the script block, $parameter is used to reference this parameter object.  This example sets a content file, gets content from that file, and sets it to a predefined log file.
+
+    .EXAMPLE
+        $test = 5
+        1..2 | Invoke-Parallel -ImportVariables {$_ * $test}
+
+        Add variables from the current session to the session state.  Without -ImportVariables $Test would not be accessible
+
+    .EXAMPLE
+        $test = 5
+        1..2 | Invoke-Parallel {$_ * $Using:test}
+
+        Reference a variable from the current session with the $Using:<Variable> syntax.  Requires PowerShell 3 or later. Note that -ImportVariables parameter is no longer necessary.
+
+    .FUNCTIONALITY
+        PowerShell Language
+
+    .NOTES
+        Credit to Boe Prox for the base runspace code and $Using implementation
+            http://learn-powershell.net/2012/05/10/speedy-network-information-query-using-powershell/
+            http://gallery.technet.microsoft.com/scriptcenter/Speedy-Network-Information-5b1406fb#content
+            https://github.com/proxb/PoshRSJob/
+
+        Credit to T Bryce Yehl for the Quiet and NoCloseOnTimeout implementations
+
+        Credit to Sergei Vorobev for the many ideas and contributions that have improved functionality, reliability, and ease of use
+
+    .LINK
+        https://github.com/RamblingCookieMonster/Invoke-Parallel
+    #>
+    [cmdletbinding(DefaultParameterSetName='ScriptBlock')]
+    Param (
+        [Parameter(Mandatory=$false,position=0,ParameterSetName='ScriptBlock')]
+        [System.Management.Automation.ScriptBlock]$ScriptBlock,
+
+        [Parameter(Mandatory=$false,ParameterSetName='ScriptFile')]
+        [ValidateScript({Test-Path $_ -pathtype leaf})]
+        $ScriptFile,
+
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [Alias('CN','__Server','IPAddress','Server','ComputerName')]
+        [PSObject]$InputObject,
+
+        [PSObject]$Parameter,
+
+        [switch]$ImportVariables,
+        [switch]$ImportModules,
+        [switch]$ImportFunctions,
+
+        [int]$Throttle = 20,
+        [int]$SleepTimer = 200,
+        [int]$RunspaceTimeout = 0,
+        [switch]$NoCloseOnTimeout = $false,
+        [int]$MaxQueue,
+
+        [validatescript({Test-Path (Split-Path $_ -parent)})]
+        [switch] $AppendLog = $false,
+        [string]$LogFile,
+
+        [switch] $Quiet = $false
+    )
+    begin {
+        #No max queue specified?  Estimate one.
+        #We use the script scope to resolve an odd PowerShell 2 issue where MaxQueue isn't seen later in the function
+        if( -not $PSBoundParameters.ContainsKey('MaxQueue') ) {
+            if($RunspaceTimeout -ne 0){ $script:MaxQueue = $Throttle }
+            else{ $script:MaxQueue = $Throttle * 3 }
+        }
+        else {
+            $script:MaxQueue = $MaxQueue
+        }
+        $ProgressId = Get-Random
+        Write-Verbose "Throttle: '$throttle' SleepTimer '$sleepTimer' runSpaceTimeout '$runspaceTimeout' maxQueue '$maxQueue' logFile '$logFile'"
+
+        #If they want to import variables or modules, create a clean runspace, get loaded items, use those to exclude items
+        if ($ImportVariables -or $ImportModules -or $ImportFunctions) {
+            $StandardUserEnv = [powershell]::Create().addscript({
+
+                #Get modules, snapins, functions in this clean runspace
+                $Modules = Get-Module | Select-Object -ExpandProperty Name
+                $Snapins = Get-PSSnapin | Select-Object -ExpandProperty Name
+                $Functions = Get-ChildItem function:\ | Select-Object -ExpandProperty Name
+
+                #Get variables in this clean runspace
+                #Called last to get vars like $? into session
+                $Variables = Get-Variable | Select-Object -ExpandProperty Name
+
+                #Return a hashtable where we can access each.
+                @{
+                    Variables   = $Variables
+                    Modules     = $Modules
+                    Snapins     = $Snapins
+                    Functions   = $Functions
+                }
+            }).invoke()[0]
+
+            if ($ImportVariables) {
+                #Exclude common parameters, bound parameters, and automatic variables
+                Function _temp {[cmdletbinding(SupportsShouldProcess=$True)] param() }
+                $VariablesToExclude = @( (Get-Command _temp | Select-Object -ExpandProperty parameters).Keys + $PSBoundParameters.Keys + $StandardUserEnv.Variables )
+                Write-Verbose "Excluding variables $( ($VariablesToExclude | Sort-Object ) -join ", ")"
+
+                # we don't use 'Get-Variable -Exclude', because it uses regexps.
+                # One of the veriables that we pass is '$?'.
+                # There could be other variables with such problems.
+                # Scope 2 required if we move to a real module
+                $UserVariables = @( Get-Variable | Where-Object { -not ($VariablesToExclude -contains $_.Name) } )
+                Write-Verbose "Found variables to import: $( ($UserVariables | Select-Object -expandproperty Name | Sort-Object ) -join ", " | Out-String).`n"
+            }
+            if ($ImportModules) {
+                $UserModules = @( Get-Module | Where-Object {$StandardUserEnv.Modules -notcontains $_.Name -and (Test-Path $_.Path -ErrorAction SilentlyContinue)} | Select-Object -ExpandProperty Path )
+                $UserSnapins = @( Get-PSSnapin | Select-Object -ExpandProperty Name | Where-Object {$StandardUserEnv.Snapins -notcontains $_ } )
+            }
+            if($ImportFunctions) {
+                $UserFunctions = @( Get-ChildItem function:\ | Where-Object { $StandardUserEnv.Functions -notcontains $_.Name } )
+            }
+        }
+
+        #region functions
+            Function Get-RunspaceData {
+                [cmdletbinding()]
+                param( [switch]$Wait )
+                #loop through runspaces
+                #if $wait is specified, keep looping until all complete
+                Do {
+                    #set more to false for tracking completion
+                    $more = $false
+
+                    #Progress bar if we have inputobject count (bound parameter)
+                    if (-not $Quiet) {
+                        Write-Progress -Id $ProgressId -Activity "Running Query" -Status "Starting threads"`
+                            -CurrentOperation "$startedCount threads defined - $totalCount input objects - $script:completedCount input objects processed"`
+                            -PercentComplete $( Try { $script:completedCount / $totalCount * 100 } Catch {0} )
+                    }
+
+                    #run through each runspace.
+                    Foreach($runspace in $runspaces) {
+
+                        #get the duration - inaccurate
+                        $currentdate = Get-Date
+                        $runtime = $currentdate - $runspace.startTime
+                        $runMin = [math]::Round( $runtime.totalminutes ,2 )
+
+                        #set up log object
+                        $log = "" | Select-Object Date, Action, Runtime, Status, Details
+                        $log.Action = "Removing:'$($runspace.object)'"
+                        $log.Date = $currentdate
+                        $log.Runtime = "$runMin minutes"
+
+                        #If runspace completed, end invoke, dispose, recycle, counter++
+                        If ($runspace.Runspace.isCompleted) {
+
+                            $script:completedCount++
+
+                            #check if there were errors
+                            if($runspace.powershell.Streams.Error.Count -gt 0) {
+                                #set the logging info and move the file to completed
+                                $log.status = "CompletedWithErrors"
+                                Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
+                                foreach($ErrorRecord in $runspace.powershell.Streams.Error) {
+                                    Write-Error -ErrorRecord $ErrorRecord
+                                }
+                            }
+                            else {
+                                #add logging details and cleanup
+                                $log.status = "Completed"
+                                Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
+                            }
+
+                            #everything is logged, clean up the runspace
+                            $runspace.powershell.EndInvoke($runspace.Runspace)
+                            $runspace.powershell.dispose()
+                            $runspace.Runspace = $null
+                            $runspace.powershell = $null
+                        }
+                        #If runtime exceeds max, dispose the runspace
+                        ElseIf ( $runspaceTimeout -ne 0 -and $runtime.totalseconds -gt $runspaceTimeout) {
+                            $script:completedCount++
+                            $timedOutTasks = $true
+
+                            #add logging details and cleanup
+                            $log.status = "TimedOut"
+                            Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
+                            Write-Error "Runspace timed out at $($runtime.totalseconds) seconds for the object:`n$($runspace.object | out-string)"
+
+                            #Depending on how it hangs, we could still get stuck here as dispose calls a synchronous method on the powershell instance
+                            if (!$noCloseOnTimeout) { $runspace.powershell.dispose() }
+                            $runspace.Runspace = $null
+                            $runspace.powershell = $null
+                            $completedCount++
+                        }
+
+                        #If runspace isn't null set more to true
+                        ElseIf ($runspace.Runspace -ne $null ) {
+                            $log = $null
+                            $more = $true
+                        }
+
+                        #log the results if a log file was indicated
+                        if($logFile -and $log) {
+                            ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1] | out-file $LogFile -append
+                        }
+                    }
+
+                    #Clean out unused runspace jobs
+                    $temphash = $runspaces.clone()
+                    $temphash | Where-Object { $_.runspace -eq $Null } | ForEach-Object {
+                        $Runspaces.remove($_)
+                    }
+
+                    #sleep for a bit if we will loop again
+                    if($PSBoundParameters['Wait']){ Start-Sleep -milliseconds $SleepTimer }
+
+                #Loop again only if -wait parameter and there are more runspaces to process
+                } while ($more -and $PSBoundParameters['Wait'])
+
+            #End of runspace function
+            }
+        #endregion functions
+
+        #region Init
+
+            if($PSCmdlet.ParameterSetName -eq 'ScriptFile') {
+                $ScriptBlock = [scriptblock]::Create( $(Get-Content $ScriptFile | out-string) )
+            }
+            elseif($PSCmdlet.ParameterSetName -eq 'ScriptBlock') {
+                #Start building parameter names for the param block
+                [string[]]$ParamsToAdd = '$_'
+                if( $PSBoundParameters.ContainsKey('Parameter') ) {
+                    $ParamsToAdd += '$Parameter'
+                }
+
+                $UsingVariableData = $Null
+
+                # This code enables $Using support through the AST.
+                # This is entirely from  Boe Prox, and his https://github.com/proxb/PoshRSJob module; all credit to Boe!
+
+                if($PSVersionTable.PSVersion.Major -gt 2) {
+                    #Extract using references
+                    $UsingVariables = $ScriptBlock.ast.FindAll({$args[0] -is [System.Management.Automation.Language.UsingExpressionAst]},$True)
+
+                    If ($UsingVariables) {
+                        $List = New-Object 'System.Collections.Generic.List`1[System.Management.Automation.Language.VariableExpressionAst]'
+                        ForEach ($Ast in $UsingVariables) {
+                            [void]$list.Add($Ast.SubExpression)
+                        }
+
+                        $UsingVar = $UsingVariables | Group-Object -Property SubExpression | ForEach-Object {$_.Group | Select-Object -First 1}
+
+                        #Extract the name, value, and create replacements for each
+                        $UsingVariableData = ForEach ($Var in $UsingVar) {
+                            try {
+                                $Value = Get-Variable -Name $Var.SubExpression.VariablePath.UserPath -ErrorAction Stop
+                                [pscustomobject]@{
+                                    Name = $Var.SubExpression.Extent.Text
+                                    Value = $Value.Value
+                                    NewName = ('$__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
+                                    NewVarName = ('__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
+                                }
+                            }
+                            catch {
+                                Write-Error "$($Var.SubExpression.Extent.Text) is not a valid Using: variable!"
+                            }
+                        }
+                        $ParamsToAdd += $UsingVariableData | Select-Object -ExpandProperty NewName -Unique
+
+                        $NewParams = $UsingVariableData.NewName -join ', '
+                        $Tuple = [Tuple]::Create($list, $NewParams)
+                        $bindingFlags = [Reflection.BindingFlags]"Default,NonPublic,Instance"
+                        $GetWithInputHandlingForInvokeCommandImpl = ($ScriptBlock.ast.gettype().GetMethod('GetWithInputHandlingForInvokeCommandImpl',$bindingFlags))
+
+                        $StringScriptBlock = $GetWithInputHandlingForInvokeCommandImpl.Invoke($ScriptBlock.ast,@($Tuple))
+
+                        $ScriptBlock = [scriptblock]::Create($StringScriptBlock)
+
+                        Write-Verbose $StringScriptBlock
+                    }
+                }
+
+                $ScriptBlock = $ExecutionContext.InvokeCommand.NewScriptBlock("param($($ParamsToAdd -Join ", "))`r`n" + $Scriptblock.ToString())
+            }
+            else {
+                Throw "Must provide ScriptBlock or ScriptFile"; Break
+            }
+
+            Write-Debug "`$ScriptBlock: $($ScriptBlock | Out-String)"
+            Write-Verbose "Creating runspace pool and session states"
+
+            #If specified, add variables and modules/snapins to session state
+            $sessionstate = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+            if($ImportVariables -and $UserVariables.count -gt 0) {
+                foreach($Variable in $UserVariables) {
+                    $sessionstate.Variables.Add((New-Object -TypeName System.Management.Automation.Runspaces.SessionStateVariableEntry -ArgumentList $Variable.Name, $Variable.Value, $null) )
+                }
+            }
+            if ($ImportModules) {
+                if($UserModules.count -gt 0) {
+                    foreach($ModulePath in $UserModules) {
+                        $sessionstate.ImportPSModule($ModulePath)
+                    }
+                }
+                if($UserSnapins.count -gt 0) {
+                    foreach($PSSnapin in $UserSnapins) {
+                        [void]$sessionstate.ImportPSSnapIn($PSSnapin, [ref]$null)
+                    }
+                }
+            }
+            if($ImportFunctions -and $UserFunctions.count -gt 0) {
+                foreach ($FunctionDef in $UserFunctions) {
+                    $sessionstate.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry -ArgumentList $FunctionDef.Name,$FunctionDef.ScriptBlock))
+                }
+            }
+
+            #Create runspace pool
+            $runspacepool = [runspacefactory]::CreateRunspacePool(1, $Throttle, $sessionstate, $Host)
+            $runspacepool.Open()
+
+            Write-Verbose "Creating empty collection to hold runspace jobs"
+            $Script:runspaces = New-Object System.Collections.ArrayList
+
+            #If inputObject is bound get a total count and set bound to true
+            $bound = $PSBoundParameters.keys -contains "InputObject"
+            if(-not $bound) {
+                [System.Collections.ArrayList]$allObjects = @()
+            }
+
+            #Set up log file if specified
+            if( $LogFile -and (-not (Test-Path $LogFile) -or $AppendLog -eq $false)){
+                New-Item -ItemType file -Path $logFile -Force | Out-Null
+                ("" | Select-Object -Property Date, Action, Runtime, Status, Details | ConvertTo-Csv -NoTypeInformation -Delimiter ";")[0] | Out-File $LogFile
+            }
+
+            #write initial log entry
+            $log = "" | Select-Object -Property Date, Action, Runtime, Status, Details
+                $log.Date = Get-Date
+                $log.Action = "Batch processing started"
+                $log.Runtime = $null
+                $log.Status = "Started"
+                $log.Details = $null
+                if($logFile) {
+                    ($log | convertto-csv -Delimiter ";" -NoTypeInformation)[1] | Out-File $LogFile -Append
+                }
+            $timedOutTasks = $false
+        #endregion INIT
+    }
+    process {
+        #add piped objects to all objects or set all objects to bound input object parameter
+        if($bound) {
+            $allObjects = $InputObject
+        }
+        else {
+            [void]$allObjects.add( $InputObject )
+        }
+    }
+    end {
+        #Use Try/Finally to catch Ctrl+C and clean up.
+        try {
+            #counts for progress
+            $totalCount = $allObjects.count
+            $script:completedCount = 0
+            $startedCount = 0
+            foreach($object in $allObjects) {
+                #region add scripts to runspace pool
+                    #Create the powershell instance, set verbose if needed, supply the scriptblock and parameters
+                    $powershell = [powershell]::Create()
+
+                    if ($VerbosePreference -eq 'Continue') {
+                        [void]$PowerShell.AddScript({$VerbosePreference = 'Continue'})
+                    }
+
+                    [void]$PowerShell.AddScript($ScriptBlock).AddArgument($object)
+
+                    if ($parameter) {
+                        [void]$PowerShell.AddArgument($parameter)
+                    }
+
+                    # $Using support from Boe Prox
+                    if ($UsingVariableData) {
+                        Foreach($UsingVariable in $UsingVariableData) {
+                            Write-Verbose "Adding $($UsingVariable.Name) with value: $($UsingVariable.Value)"
+                            [void]$PowerShell.AddArgument($UsingVariable.Value)
+                        }
+                    }
+
+                    #Add the runspace into the powershell instance
+                    $powershell.RunspacePool = $runspacepool
+
+                    #Create a temporary collection for each runspace
+                    $temp = "" | Select-Object PowerShell, StartTime, object, Runspace
+                    $temp.PowerShell = $powershell
+                    $temp.StartTime = Get-Date
+                    $temp.object = $object
+
+                    #Save the handle output when calling BeginInvoke() that will be used later to end the runspace
+                    $temp.Runspace = $powershell.BeginInvoke()
+                    $startedCount++
+
+                    #Add the temp tracking info to $runspaces collection
+                    Write-Verbose ( "Adding {0} to collection at {1}" -f $temp.object, $temp.starttime.tostring() )
+                    $runspaces.Add($temp) | Out-Null
+
+                    #loop through existing runspaces one time
+                    Get-RunspaceData
+
+                    #If we have more running than max queue (used to control timeout accuracy)
+                    #Script scope resolves odd PowerShell 2 issue
+                    $firstRun = $true
+                    while ($runspaces.count -ge $Script:MaxQueue) {
+                        #give verbose output
+                        if($firstRun) {
+                            Write-Verbose "$($runspaces.count) items running - exceeded $Script:MaxQueue limit."
+                        }
+                        $firstRun = $false
+
+                        #run get-runspace data and sleep for a short while
+                        Get-RunspaceData
+                        Start-Sleep -Milliseconds $sleepTimer
+                    }
+                #endregion add scripts to runspace pool
+            }
+            Write-Verbose ( "Finish processing the remaining runspace jobs: {0}" -f ( @($runspaces | Where-Object {$_.Runspace -ne $Null}).Count) )
+
+            Get-RunspaceData -wait
+            if (-not $quiet) {
+                Write-Progress -Id $ProgressId -Activity "Running Query" -Status "Starting threads" -Completed
+            }
+        }
+        finally {
+            #Close the runspace pool, unless we specified no close on timeout and something timed out
+            if ( ($timedOutTasks -eq $false) -or ( ($timedOutTasks -eq $true) -and ($noCloseOnTimeout -eq $false) ) ) {
+                Write-Verbose "Closing the runspace pool"
+                $runspacepool.close()
+            }
+            #collect garbage
+            [gc]::Collect()
+        }
+    }
 }
 
 
@@ -9535,8 +12640,8 @@ function Rename-Host {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUOuW+HQAkqv2JXl0I8jhNip4x
-# RZ6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5h8BoohJIzdY0rjsQslW0T9b
+# EvGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -9593,11 +12698,11 @@ function Rename-Host {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFF+CGj8GUM1TOFq0
-# 9jaKG8dIqff7MA0GCSqGSIb3DQEBAQUABIIBAJGdNp4QShfrqZw2ejvwMcT54qWN
-# AD34+1mIYfpTf09AlCS7E0XOLrmwqtQUi+WG4KNt9f7Vj3rMJH6oTOnhufKpBRQ6
-# Blk5gqzu8ZrqhAceW+i6TCW69oZ9mIDtm38E6FZQdCywweoDVKZgLfFPefPB17sT
-# yS/z3mNyuD7VnnnB6AcpbWfoQhUPhI7DWYgmvVl0rI9l0sccayHn4Vh+2OdASq2b
-# vRWzL+lHkzOa1vrEj0LLoUqVJaJnDurspEBJj+oPwMfrNofqhGPcYsyK1yfnLthF
-# ARSLfreRALFLZlTqe20pml/dMBvov517VmlzSsB9+CiM6Sr3iqpSTU4sgYo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFVT9qgLqNTlaTD9
+# Pe9Ynb1NYOwCMA0GCSqGSIb3DQEBAQUABIIBAKr4N1KXJGLzR1hv2fLyF/y1nNkL
+# l//qUIQOJuHtgTZskfYeOZaQbz78qfMhNrLgDHvWuz1D9/D4mVFm5RSK7oN6h/QS
+# kKu6nPbzUOXDOJ9X1lzKaRGiGkC9ofELvetOFSsOj7hl12aqDHIgpzKss9qF7xAu
+# KQO//wO/r++yTB7LDJy6191qctips1yJCLtsmNcEGmhvt1km9To0oGz4ypyXkWuK
+# HZ21awknCuFYJaUWl6E+yQqZgkdKAA/vS1jLxdIvLg2VqD5jBWF6udK6rpzTaf6i
+# BdP/ufKPcFH9xQcikRDt5UAPWPuN1MbrZgY2e/pwmgkb8otXT1Dy2ndORGY=
 # SIG # End signature block

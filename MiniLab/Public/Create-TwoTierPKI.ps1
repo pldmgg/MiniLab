@@ -130,7 +130,7 @@ function Create-TwoTierPKI {
         return
     }
 
-    if ($PSBoundParameters['IPofServerToBeDomainController'] -and $PSBoundParameters['$IPofServerToBeRootCA']) {
+    if ($PSBoundParameters['IPofServerToBeDomainController'] -and $PSBoundParameters['IPofServerToBeRootCA']) {
         if ($IPofServerToBeDomainController -eq $IPofServerToBeRootCA) {
             $DCIsRootCA = $True
         }
@@ -585,7 +585,7 @@ function Create-TwoTierPKI {
         Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
     }
 
-    #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+    #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
         
         
     #region >> Prep New Domain Controller
@@ -999,8 +999,8 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjzWa2BrrE1jNQfuQesoi6OM1
-# ecSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUiK+/ph05eRv6yDRZj2wqbqck
+# Ckigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1057,11 +1057,11 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNmOawNn9Spfgy9v
-# NplOkvHH73m6MA0GCSqGSIb3DQEBAQUABIIBAALsB1bVqHAC3387Qkx6CGKlZEFp
-# MDBEgVpXFF22js6inMbU+PrsMu2/TFIE0/KJ4r6U9WKX/VXqiQKKtKIpWfZee5MQ
-# ZAirUfLJt2/VgIEuqUjx5mvPMjhoZps18gR3pK3TNnap7miiBEs0Svg9gifXaU/h
-# RBEk3ZJj2JYzGe5gl399z9wR5Rt2XDsxlb9Doxeu/hfMRFJllwNU8bhTzH1tc9ME
-# NGXA/B1srlkmiq3osZejFbkgJuvK6JCeFMZ2fQohFxutnvHTjWB6pqomlqiEu5bz
-# x0PpljlaXUlH4y5V47nYwt+KBpfMkFArXmtJcZkSTT+wMFc6tMAjynkQ7eo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC1Ev4kWT5b6DpD/
+# ywTaGudCddHnMA0GCSqGSIb3DQEBAQUABIIBAL7Ju+k7BgCcqBXtFdM4rbLylvNA
+# KHYOapTy+piudBT1AalQ+0jeNscycSyndWyuGa6S7APOrzQGcD/S2VwdOFLQe73T
+# rLhijNAgjrfsRiDy46+hpQEIHUCUu2jlPIQFtpCuWmypfut78FwT/SGYmY5+2njP
+# QJ39LXRxi7bw6nBMr2gIfP8c+gsBHq50Ine+CviJy2RKaDlmxF/R+tsOy4NMnzAQ
+# DHSbYkG7G5z3zptNppUJEwUmahoKmLbnSjkqoD+fXu/l7QSsfMF2r8FcCpM5I4J3
+# NJSKYxF9UxEuiRWgRr8vyWD00RpatrXGTi20QChFl+rBv/flxeofpC1oJeY=
 # SIG # End signature block

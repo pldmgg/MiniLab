@@ -68,16 +68,23 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'TestIsValidIPAddress' | Should Be $False
         $Commands -contains 'UnzipFile' | Should Be $False
         
+        $Commands -contains 'Create-Domain' | Should Be $True
+        $Commands -contains 'Create-RootCA' | Should Be $True
+        $Commands -contains 'Create-Subordinate' | Should Be $True
         $Commands -contains 'Create-TwoTierPKI' | Should Be $True
+        $Commands -contains 'Create-TwoTierPKIRedux' | Should Be $True
         $Commands -contains 'Deploy-HyperVVagrantBoxManually' | Should Be $True
         $Commands -contains 'Generate-Certificate' | Should Be $True
         $Commands -contains 'Get-DSCEncryptionCert' | Should Be $True
         $Commands -contains 'Get-VagrantBoxManualDownload' | Should Be $True
+        $Commands -contains 'Invoke-Parallel' | Should Be $True
+        $Commands -contains 'Join-DomainEx' | Should Be $True
         $Commands -contains 'Manage-HyperVVM' | Should Be $True
         $Commands -contains 'New-DomainController' | Should Be $True
         $Commands -contains 'New-RootCA' | Should Be $True
         $Commands -contains 'New-SelfSignedCertificateEx' | Should Be $True
         $Commands -contains 'New-SubordinateCA' | Should Be $True
+        $Commands -contains 'Rename-HostEx' | Should Be $True
     }
 
     It "Module '$env:BHProjectName' Private Functions Are Available in Internal Scope" {
@@ -101,8 +108,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUtPL5mejVOFo8v2m8xSQc5Tfl
-# sbCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUTt7iy8N0LBOJ1owKstjW5aGh
+# BNigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -159,11 +166,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNLWo5GucgI4HEI2
-# DUm3dwy0DQHfMA0GCSqGSIb3DQEBAQUABIIBAD2GpQYq+SpKfIUB6o0zAUAIUlWS
-# nwY2Hl7tIhiGsBDid2n/4EnM+isyMnBE83HVJFVbogyZTvsz75axT5ITmFt/ackJ
-# r18rUnI7uca2MH6gjGVbn9pUDNPhKXAPG871Vlv98zIq/trvXJhGsh6cMRuOsjok
-# 9zNZb8sEuhvH/NTwnW/aoeLKpaTExvZD3TnlQg3xsqgeOdh2crNAwtMhHCO0/DYZ
-# ItbzjI7fa79nBhsrH2oWpipA/EoRQ+uZh1X9v4QIdp2lufXf8YCwsg6ODtuI9Lc7
-# jfP3gLnRPTL7ol0OUKd9CUub/bNDJKzqE3G/mWaZzAnq+OyCOLsk/iNd3Ak=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGehrP/NnCPAa7om
+# lu0eLrY8mW6NMA0GCSqGSIb3DQEBAQUABIIBAHpqlANQQbudXyvt+d2irsd5+jkJ
+# ad4g+X/87v7GofL0zBpZusoOVTYYeemlfWUQO6DpPRLfqZLFjYEtDKVD9uDmWRRZ
+# 1TiMAoXPxQrSiO1P1zsCTCgN4OZA4zlvpF6Hde7DPgSG/1jlK23MB3neckCsAZFk
+# rcxcTqVj4LA6SRbcUT7NyuYsQ4L8loj3n3baRRlLg5LQ7h2e0gCIaEBgYKvCcybF
+# /mOb+wUjFnEvsBj5/DZtiakehAqDVk7tCz3IrQYQPXBAg6Kx0BR4PdycYivFlZfA
+# 2iUq/CzjI6DaUH38HwcCH7A38s/tenWX1r7wDVMjJr9SoLGk3MDKLjDpbrU=
 # SIG # End signature block

@@ -98,6 +98,9 @@ function Deploy-HyperVVagrantBoxManually {
         [Parameter(Mandatory=$False)]
         [string]$BoxFilePath,
 
+        [Parameter(Mandatory=$False)]
+        [string]$DecompressedBoxDirectory,
+
         [Parameter(Mandatory=$True)]
         [ValidateSet("hyperv")]
         [string]$VagrantProvider,
@@ -130,7 +133,10 @@ function Deploy-HyperVVagrantBoxManually {
 
         [Parameter(Mandatory=$False)]
         [ValidateSet("Vagrant")]
-        [string]$Repository
+        [string]$Repository,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$CopyDecompressedDirectory
     )
 
     #region >> Variable/Parameter Transforms and PreRun Prep
@@ -243,7 +249,7 @@ function Deploy-HyperVVagrantBoxManually {
 
     #region >> Main Body
 
-    if (!$BoxFilePath) {
+    if (!$BoxFilePath -and !$DecompressedBoxDirectory) {
         $GetVagrantBoxSplatParams = @{
             VagrantBox          = $VagrantBox
             VagrantProvider     = $VagrantProvider
@@ -272,7 +278,8 @@ function Deploy-HyperVVagrantBoxManually {
     
         $BoxFilePath = $DownloadedBoxFilePath
     }
-    else {
+
+    if ($BoxFilePath) {
         if (!$(Test-Path $BoxFilePath)) {
             Write-Error "The path $BoxFilePath was not found! Halting!"
             $global:FunctionResult = "1"
@@ -280,33 +287,54 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
-    # Extract the .box File
-    $DownloadedVMDir = "$TemporaryDownloadDirectory\$NewVMName"
-    if (!$(Test-Path $DownloadedVMDir)) {
-        $null = New-Item -ItemType Directory -Path $DownloadedVMDir
+    if (!$DecompressedBoxDirectory) {
+        $DownloadedVMDir = "$TemporaryDownloadDirectory\$NewVMName"
+        if (!$(Test-Path $DownloadedVMDir)) {
+            $null = New-Item -ItemType Directory -Path $DownloadedVMDir
+        }
+        
+        # Extract the .box File
+        Push-Location $DownloadedVMDir
+        while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+            Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+            Start-Sleep -Seconds 5
+        }
+        try {
+            $null = & $TarCmd -xzvf $BoxFilePath 2>&1
+        }
+        catch {
+            Write-Error $_
+            #Remove-Item $BoxFilePath -Force
+            $global:FunctionResult = "1"
+            return
+        }
+        Pop-Location
+
+        $DecompressedBoxDirectory = $DownloadedVMDir
     }
-    Push-Location $DownloadedVMDir
-    while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath)) {
-        Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-        Start-Sleep -Seconds 5
+
+    if ($DecompressedBoxDirectory) {
+        if (!$(Test-Path $DecompressedBoxDirectory)) {
+            Write-Error "The path $DecompressedBoxDirectory was not found! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
     }
-    try {
-        $null = & $TarCmd -xzvf $BoxFilePath 2>&1
-    }
-    catch {
-        Write-Error $_
-        #Remove-Item $BoxFilePath -Force
-        $global:FunctionResult = "1"
-        return
-    }
-    Pop-Location
 
     try {
-        Write-Host "Moving decompressed VM from '$DownloadedVMDir' to '$VMDestinationDirectory'..."
-        if (Test-Path "$VMDestinationDirectory\$($DownloadedVMDir | Split-Path -Leaf)") {
-            Remove-Item -Path "$VMDestinationDirectory\$($DownloadedVMDir | Split-Path -Leaf)" -Recurse -Force
+        if ($CopyDecompressedDirectory) {
+            Write-Host "Copying decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory\$NewVMName'..."
+            $ItemsToCopy = Get-ChildItem $DecompressedBoxDirectory
+            $ItemsToCopy | foreach {Copy-Item -Path $_.FullName -Recurse -Destination "$VMDestinationDirectory\$NewVMName" -Force -ErrorAction SilentlyContinue}
         }
-        Move-Item -Path $DownloadedVMDir -Destination $VMDestinationDirectory -Force -ErrorAction Stop
+        else {
+            Write-Host "Moving decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory'..."
+            if (Test-Path "$VMDestinationDirectory\$NewVMName") {
+                Remove-Item -Path "$VMDestinationDirectory\$NewVMName" -Recurse -Force
+            }
+            Move-Item -Path $DecompressedBoxDirectory -Destination $VMDestinationDirectory -Force -ErrorAction Stop
+            Rename-Item -Path "$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -NewName $NewVMName
+        }
 
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
         $ExternalvSwitches = Get-VMSwitch -SwitchType External
@@ -415,7 +443,7 @@ function Deploy-HyperVVagrantBoxManually {
         Write-Host "To login to the Vagrant VM, use 'ssh -i `"$HOME\.ssh\vagrant_unsecure_private_key`" vagrant@$NewVMIP' OR use the Hyper-V Console GUI with username/password vagrant/vagrant"
     }
 
-    [pscustomobject]@{
+    $Output = @{
         VMName                  = $NewVMName
         VMIPAddress             = $NewVMIP
         CreateVMOutput          = $CreateVMOutput
@@ -424,6 +452,11 @@ function Deploy-HyperVVagrantBoxManually {
         HyperVVMLocation        = $VMDestinationDirectory
         ExternalSwitchCreated   = if ($ExternalSwitchCreated) {$True} else {$False}
     }
+    if ($MoveDecompressedDir) {
+        $Output.Add("DecompressedBoxFileLocation",$DecompressedBoxFileLocation.FullName)
+    }
+
+    [pscustomobject]$Output
 
     #endregion >> Main Body
 }
@@ -431,8 +464,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUJ9YsO58Lvpdpncd2W5xvt6zL
-# tjagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUndOvGkrHNk/7QA30bVvBKFyl
+# mmGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -489,11 +522,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJJrZ5EVfCZeb/yH
-# X7y3dxawX4slMA0GCSqGSIb3DQEBAQUABIIBAJyODsTkGVLZjHni9Lu0GNhDAUWC
-# Y7Tx6SMPvPyFUBfTEV3eR8aP86soCOhi/w9AJSRw79Mz3nkYN9Ikp7RSx8LOWb6k
-# mWF0+PhivLx+gBALOP+bRKc4RHowHnomnLeaYtIQ64QOIhVIXGqLgBJpNnQ56OhI
-# HkEw19Ik/MRlCm+LKT+ZTbt9nibdhpeAUQ0JLz1NhFBVQ4yAquQZSS/HCM9V/W6v
-# 1bOP973TEPWq9PV9nL9BKGL/q2NHEy7A7IDVlx633sZMcv+sNi850/o3k0MeLyfD
-# p17vIBChszTHEr151EZvAB1FPP3h0PuVjmBrPcB7GQs+uDBPgzJTCYMcWWo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIGXVCdK69RtzrZ5
+# 9wEM82urMqGEMA0GCSqGSIb3DQEBAQUABIIBAJStNuhrHF1OaLSmZMCuC30HXgIA
+# Td0Eg5SGhddg9f0yoHboCpvXrCqOZwObOTfvg5/4P1D3fav5ddClLbhhU63Eo+G9
+# uPizSxe7OG0IsEpNO0s/YVZlkp73h5tkd+ZskAwrTIjQVoET7RAWxjHPU7QFshB6
+# itz9E/5/5+HVCQkrr8+vrsa+4CN7OLmFGldPYPaOFCN/mydRRCP4huGegADMvdbA
+# +Ksb0izK3IlmURM+qu4lh5Fquo77VXBDKouhtvCAPYyxk7i03LTUwa3dc6JK+VcW
+# 39CDOJ/RsHgGqTkq5zjh45Y5unwRp23T8Q08DUgPVbsee+ROMX6E5rvLiDw=
 # SIG # End signature block
