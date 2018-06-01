@@ -12,7 +12,7 @@
 RootModule = 'MiniLab.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.8.1'
+ModuleVersion = '0.8.2'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -30,7 +30,7 @@ CompanyName = 'Boop'
 Copyright = '(c) 2018 pldmgg. All rights reserved.'
 
 # Description of the functionality provided by this module
-Description = 'Setup a very basic Windows Lab Environment from scratch, or add specific infrastructure components to your existing Domain'
+Description = 'Setup a very basic Windows Lab Environment from scratch, or add specific infrastructure components to your existing Domain. Leverages Vagrant Boxes to make deployment faster/easier.'
 
 # Minimum version of the Windows PowerShell engine required by this module
 PowerShellVersion = '5.1'

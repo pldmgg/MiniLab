@@ -1,8 +1,8 @@
-[![Build status](https://ci.appveyor.com/api/projects/status/github/pldmgg/=master&svg=true)](https://ci.appveyor.com/project/pldmgg/minilab/branch/master)
+[![Build status](https://ci.appveyor.com/api/projects/status/github/pldmgg/minilab?branch=master&svg=true)](https://ci.appveyor.com/project/pldmgg/minilab/branch/master)
 
 
 # MiniLab
-<Synopsis>
+Setup a very basic Windows Lab Environment from scratch, or add specific infrastructure components to your existing Domain. Leverages Vagrant Boxes to make deployment faster/easier.
 
 ## Getting Started
 
