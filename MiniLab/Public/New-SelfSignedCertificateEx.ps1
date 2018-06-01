@@ -117,289 +117,289 @@
     .Parameter Exportable
         Marks private key as exportable. Smart card providers usually do not allow
         exportable keys.
-	.Example
-		# Creates a self-signed certificate intended for code signing and which is valid for 5 years. Certificate
-		# is saved in the Personal store of the current user account.
-		
+ .Example
+  # Creates a self-signed certificate intended for code signing and which is valid for 5 years. Certificate
+  # is saved in the Personal store of the current user account.
+  
         New-SelfsignedCertificateEx -Subject "CN=Test Code Signing" -EKU "Code Signing" -KeySpec "Signature" `
         -KeyUsage "DigitalSignature" -FriendlyName "Test code signing" -NotAfter [datetime]::now.AddYears(5)
         
         
     .Example
-		# Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
+  # Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
         # certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
         # so you can export the certificate with a associated private key to a file at any time. The certificate
-		# includes SMIME capabilities.
-		
-		New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
+  # includes SMIME capabilities.
+  
+  New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
         -KeyUsage "KeyEcipherment, DigitalSignature" -SAN "sub.domain.com","www.domain.com","192.168.1.1" `
         -AllowSMIME -Path C:\test\ssl.pfx -Password (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force) -Exportable `
         -StoreLocation "LocalMachine"
         
     .Example
-		# Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
+  # Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
         # certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
         # so you can export the certificate with a associated private key to a file at any time. Certificate uses
         # Ellyptic Curve Cryptography (ECC) key algorithm ECDH with 256-bit key. The certificate is signed by using
-		# SHA256 algorithm.
-		
-		New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
+  # SHA256 algorithm.
+  
+  New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
         -KeyUsage "KeyEcipherment, DigitalSignature" -SAN "sub.domain.com","www.domain.com","192.168.1.1" `
         -StoreLocation "LocalMachine" -ProviderName "Microsoft Software Key Storae Provider" -AlgorithmName ecdh_256 `
-		-KeyLength 256 -SignatureAlgorithm sha256
-		
+  -KeyLength 256 -SignatureAlgorithm sha256
+  
     .Example
-		# Creates self-signed root CA certificate.
+  # Creates self-signed root CA certificate.
 
-		New-SelfsignedCertificateEx -Subject "CN=Test Root CA, OU=Sandbox" -IsCA $true -ProviderName `
-		"Microsoft Software Key Storage Provider" -Exportable
-		
+  New-SelfsignedCertificateEx -Subject "CN=Test Root CA, OU=Sandbox" -IsCA $true -ProviderName `
+  "Microsoft Software Key Storage Provider" -Exportable
+  
 #>
 function New-SelfSignedCertificateEx {
     [CmdletBinding(DefaultParameterSetName = '__store')]
-	param (
-		[Parameter(Mandatory = $true, Position = 0)]
-		[string]$Subject,
-		[Parameter(Position = 1)]
-		[datetime]$NotBefore = [DateTime]::Now.AddDays(-1),
-		[Parameter(Position = 2)]
-		[datetime]$NotAfter = $NotBefore.AddDays(365),
-		[string]$SerialNumber,
-		[Alias('CSP')]
-		[string]$ProviderName = "Microsoft Enhanced Cryptographic Provider v1.0",
-		[string]$AlgorithmName = "RSA",
-		[int]$KeyLength = 2048,
-		[validateSet("Exchange","Signature")]
-		[string]$KeySpec = "Exchange",
-		[Alias('EKU')]
-		[Security.Cryptography.Oid[]]$EnhancedKeyUsage,
-		[Alias('KU')]
-		[Security.Cryptography.X509Certificates.X509KeyUsageFlags]$KeyUsage,
-		[Alias('SAN')]
-		[String[]]$SubjectAlternativeName,
-		[bool]$IsCA,
-		[int]$PathLength = -1,
-		[Security.Cryptography.X509Certificates.X509ExtensionCollection]$CustomExtension,
-		[ValidateSet('MD5','SHA1','SHA256','SHA384','SHA512')]
-		[string]$SignatureAlgorithm = "SHA1",
-		[string]$FriendlyName,
-		[Parameter(ParameterSetName = '__store')]
-		[Security.Cryptography.X509Certificates.StoreLocation]$StoreLocation = "CurrentUser",
-		[Parameter(ParameterSetName = '__store')]
-		[Security.Cryptography.X509Certificates.StoreName]$StoreName = "My",
-		[Parameter(Mandatory = $true, ParameterSetName = '__file')]
-		[Alias('OutFile','OutPath','Out')]
-		[IO.FileInfo]$Path,
-		[Parameter(Mandatory = $true, ParameterSetName = '__file')]
-		[Security.SecureString]$Password,
-		[switch]$AllowSMIME,
-		[switch]$Exportable
-	)
+ param (
+  [Parameter(Mandatory = $true, Position = 0)]
+  [string]$Subject,
+  [Parameter(Position = 1)]
+  [datetime]$NotBefore = [DateTime]::Now.AddDays(-1),
+  [Parameter(Position = 2)]
+  [datetime]$NotAfter = $NotBefore.AddDays(365),
+  [string]$SerialNumber,
+  [Alias('CSP')]
+  [string]$ProviderName = "Microsoft Enhanced Cryptographic Provider v1.0",
+  [string]$AlgorithmName = "RSA",
+  [int]$KeyLength = 2048,
+  [validateSet("Exchange","Signature")]
+  [string]$KeySpec = "Exchange",
+  [Alias('EKU')]
+  [Security.Cryptography.Oid[]]$EnhancedKeyUsage,
+  [Alias('KU')]
+  [Security.Cryptography.X509Certificates.X509KeyUsageFlags]$KeyUsage,
+  [Alias('SAN')]
+  [String[]]$SubjectAlternativeName,
+  [bool]$IsCA,
+  [int]$PathLength = -1,
+  [Security.Cryptography.X509Certificates.X509ExtensionCollection]$CustomExtension,
+  [ValidateSet('MD5','SHA1','SHA256','SHA384','SHA512')]
+  [string]$SignatureAlgorithm = "SHA1",
+  [string]$FriendlyName,
+  [Parameter(ParameterSetName = '__store')]
+  [Security.Cryptography.X509Certificates.StoreLocation]$StoreLocation = "CurrentUser",
+  [Parameter(ParameterSetName = '__store')]
+  [Security.Cryptography.X509Certificates.StoreName]$StoreName = "My",
+  [Parameter(Mandatory = $true, ParameterSetName = '__file')]
+  [Alias('OutFile','OutPath','Out')]
+  [IO.FileInfo]$Path,
+  [Parameter(Mandatory = $true, ParameterSetName = '__file')]
+  [Security.SecureString]$Password,
+  [switch]$AllowSMIME,
+  [switch]$Exportable
+ )
 
-	$ErrorActionPreference = "Stop"
-	if ([Environment]::OSVersion.Version.Major -lt 6) {
-		$NotSupported = New-Object NotSupportedException -ArgumentList "Windows XP and Windows Server 2003 are not supported!"
-		throw $NotSupported
-	}
-	$ExtensionsToAdd = @()
+ $ErrorActionPreference = "Stop"
+ if ([Environment]::OSVersion.Version.Major -lt 6) {
+  $NotSupported = New-Object NotSupportedException -ArgumentList "Windows XP and Windows Server 2003 are not supported!"
+  throw $NotSupported
+ }
+ $ExtensionsToAdd = @()
 
     #region >> Constants
-	# contexts
-	New-Variable -Name UserContext -Value 0x1 -Option Constant
-	New-Variable -Name MachineContext -Value 0x2 -Option Constant
-	# encoding
-	New-Variable -Name Base64Header -Value 0x0 -Option Constant
-	New-Variable -Name Base64 -Value 0x1 -Option Constant
-	New-Variable -Name Binary -Value 0x3 -Option Constant
-	New-Variable -Name Base64RequestHeader -Value 0x4 -Option Constant
-	# SANs
-	New-Variable -Name OtherName -Value 0x1 -Option Constant
-	New-Variable -Name RFC822Name -Value 0x2 -Option Constant
-	New-Variable -Name DNSName -Value 0x3 -Option Constant
-	New-Variable -Name DirectoryName -Value 0x5 -Option Constant
-	New-Variable -Name URL -Value 0x7 -Option Constant
-	New-Variable -Name IPAddress -Value 0x8 -Option Constant
-	New-Variable -Name RegisteredID -Value 0x9 -Option Constant
-	New-Variable -Name Guid -Value 0xa -Option Constant
-	New-Variable -Name UPN -Value 0xb -Option Constant
-	# installation options
-	New-Variable -Name AllowNone -Value 0x0 -Option Constant
-	New-Variable -Name AllowNoOutstandingRequest -Value 0x1 -Option Constant
-	New-Variable -Name AllowUntrustedCertificate -Value 0x2 -Option Constant
-	New-Variable -Name AllowUntrustedRoot -Value 0x4 -Option Constant
-	# PFX export options
-	New-Variable -Name PFXExportEEOnly -Value 0x0 -Option Constant
-	New-Variable -Name PFXExportChainNoRoot -Value 0x1 -Option Constant
-	New-Variable -Name PFXExportChainWithRoot -Value 0x2 -Option Constant
+ # contexts
+ New-Variable -Name UserContext -Value 0x1 -Option Constant
+ New-Variable -Name MachineContext -Value 0x2 -Option Constant
+ # encoding
+ New-Variable -Name Base64Header -Value 0x0 -Option Constant
+ New-Variable -Name Base64 -Value 0x1 -Option Constant
+ New-Variable -Name Binary -Value 0x3 -Option Constant
+ New-Variable -Name Base64RequestHeader -Value 0x4 -Option Constant
+ # SANs
+ New-Variable -Name OtherName -Value 0x1 -Option Constant
+ New-Variable -Name RFC822Name -Value 0x2 -Option Constant
+ New-Variable -Name DNSName -Value 0x3 -Option Constant
+ New-Variable -Name DirectoryName -Value 0x5 -Option Constant
+ New-Variable -Name URL -Value 0x7 -Option Constant
+ New-Variable -Name IPAddress -Value 0x8 -Option Constant
+ New-Variable -Name RegisteredID -Value 0x9 -Option Constant
+ New-Variable -Name Guid -Value 0xa -Option Constant
+ New-Variable -Name UPN -Value 0xb -Option Constant
+ # installation options
+ New-Variable -Name AllowNone -Value 0x0 -Option Constant
+ New-Variable -Name AllowNoOutstandingRequest -Value 0x1 -Option Constant
+ New-Variable -Name AllowUntrustedCertificate -Value 0x2 -Option Constant
+ New-Variable -Name AllowUntrustedRoot -Value 0x4 -Option Constant
+ # PFX export options
+ New-Variable -Name PFXExportEEOnly -Value 0x0 -Option Constant
+ New-Variable -Name PFXExportChainNoRoot -Value 0x1 -Option Constant
+ New-Variable -Name PFXExportChainWithRoot -Value 0x2 -Option Constant
     #endregion >> Constants
-	
+ 
     #region >> Subject Processing
-	# http://msdn.microsoft.com/en-us/library/aa377051(VS.85).aspx
-	$SubjectDN = New-Object -ComObject X509Enrollment.CX500DistinguishedName
-	$SubjectDN.Encode($Subject, 0x0)
+ # http://msdn.microsoft.com/en-us/library/aa377051(VS.85).aspx
+ $SubjectDN = New-Object -ComObject X509Enrollment.CX500DistinguishedName
+ $SubjectDN.Encode($Subject, 0x0)
     #endregion >> Subject Processing
 
     #region >> Extensions
 
     #region >> Enhanced Key Usages Processing
-	if ($EnhancedKeyUsage) {
-		$OIDs = New-Object -ComObject X509Enrollment.CObjectIDs
-		$EnhancedKeyUsage | %{
-			$OID = New-Object -ComObject X509Enrollment.CObjectID
-			$OID.InitializeFromValue($_.Value)
-			# http://msdn.microsoft.com/en-us/library/aa376785(VS.85).aspx
-			$OIDs.Add($OID)
-		}
-		# http://msdn.microsoft.com/en-us/library/aa378132(VS.85).aspx
-		$EKU = New-Object -ComObject X509Enrollment.CX509ExtensionEnhancedKeyUsage
-		$EKU.InitializeEncode($OIDs)
-		$ExtensionsToAdd += "EKU"
-	}
+ if ($EnhancedKeyUsage) {
+  $OIDs = New-Object -ComObject X509Enrollment.CObjectIDs
+  $EnhancedKeyUsage | %{
+   $OID = New-Object -ComObject X509Enrollment.CObjectID
+   $OID.InitializeFromValue($_.Value)
+   # http://msdn.microsoft.com/en-us/library/aa376785(VS.85).aspx
+   $OIDs.Add($OID)
+  }
+  # http://msdn.microsoft.com/en-us/library/aa378132(VS.85).aspx
+  $EKU = New-Object -ComObject X509Enrollment.CX509ExtensionEnhancedKeyUsage
+  $EKU.InitializeEncode($OIDs)
+  $ExtensionsToAdd += "EKU"
+ }
     #endregion >> Enhanced Key Usages Processing
 
     #region >> Key Usages Processing
-	if ($KeyUsage -ne $null) {
-		$KU = New-Object -ComObject X509Enrollment.CX509ExtensionKeyUsage
-		$KU.InitializeEncode([int]$KeyUsage)
-		$KU.Critical = $true
-		$ExtensionsToAdd += "KU"
-	}
+ if ($KeyUsage -ne $null) {
+  $KU = New-Object -ComObject X509Enrollment.CX509ExtensionKeyUsage
+  $KU.InitializeEncode([int]$KeyUsage)
+  $KU.Critical = $true
+  $ExtensionsToAdd += "KU"
+ }
     #endregion >> Key Usages Processing
 
     #region >> Basic Constraints Processing
-	if ($PSBoundParameters.Keys.Contains("IsCA")) {
-		# http://msdn.microsoft.com/en-us/library/aa378108(v=vs.85).aspx
-		$BasicConstraints = New-Object -ComObject X509Enrollment.CX509ExtensionBasicConstraints
-		if (!$IsCA) {$PathLength = -1}
-		$BasicConstraints.InitializeEncode($IsCA,$PathLength)
-		$BasicConstraints.Critical = $IsCA
-		$ExtensionsToAdd += "BasicConstraints"
-	}
+ if ($PSBoundParameters.Keys.Contains("IsCA")) {
+  # http://msdn.microsoft.com/en-us/library/aa378108(v=vs.85).aspx
+  $BasicConstraints = New-Object -ComObject X509Enrollment.CX509ExtensionBasicConstraints
+  if (!$IsCA) {$PathLength = -1}
+  $BasicConstraints.InitializeEncode($IsCA,$PathLength)
+  $BasicConstraints.Critical = $IsCA
+  $ExtensionsToAdd += "BasicConstraints"
+ }
     #endregion >> Basic Constraints Processing
 
     #region >> SAN Processing
-	if ($SubjectAlternativeName) {
-		$SAN = New-Object -ComObject X509Enrollment.CX509ExtensionAlternativeNames
-		$Names = New-Object -ComObject X509Enrollment.CAlternativeNames
-		foreach ($altname in $SubjectAlternativeName) {
-			$Name = New-Object -ComObject X509Enrollment.CAlternativeName
-			if ($altname.Contains("@")) {
-				$Name.InitializeFromString($RFC822Name,$altname)
-			} else {
-				try {
-					$Bytes = [Net.IPAddress]::Parse($altname).GetAddressBytes()
-					$Name.InitializeFromRawData($IPAddress,$Base64,[Convert]::ToBase64String($Bytes))
-				} catch {
-					try {
-						$Bytes = [Guid]::Parse($altname).ToByteArray()
-						$Name.InitializeFromRawData($Guid,$Base64,[Convert]::ToBase64String($Bytes))
-					} catch {
-						try {
-							$Bytes = ([Security.Cryptography.X509Certificates.X500DistinguishedName]$altname).RawData
-							$Name.InitializeFromRawData($DirectoryName,$Base64,[Convert]::ToBase64String($Bytes))
-						} catch {$Name.InitializeFromString($DNSName,$altname)}
-					}
-				}
-			}
-			$Names.Add($Name)
-		}
-		$SAN.InitializeEncode($Names)
-		$ExtensionsToAdd += "SAN"
-	}
+ if ($SubjectAlternativeName) {
+  $SAN = New-Object -ComObject X509Enrollment.CX509ExtensionAlternativeNames
+  $Names = New-Object -ComObject X509Enrollment.CAlternativeNames
+  foreach ($altname in $SubjectAlternativeName) {
+   $Name = New-Object -ComObject X509Enrollment.CAlternativeName
+   if ($altname.Contains("@")) {
+    $Name.InitializeFromString($RFC822Name,$altname)
+   } else {
+    try {
+     $Bytes = [Net.IPAddress]::Parse($altname).GetAddressBytes()
+     $Name.InitializeFromRawData($IPAddress,$Base64,[Convert]::ToBase64String($Bytes))
+    } catch {
+     try {
+      $Bytes = [Guid]::Parse($altname).ToByteArray()
+      $Name.InitializeFromRawData($Guid,$Base64,[Convert]::ToBase64String($Bytes))
+     } catch {
+      try {
+       $Bytes = ([Security.Cryptography.X509Certificates.X500DistinguishedName]$altname).RawData
+       $Name.InitializeFromRawData($DirectoryName,$Base64,[Convert]::ToBase64String($Bytes))
+      } catch {$Name.InitializeFromString($DNSName,$altname)}
+     }
+    }
+   }
+   $Names.Add($Name)
+  }
+  $SAN.InitializeEncode($Names)
+  $ExtensionsToAdd += "SAN"
+ }
     #endregion >> SAN Processing
 
     #region >> Custom Extensions
-	if ($CustomExtension) {
-		$count = 0
-		foreach ($ext in $CustomExtension) {
-			# http://msdn.microsoft.com/en-us/library/aa378077(v=vs.85).aspx
-			$Extension = New-Object -ComObject X509Enrollment.CX509Extension
-			$EOID = New-Object -ComObject X509Enrollment.CObjectId
-			$EOID.InitializeFromValue($ext.Oid.Value)
-			$EValue = [Convert]::ToBase64String($ext.RawData)
-			$Extension.Initialize($EOID,$Base64,$EValue)
-			$Extension.Critical = $ext.Critical
-			New-Variable -Name ("ext" + $count) -Value $Extension
-			$ExtensionsToAdd += ("ext" + $count)
-			$count++
-		}
-	}
+ if ($CustomExtension) {
+  $count = 0
+  foreach ($ext in $CustomExtension) {
+   # http://msdn.microsoft.com/en-us/library/aa378077(v=vs.85).aspx
+   $Extension = New-Object -ComObject X509Enrollment.CX509Extension
+   $EOID = New-Object -ComObject X509Enrollment.CObjectId
+   $EOID.InitializeFromValue($ext.Oid.Value)
+   $EValue = [Convert]::ToBase64String($ext.RawData)
+   $Extension.Initialize($EOID,$Base64,$EValue)
+   $Extension.Critical = $ext.Critical
+   New-Variable -Name ("ext" + $count) -Value $Extension
+   $ExtensionsToAdd += ("ext" + $count)
+   $count++
+  }
+ }
     #endregion >> Custom Extensions
 
     #endregion >> Extensions
 
     #region >> Private Key
-	# http://msdn.microsoft.com/en-us/library/aa378921(VS.85).aspx
-	$PrivateKey = New-Object -ComObject X509Enrollment.CX509PrivateKey
-	$PrivateKey.ProviderName = $ProviderName
-	$AlgID = New-Object -ComObject X509Enrollment.CObjectId
-	$AlgID.InitializeFromValue(([Security.Cryptography.Oid]$AlgorithmName).Value)
-	$PrivateKey.Algorithm = $AlgID
-	# http://msdn.microsoft.com/en-us/library/aa379409(VS.85).aspx
-	$PrivateKey.KeySpec = switch ($KeySpec) {"Exchange" {1}; "Signature" {2}}
-	$PrivateKey.Length = $KeyLength
-	# key will be stored in current user certificate store
-	switch ($PSCmdlet.ParameterSetName) {
-		'__store' {
-			$PrivateKey.MachineContext = if ($StoreLocation -eq "LocalMachine") {$true} else {$false}
-		}
-		'__file' {
-			$PrivateKey.MachineContext = $false
-		}
-	}
-	$PrivateKey.ExportPolicy = if ($Exportable) {1} else {0}
-	$PrivateKey.Create()
+ # http://msdn.microsoft.com/en-us/library/aa378921(VS.85).aspx
+ $PrivateKey = New-Object -ComObject X509Enrollment.CX509PrivateKey
+ $PrivateKey.ProviderName = $ProviderName
+ $AlgID = New-Object -ComObject X509Enrollment.CObjectId
+ $AlgID.InitializeFromValue(([Security.Cryptography.Oid]$AlgorithmName).Value)
+ $PrivateKey.Algorithm = $AlgID
+ # http://msdn.microsoft.com/en-us/library/aa379409(VS.85).aspx
+ $PrivateKey.KeySpec = switch ($KeySpec) {"Exchange" {1}; "Signature" {2}}
+ $PrivateKey.Length = $KeyLength
+ # key will be stored in current user certificate store
+ switch ($PSCmdlet.ParameterSetName) {
+  '__store' {
+   $PrivateKey.MachineContext = if ($StoreLocation -eq "LocalMachine") {$true} else {$false}
+  }
+  '__file' {
+   $PrivateKey.MachineContext = $false
+  }
+ }
+ $PrivateKey.ExportPolicy = if ($Exportable) {1} else {0}
+ $PrivateKey.Create()
     #endregion >> Private Key
 
-	# http://msdn.microsoft.com/en-us/library/aa377124(VS.85).aspx
-	$Cert = New-Object -ComObject X509Enrollment.CX509CertificateRequestCertificate
-	if ($PrivateKey.MachineContext) {
-		$Cert.InitializeFromPrivateKey($MachineContext,$PrivateKey,"")
-	} else {
-		$Cert.InitializeFromPrivateKey($UserContext,$PrivateKey,"")
-	}
-	$Cert.Subject = $SubjectDN
-	$Cert.Issuer = $Cert.Subject
-	$Cert.NotBefore = $NotBefore
-	$Cert.NotAfter = $NotAfter
-	foreach ($item in $ExtensionsToAdd) {$Cert.X509Extensions.Add((Get-Variable -Name $item -ValueOnly))}
-	if (![string]::IsNullOrEmpty($SerialNumber)) {
-		if ($SerialNumber -match "[^0-9a-fA-F]") {throw "Invalid serial number specified."}
-		if ($SerialNumber.Length % 2) {$SerialNumber = "0" + $SerialNumber}
-		$Bytes = $SerialNumber -split "(.{2})" | ?{$_} | %{[Convert]::ToByte($_,16)}
-		$ByteString = [Convert]::ToBase64String($Bytes)
-		$Cert.SerialNumber.InvokeSet($ByteString,1)
-	}
-	if ($AllowSMIME) {$Cert.SmimeCapabilities = $true}
-	$SigOID = New-Object -ComObject X509Enrollment.CObjectId
-	$SigOID.InitializeFromValue(([Security.Cryptography.Oid]$SignatureAlgorithm).Value)
-	$Cert.SignatureInformation.HashAlgorithm = $SigOID
-	# completing certificate request template building
-	$Cert.Encode()
-	
-	# interface: http://msdn.microsoft.com/en-us/library/aa377809(VS.85).aspx
-	$Request = New-Object -ComObject X509Enrollment.CX509enrollment
-	$Request.InitializeFromRequest($Cert)
-	$Request.CertificateFriendlyName = $FriendlyName
-	$endCert = $Request.CreateRequest($Base64)
-	$Request.InstallResponse($AllowUntrustedCertificate,$endCert,$Base64,"")
-	switch ($PSCmdlet.ParameterSetName) {
-		'__file' {
-			$PFXString = $Request.CreatePFX(
-				[Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)),
-				$PFXExportEEOnly,
-				$Base64
-			)
-			Set-Content -Path $Path -Value ([Convert]::FromBase64String($PFXString)) -Encoding Byte
-		}
-	}
+ # http://msdn.microsoft.com/en-us/library/aa377124(VS.85).aspx
+ $Cert = New-Object -ComObject X509Enrollment.CX509CertificateRequestCertificate
+ if ($PrivateKey.MachineContext) {
+  $Cert.InitializeFromPrivateKey($MachineContext,$PrivateKey,"")
+ } else {
+  $Cert.InitializeFromPrivateKey($UserContext,$PrivateKey,"")
+ }
+ $Cert.Subject = $SubjectDN
+ $Cert.Issuer = $Cert.Subject
+ $Cert.NotBefore = $NotBefore
+ $Cert.NotAfter = $NotAfter
+ foreach ($item in $ExtensionsToAdd) {$Cert.X509Extensions.Add((Get-Variable -Name $item -ValueOnly))}
+ if (![string]::IsNullOrEmpty($SerialNumber)) {
+  if ($SerialNumber -match "[^0-9a-fA-F]") {throw "Invalid serial number specified."}
+  if ($SerialNumber.Length % 2) {$SerialNumber = "0" + $SerialNumber}
+  $Bytes = $SerialNumber -split "(.{2})" | ?{$_} | %{[Convert]::ToByte($_,16)}
+  $ByteString = [Convert]::ToBase64String($Bytes)
+  $Cert.SerialNumber.InvokeSet($ByteString,1)
+ }
+ if ($AllowSMIME) {$Cert.SmimeCapabilities = $true}
+ $SigOID = New-Object -ComObject X509Enrollment.CObjectId
+ $SigOID.InitializeFromValue(([Security.Cryptography.Oid]$SignatureAlgorithm).Value)
+ $Cert.SignatureInformation.HashAlgorithm = $SigOID
+ # completing certificate request template building
+ $Cert.Encode()
+ 
+ # interface: http://msdn.microsoft.com/en-us/library/aa377809(VS.85).aspx
+ $Request = New-Object -ComObject X509Enrollment.CX509enrollment
+ $Request.InitializeFromRequest($Cert)
+ $Request.CertificateFriendlyName = $FriendlyName
+ $endCert = $Request.CreateRequest($Base64)
+ $Request.InstallResponse($AllowUntrustedCertificate,$endCert,$Base64,"")
+ switch ($PSCmdlet.ParameterSetName) {
+  '__file' {
+   $PFXString = $Request.CreatePFX(
+    [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)),
+    $PFXExportEEOnly,
+    $Base64
+   )
+   Set-Content -Path $Path -Value ([Convert]::FromBase64String($PFXString)) -Encoding Byte
+  }
+ }
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWebUfvFblVk6iNp8qc6pZdAl
-# SPugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQURhsJaYCETS7guyQjo9pyf0wP
+# oOCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -456,11 +456,11 @@ function New-SelfSignedCertificateEx {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBpFqLFR1MmVrPF6
-# foPjBegnwseWMA0GCSqGSIb3DQEBAQUABIIBAIBsyk/eTCqXsmP+5lvEMJVRFb82
-# KdfClVdSLRxaqJtK9V4aS1S6IIcxoMIsLQI/ySmHJ2fwoXoIbV4sqUrVpyjIrpSy
-# R7yv7Wqvys9fP8IB9ayDdWz6ovme951ocz2BaAx+hEjjeRRl2/4jens0pBJRviqS
-# zDOZsLmSpyhDOEr8BOLBjWIyM89vujNw8cbvdiwbdCsd2aTf7unmwcZkc7sLa9OQ
-# 4L1Fs6KsKDTFsOflrNYk+kLw0ois65iqaSY09Fw3PVtAsN9lWEt976IyebOUHULA
-# CSl3SVCFfzRlF0aN4iRngbPHtvtkNX8L6opc7YNZcIQ7ghEM3NmpOkbAPbU=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNEe9+8XlHxyJ4n3
+# HR9ld9/U4Ew6MA0GCSqGSIb3DQEBAQUABIIBAE2K64CvNug70kV/3ThmA/Ex5Pxo
+# PzAKj32notSFnfis9W/mM2op2jYfX6ZrdFc5xO46+wZi6Na8HNGAI+umxAzm6DNQ
+# fdaW472Wyv2QamW+TPo5eoBlMENdMTlIFbar5AFKa3s2ZOLYEH1nf4LiFo44ciWK
+# gMjK2g0j4I3g34g6Fr2ucwdvBQRml4VQkiRDtQGUCGLdKlhPN8Qr1HTJyOZ6WApW
+# SUN4ARdjEkkxSPMpD9sV6GjmLtrPu/+ur0kmb1a+dnnwd+U7oUiH2Ik5uBz0zfPn
+# L7dz3GG7s5J3GwDR5WNpgDN8Vk3NcEyZw7gKgVEHJ1p99A7DKIRl2GreY/w=
 # SIG # End signature block
