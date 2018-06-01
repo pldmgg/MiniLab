@@ -1,3 +1,114 @@
+<#
+    .SYNOPSIS
+        This function creates a new Enterprise Subordinate/Intermediate/Issuing Certification Authority by either...
+        
+        A) Creating a brand new Windows Server VM; or
+        B) Using an existing Windows Server on the network
+        
+        ...and then running a configuration script over a PS Remoting Session. Since this script needs to 
+        request a Certificate from the Root CA, in order to avoid the double-hop authentication issue,
+        a one-time-use Scheduled Task is created, immediately run, and deleted immediately after completion.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, a new Windows 2016 Standard Server Virtual Machine will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to reatart the localhost
+        before proceeding).
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER ExistingDomain
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Subordinate CA will join.
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to join the Subordinate CA Server to the domain
+        as well as configre the new Subordinate CA. This means that the Domain Account provided to this parameter MUST be a member
+        of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into the target Windows Server. If you're using a Vagrant Box (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER IPOfServerToBeSubCA
+        This parameter is OPTIONAL, however, if you do NOT use the -CreateNewVMs parameter, this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Subordinate CA.
+
+    .PARAMETER IPofDomainController
+        This parameter is OPTIONAL, however, if you cannot resolve the Domain Name provided to the -ExistingDomain parameter
+        from the localhost, then this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 address referring to a Domain Controller (not readonly) on the
+        domain specified by the -ExistingDomain parameter.
+
+    .PARAMETER IPOfRootCA
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents an IPv4 address referring to the Root CA on the domain specified by the
+        -ExistingDomain parameter.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateSubCASplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> ExistingDomain                          = "alpha.lab"
+        >> IPOfDomainController                    = "192.168.2.112"
+        >> IPOfRootCA                              = "192.168.2.113"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
+
+#>
 function Create-SubordinateCA {
     [CmdletBinding()]
     Param (

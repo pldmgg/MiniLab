@@ -1,3 +1,185 @@
+<#
+    .SYNOPSIS
+        This function creates a new Enterprise Root Certificate Authority and new Enterprise Subordinate/Intermediate/Issuing
+        Certification Authority on a Domain. If you do not want to create the Root and Subordinate CAs on an existing
+        domain, this function is capable of creating a brand new domain and deploying the CAs to that new domain.
+
+    .DESCRIPTION
+        This function is an example of 'Service Deployment' function that can be found within the MiniLab Module. A
+        'Service Deployment' function is responsible for deploying as many servers as is necessary to get a particular
+        service working on a domain/network. This may involve a myriad of feature/role installations and configuration
+        setttings across multiple servers.
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, new Windows 2016 Standard Server Virtual Machines will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to restart the localhost
+        before proceeding).
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER ExistingDomain
+        This parameter is OPTIONAL, however, either this parameter or the -NewDomain parameter are MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Root and Subordinate CAs will
+        join (if they aren't already).
+
+        Example: alpha.lab
+
+    .PARAMETER NewDomain
+        This parameter is OPTIONAL, however, either this parameter or the -ExistingDomain parameter are MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Root and Subordinate CAs will
+        join (if they aren't already).
+        
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to join the Subordinate CA Server to the domain
+        as well as configre the new Subordinate CA. This means that the Domain Account provided to this parameter MUST be a member
+        of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+        If you are creating a New Domain, these credentials will be used to create a new Domain Account that is a member of the
+        aforementioned Security Groups.
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into ALL target Windows Servers. If your target servers are Vagrant Boxes (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER LocalAdministratorAccountCredentials
+        This parameter is OPTIONAL, however, is you are creating a New Domain, then this parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter will be applied to the Local Built-In Administrator Account on the
+        target Windows Server. In other words, the pscredential provided to this parameter does NOT need to match
+        the current UserName/Password of the Local Administrator Account on the target Windows Server, because the
+        pscredential provided to this parameter will overwrite whatever the existing credentials are.
+
+    .PARAMETER DCIsRootCA
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, the  Root CA will be installed on the Primary Domain Controller. This is not
+        best practice, but if you have limited hardware resources, this could come in handy.
+
+    .PARAMETER IPofServerToBeDomainController
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Primary Domain Controller.
+
+    .PARAMETER IPOfServerToBeRootCA
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Root CA.
+    
+    .PARAMETER IPOfServerToBeSubCA
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Subordinate CA.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Create a New Domain With 3 Servers - Primary Domain Controller, Root CA, and Subordinate CA
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+    .EXAMPLE
+        # Create a New Domain With 2 Servers - Primary Domain Controller (which will also be the Root CA), and Subordinate CA
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> SkipHyperVInstallCheck                  = $True
+        >> DCIsRootCA                              = $True
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+    .EXAMPLE
+        # Add Two-Tier PKI to your Existing Domain
+        # IMPORTANT NOTE: If you can't resolve the -ExistingDomain from the localhost, be sure to use the -IPOfServerToBeDomainController
+        # parameter with the IP Address of an EXISTING Domain Controller on the domain specified by -ExistingDomain
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> ExistingDomain                          = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+
+#>
 function Create-TwoTierPKI {
     [CmdletBinding()]
     Param (
@@ -113,8 +295,12 @@ function Create-TwoTierPKI {
     }
 
     if (!$CreateNewVMs -and $PSBoundParameters['NewDomain'] -and !$PSBoundParameters['IPofServerToBeDomainController']) {
-        $PromptMsg = "Please enter the IP Address of the existing Server that will become the new Domain Controller"
+        $PromptMsg = "Please enter the IP Address of the existing Windows Server that will become the new Domain Controller"
         $IPofServerToBeDomainController = Read-Host -Prompt $PromptMsg
+        while (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+            Write-Warning "'$IPofServerToBeDomainController' is NOT a valid IPv4 address!"
+            $IPofServerToBeDomainController = Read-Host -Prompt $PromptMsg
+        }
     }
 
     if ($CreateNewVMs -and 
@@ -130,9 +316,47 @@ function Create-TwoTierPKI {
         return
     }
 
+    if (!$CreateNewVMs -and !$PSBoundParameters['IPofServerToBeRootCA']) {
+        $PromptMsg = = "Please enter the IP Address of the existing Windows Server that will become the new Root CA"
+        $IPofServerToBeRootCA = Read-Host -Prompt $PromptMsg
+        while (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
+            Write-Warning "'$IPofServerToBeRootCA' is NOT a valid IPv4 address!"
+            $IPofServerToBeRootCA = Read-Host -Prompt $PromptMsg
+        }
+    }
+
+    if (!$CreateNewVMs -and !$PSBoundParameters['IPofServerToBeSubCA']) {
+        $PromptMsg = = "Please enter the IP Address of the existing Windows Server that will become the new Root CA"
+        $IPofServerToBeSubCA = Read-Host -Prompt $PromptMsg
+        while (![bool]$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
+            Write-Warning "'$IPofServerToBeSubCA' is NOT a valid IPv4 address!"
+            $IPofServerToBeSubCA = Read-Host -Prompt $PromptMsg
+        }
+    }
+
     if ($PSBoundParameters['IPofServerToBeDomainController'] -and $PSBoundParameters['IPofServerToBeRootCA']) {
         if ($IPofServerToBeDomainController -eq $IPofServerToBeRootCA) {
             $DCIsRootCA = $True
+        }
+    }
+
+    if (!$PSBoundParameters['NewDomain']) {
+        if (!$PSBoundParameters['IPofServerToBeDomainController']) {
+            # Make sure we can Resolve the Domain/Domain Controller
+            try {
+                [array]$ResolveDomain = Resolve-DNSName -Name $ExistingDomain -ErrorAction Stop
+                $IPofServerToBeDomainController = $ResolveDomain[0].IPAddress
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+            Write-Error "'$IPofServerToBeDomainController' is NOT a valid IPv4 address! Halting!"
+            $global:FunctionResult = "1"
+            return
         }
     }
 
@@ -160,9 +384,32 @@ function Create-TwoTierPKI {
         ${Function:New-RootCA}.Ast.Extent.Text
         ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
         ${Function:New-SubordinateCA}.Ast.Extent.Text
+        ${Function:Create-Domain}.Ast.Extent.Text
+        ${Function:Create-RootCA}.Ast.Extent.Text
+        ${Function:Create-SubordinateCA}.Ast.Extent.Text
     )
 
+    $CreateDCSplatParams = @{
+        PSRemotingCredentials                   = $PSRemotingCredentials
+        DomainAdminCredentials                  = $DomainAdminCredentials
+        LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
+    }
+
+    $CreateRootCASplatParams = @{
+        PSRemotingCredentials                   = $PSRemotingCredentials
+        DomainAdminCredentials                  = $DomainAdminCredentials
+    }
+
+    $CreateSubCASplatParams = @{
+        PSRemotingCredentials                   = $PSRemotingCredentials
+        DomainAdminCredentials                  = $DomainAdminCredentials
+    }
+
+    $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
+    $DomainShortName = $($FinalDomainName -split '\.')[0]
+
     #endregion >> Prep
+
 
     # Create the new VMs if desired
     if ($CreateNewVMs) {
@@ -251,14 +498,22 @@ function Create-TwoTierPKI {
         if (!$(Test-Path "$VMStorageDirectory\BoxDownloads")) {
             $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads" -Force
         }
-        $BoxNameRegex = $($Windows2016VagrantBox -split '/')[0]
+        $BoxNameRegex = [regex]::Escape($($Windows2016VagrantBox -split '/')[0])
         $BoxFileAlreadyPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -File -Filter "*.box" | Where-Object {$_.Name -match $BoxNameRegex}
-        if (![bool]$BoxFileAlreadyPresentCheck) {
-            $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
+        $DecompressedBoxDirectoryPresentCheck = Get-ChildItem "$VMStorageDirectory\BoxDownloads" -Directory | Where-Object {$_.Name -match $BoxNameRegex}
+        if ([bool]$DecompressedBoxDirectoryPresentCheck) {
+            $DecompressedBoxDirectoryItem = $DecompressedBoxDirectoryPresentCheck
+            $DecompressedBoxDir = $DecompressedBoxDirectoryItem.FullName
+        }
+        elseif ([bool]$BoxFileAlreadyPresentCheck) {
+            $BoxFileItem = $BoxFileAlreadyPresentCheck
+            $BoxFilePath = $BoxFileItem.FullName
         }
         else {
-            $BoxFileItem = $BoxFileAlreadyPresentCheck
+            $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
+            $BoxFilePath = $BoxFileItem.FullName
         }
+
         if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
             if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
                 # Download bsdtar from latest MSYS2 available on pldmgg github
@@ -275,40 +530,103 @@ function Create-TwoTierPKI {
                         $env:Path = "$env:Path;$BsdTarDirectory"
                     }
                 }
+                $TarCmd = "bsdtar"
+            }
+            else {
+                $TarCmd = "tar"
             }
         }
+        
+        if ($BoxFileItem) {
+            if (!$(Test-Path "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)")) {
+                $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            }
+
+            # Extract the .box File
+            Push-Location "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                Start-Sleep -Seconds 5
+            }
+            try {
+                $null = & $TarCmd -xzvf $BoxFilePath 2>&1
+            }
+            catch {
+                Write-Error $_
+                #Remove-Item $BoxFilePath -Force
+                $global:FunctionResult = "1"
+                return
+            }
+            Pop-Location
+
+            $DecompressedBoxDir = "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+        }
+
+        # Make sure $BoxFilePath doesn't exist as a variable so that the below VM Deployment scriptblock
+        # copies the $DecompressedBoxDir
+        Remove-Variable -Name 'BoxFilePath' -Force -ErrorAction SilentlyContinue
+
+        $ErrMsg = "Unable to find the decompressed Vagrant Box directory! Halting!"
+        if (!$DecompressedBoxDir) {
+            Write-Error $ErrMsg
+            $global:FunctionResult = "1"
+            return
+        }
+        if ($DecompressedBoxDir) {
+            if (!$(Test-Path $DecompressedBoxDir)) {
+                Write-Error $ErrMsg
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        $NewVMDeploySBAsString = @"
+[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+
+`$env:Path = '$env:Path'
+
+# Load the functions we packed up
+`$args | foreach { Invoke-Expression `$_ }
+
+`$DeployBoxSplatParams = @{
+    VagrantBox                  = '$Windows2016VagrantBox'
+    CPUs                        = 2
+    Memory                      = 4096
+    VagrantProvider             = "hyperv"
+    VMName                      = '$DomainShortName' + "replaceme"
+    VMDestinationDirectory      = '$VMStorageDirectory'
+    SkipHyperVInstallCheck      = `$True
+    CopyDecompressedDirectory   = `$True
+}
+
+if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
+    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
+    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
+        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
+    }
+}
+
+`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+`$DeployBoxResult
+"@
 
         if ($NewDomain -and !$IPofServerToBeDomainController) {
             $DomainShortName = $($NewDomain -split "\.")[0]
             Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
 
-            $NewDCVMDeploySB = {
-                [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
-
-                $env:Path = $args[0]
-
-                # Load the functions we packed up
-                $args[1] | foreach { Invoke-Expression $_ }
-
-                $DeployDCBoxSplatParams = @{
-                    VagrantBox              = $args[2]
-                    BoxFilePath             = $args[3]
-                    CPUs                    = 2
-                    Memory                  = 4096
-                    VagrantProvider         = "hyperv"
-                    VMName                  = $args[4] + "DC1"
-                    VMDestinationDirectory  = $args[5]
-                    SkipHyperVInstallCheck  = $True
-                }
-                $DeployDCBoxResult = Deploy-HyperVVagrantBoxManually @DeployDCBoxSplatParams
-                $DeployDCBoxResult
-            }
             $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $(Get-Job).Name
+
+            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','DC1'
+            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
 
             $NewDCVMDeployJobSplatParams = @{
                 Name            = $NewDCVMDeployJobName
-                Scriptblock     = $NewDCVMDeploySB
-                ArgumentList    = @($env:Path,$FunctionsForSBUse,$Windows2016VagrantBox,$BoxFileItem.FullName,$DomainShortName,$VMStorageDirectory)
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
             }
             $NewDCVMDeployJobInfo = Start-Job @NewDCVMDeployJobSplatParams
         }
@@ -321,33 +639,15 @@ function Create-TwoTierPKI {
             }
             Write-Host "Deploying New Root CA VM '$DomainShortName`RootCA'..."
 
-            $NewRootCAVMDeploySB = {
-                [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
-
-                $env:Path = $args[0]
-
-                # Load the functions we packed up
-                $args[1] | foreach { Invoke-Expression $_ }
-
-                $DeployRootCABoxSplatParams = @{
-                    VagrantBox              = $args[2]
-                    BoxFilePath             = $args[3]
-                    CPUs                    = 2
-                    Memory                  = 4096
-                    VagrantProvider         = "hyperv"
-                    VMName                  = $args[4] + "RootCA"
-                    VMDestinationDirectory  = $args[5]
-                    SkipHyperVInstallCheck  = $True
-                }
-                $DeployRootCABoxResult = Deploy-HyperVVagrantBoxManually @DeployRootCABoxSplatParams
-                $DeployRootCABoxResult
-            }
             $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $(Get-Job).Name
+
+            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','RootCA'
+            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
 
             $NewRootCAVMDeployJobSplatParams = @{
                 Name            = $NewRootCAVMDeployJobName
-                Scriptblock     = $NewRootCAVMDeploySB
-                ArgumentList    = @($env:Path,$FunctionsForSBUse,$Windows2016VagrantBox,$BoxFileItem.FullName,$DomainShortName,$VMStorageDirectory)
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
             }
             $NewRootCAVMDeployJobInfo = Start-Job @NewRootCAVMDeployJobSplatParams
         }
@@ -360,33 +660,15 @@ function Create-TwoTierPKI {
             }
             Write-Host "Deploying New Subordinate CA VM '$DomainShortName`SubCA'..."
 
-            $NewSubCAVMDeploySB = {
-                [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
-
-                $env:Path = $args[0]
-
-                # Load the functions we packed up
-                $args[1] | foreach { Invoke-Expression $_ }
-
-                $DeploySubCABoxSplatParams = @{
-                    VagrantBox              = $args[2]
-                    BoxFilePath             = $args[3]
-                    CPUs                    = 2
-                    Memory                  = 4096
-                    VagrantProvider         = "hyperv"
-                    VMName                  = $args[4] + "SubCA"
-                    VMDestinationDirectory  = $args[5]
-                    SkipHyperVInstallCheck  = $True
-                }
-                $DeploySubCABoxResult = Deploy-HyperVVagrantBoxManually @DeploySubCABoxSplatParams
-                $DeploySubCABoxResult
-            }
             $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $(Get-Job).Name
+
+            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','SubCA'
+            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
 
             $NewSubCAVMDeployJobSplatParams = @{
                 Name            = $NewSubCAVMDeployJobName
-                Scriptblock     = $NewSubCAVMDeploySB
-                ArgumentList    = @($env:Path,$FunctionsForSBUse,$Windows2016VagrantBox,$BoxFileItem.FullName,$DomainShortName,$VMStorageDirectory)
+                Scriptblock     = $NewVMDeploySB
+                ArgumentList    = $FunctionsForSBUse
             }
             $NewSubCAVMDeployJobInfo = Start-Job @NewSubCAVMDeployJobSplatParams
         }
@@ -408,18 +690,19 @@ function Create-TwoTierPKI {
             if ($DCIsRootCA) {
                 $IPofServerToBeRootCA = $IPofServerToBeDomainController
             }
-            else {
+
+            if (!$DCIsRootCA) {
                 $NewRootCAVMDeployResult = Wait-Job -Job $NewRootCAVMDeployJobInfo | Receive-Job
                 $IPofServerToBeRootCA = $NewRootCAVMDeployResult.VMIPAddress
-            }
+                
+                while (![bool]$(Get-VM -Name "$DomainShortName`RootCA" -ErrorAction SilentlyContinue)) {
+                    Write-Host "Waiting for $DomainShortName`RootCA VM to be deployed..."
+                    Start-Sleep -Seconds 15
+                }
 
-            while (![bool]$(Get-VM -Name "$DomainShortName`RootCA" -ErrorAction SilentlyContinue)) {
-                Write-Host "Waiting for $DomainShortName`RootCA VM to be deployed..."
-                Start-Sleep -Seconds 15
-            }
-
-            if (!$IPofServerToBeRootCA) {
-                $IPofServerToBeRootCA = $(Get-VM -Name "$DomainShortName`RootCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                if (!$IPofServerToBeRootCA) {
+                    $IPofServerToBeRootCA = $(Get-VM -Name "$DomainShortName`RootCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                }
             }
         }
         if (!$IPofServerToBeSubCA) {
@@ -443,7 +726,7 @@ function Create-TwoTierPKI {
         if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
             $null = $VMsNotReportingIP.Add("$DomainShortName`RootCA")
         }
-        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+        if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
             $null = $VMsNotReportingIP.Add("$DomainShortName`SubCA")
         }
 
@@ -455,71 +738,126 @@ function Create-TwoTierPKI {
 
         Write-Host "Finished Deploying New VMs..."
 
-        #endregion >> Deploy New VMs
-    }
+        if ($NewDomain) {
+            Write-Host "IP of DC is $IPOfServerToBeDomainController"
+        }
+        Write-Host "IP of Root CA is $IPOfServerToBeRootCA"
+        Write-Host "IP of Sub CA is $IPOfServerToBeSubCA"
 
-    #region >> Update WinRM/WSMAN
+        #region >> Update WinRM/WSMAN
 
-    Write-Host "Updating WinRM/WSMan to allow for PSRemoting to Servers ..."
-    try {
-        $null = Enable-PSRemoting -Force -ErrorAction Stop
-    }
-    catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
-
+        Write-Host "Updating WinRM/WSMan to allow for PSRemoting to Servers ..."
         try {
-            $null = Enable-PSRemoting -Force
+            $null = Enable-PSRemoting -Force -ErrorAction Stop
         }
         catch {
-            Write-Error $_
-            Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+
+            try {
+                $null = Enable-PSRemoting -Force
+            }
+            catch {
+                Write-Error $_
+                Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
+        if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
+            $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+        }
+
+        # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
+        $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+        [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
+
+        [System.Collections.ArrayList]$ItemsToAddToWSMANTrustedHosts = @(
+            $IPofServerToBeRootCA
+            $IPofServerToBeSubCA
+        )
+        if ($IPofServerToBeDomainController) {
+            $null = $ItemsToAddToWSMANTrustedHosts.Add($IPofServerToBeDomainController)
+        }
+        foreach ($NetItem in $ItemsToAddToWSMANTrustedHosts) {
+            if ($CurrentTrustedHostsAsArray -notcontains $NetItem) {
+                $null = $CurrentTrustedHostsAsArray.Add($NetItem)
+            }
+        }
+        $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
+        Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+
+        Write-Host "Finished updating WinRM/WSMan..."
+
+        #endregion >> Update WinRM/WSMAN
+
+
+        #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+        Write-Host "Attempting New PSSession to Remote Hosts for up to 30 minutes to ensure they are ready..."
+        if ($NewDomain) {
+            $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToDC1Check"
+            $Counter = 0
+            while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+                try {
+                    $DCPSSession = New-PSSession -ComputerName $IPofServerToBeDomainController -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                    if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+                }
+                catch {
+                    if ($Counter -le 120) {
+                        Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                        Start-Sleep -Seconds 15
+                    }
+                    else {
+                        Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                        $global:FunctionResult = "1"
+                        $DCPSRemotingFailure
+                        return
+                    }
+                }
+                $Counter++
+            }
+        }
+        if ($DCPSRemotingFailure) {
+            Write-Host "Tried to remote into DC1 with the following parameters:"
+            $IPofServerToBeDomainController
+            $PSRemotingCredentials
             $global:FunctionResult = "1"
             return
         }
-    }
 
-    # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
-    if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
-        $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
-    }
-
-    # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
-    $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
-    [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
-
-    [System.Collections.ArrayList]$ItemsToAddToWSMANTrustedHosts = @(
-        $IPofServerToBeRootCA
-        $IPofServerToBeSubCA
-    )
-    if ($IPofServerToBeDomainController) {
-        $null = $ItemsToAddToWSMANTrustedHosts.Add($IPofServerToBeDomainController)
-    }
-    foreach ($NetItem in $ItemsToAddToWSMANTrustedHosts) {
-        if ($CurrentTrustedHostsAsArray -notcontains $NetItem) {
-            $null = $CurrentTrustedHostsAsArray.Add($NetItem)
-        }
-    }
-    $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
-    Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
-
-    Write-Host "Finished updating WinRM/WSMan..."
-
-    #endregion >> Update WinRM/WSMAN
-
-
-    #region >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
-
-    Write-Host "Attempting New PSSession to Remote Hosts for up to 30 minutes to ensure they are ready..."
-    if ($NewDomain) {
-        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToDC1Check"
+        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCACheck"
         $Counter = 0
         while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
             try {
-                $DCPSSession = New-PSSession -ComputerName $IPofServerToBeDomainController -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                $RootCAPSSession = New-PSSession -ComputerName $IPofServerToBeRootCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
                 if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
             }
             catch {
                 if ($Counter -le 120) {
+                    Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
+                    Start-Sleep -Seconds 15
+                }
+                else {
+                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                    $global:FunctionResult = "1"
+                    $RootCAPSRemotingFailure = $True
+                    return
+                }
+            }
+            $Counter++
+        }
+
+        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToSubCACheck"
+        $Counter = 0
+        while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
+            try {
+                $SubCAPSSession = New-PSSession -ComputerName $IPofServerToBeSubCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
+                if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+            }
+            catch {
+                if ($Counter -le 60) {
                     Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
                     Start-Sleep -Seconds 15
                 }
@@ -531,476 +869,114 @@ function Create-TwoTierPKI {
             }
             $Counter++
         }
-    }
 
-    $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCACheck"
-    $Counter = 0
-    while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
-        try {
-            $RootCAPSSession = New-PSSession -ComputerName $IPofServerToBeRootCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
-            if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
+        # Clear the PSSessions
+        Get-PSSession | Remove-PSSession
+
+        $EndVMDeployment = Get-Date
+
+        if ($StartVMDeployment -and $EndVMDeployment) {
+            $TotalTime = $EndVMDeployment - $StartVMDeployment
+            Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
         }
-        catch {
-            if ($Counter -le 120) {
-                Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
-                Start-Sleep -Seconds 15
-            }
-            else {
-                Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
+
+        #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
+
+        # Finish setting splat params for Create-Domain, Create-RootCA, and Create-SubordinateCA functions...
+        if ($NewDomain) {
+            $CreateDCSplatParams.Add("IPofServerToBeDomainController",$IPofServerToBeDomainController)
+            $CreateDCSplatParams.Add("NewDomain",$FinalDomainName)
+
+            Write-Host "Splat Params for Create-Domain are:" -ForegroundColor Yellow
+            $CreateDCSplatParams
         }
-        $Counter++
-    }
 
-    $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToSubCACheck"
-    $Counter = 0
-    while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
-        try {
-            $SubCAPSSession = New-PSSession -ComputerName $IPofServerToBeSubCA -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
-            if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
-        }
-        catch {
-            if ($Counter -le 60) {
-                Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
-                Start-Sleep -Seconds 15
-            }
-            else {
-                Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-        $Counter++
-    }
+        $CreateRootCASplatParams.Add("IPofServerToBeRootCA",$IPofServerToBeRootCA)
+        $CreateRootCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
+        $CreateRootCASplatParams.Add("ExistingDomain",$FinalDomainName)
+        Write-Host "Splat Params for Create-RootCA are:" -ForegroundColor Yellow
+        $CreateRootCASplatParams
 
-    # Clear the PSSessions
-    Get-PSSession | Remove-PSSession
+        $CreateSubCASplatParams.Add("IPofServerToBeSubCA",$IPofServerToBeSubCA)
+        $CreateSubCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
+        $CreateSubCASplatParams.Add("IPofRootCA",$IPofServerToBeRootCA)
+        $CreateSubCASplatParams.Add("ExistingDomain",$FinalDomainName)
+        Write-Host "Splat Params for Create-SubordinateCA are:" -ForegroundColor Yellow
+        $CreateSubCASplatParams
 
-    $EndVMDeployment = Get-Date
-
-    if ($StartVMDeployment -and $EndVMDeployment) {
-        $TotalTime = $EndVMDeployment - $StartVMDeployment
-        Write-Host "VM Deployment took $($TotalTime.Hours) hours and $($TotalTime.Minutes) minutes..." -ForegroundColor Yellow
-    }
-
-    #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
         
-        
-    #region >> Prep New Domain Controller
+        #endregion >> Deploy New VMs
+    }
 
+    #region >> Create the Services
+
+    # Can't Invoke-Parallel because Root CA depends on DC and SubCA Depends on Root CA...
+    <#
+    $ArrayOfPSObjects = @(
+        [pscustomobject]@{
+            Purpose             = "ForDC"
+            FunctionsForSBUse   = $FunctionsForSBUse
+            SplatParams         = $CreateDCSplatParams
+        }
+        [pscustomobject]@{
+            Purpose             = "ForRootCA"
+            FunctionsForSBUse   = $FunctionsForSBUse
+            SplatParams         = $CreateRootCASplatParams
+        }
+        [pscustomobject]@{
+            Purpose             = "ForSubCA"
+            FunctionsForSBUse   = $FunctionsForSBUse
+            SplatParams         = $CreateSubCASplatParams
+        }
+    )
+
+    $ArrayOfPSObjects | Invoke-Parallel {
+        # Load the functions we packed up
+        foreach ($func in $_.FunctionsForSBUse) { Invoke-Expression $func }
+        $SplatParams = $_.SplatParams
+
+        if ($_.Purpose -eq "ForDC") {
+            Create-Domain @SplatParams
+        }
+        if ($_.Purpose -eq "ForRootCA") {
+            Create-RootCA @SplatParams
+        }
+        if ($_.Purpose -eq "ForSubCA") {
+            Create-SubCA @SplatParams
+        }
+    }
+    #>
+    
     if ($NewDomain) {
-        $DomainShortName = $($NewDomain -split "\.")[0]
-        $DomainSNLower = $DomainShortName.ToLowerInvariant()
-        if (!$IPofServerToBeDomainController) {
-            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
-            $PSRemotingCredentials = [pscredential]::new("vagrant",$VagrantVMPassword)
-        }
-        if (![bool]$LocalAdministratorAccountCredentials) {
-            $LocalAdministratorAccountPassword = Read-Host -Prompt "Please enter password for the Local 'Administrator' Account on $IPofServerToBeDomainController" -AsSecureString
-            $LocalAdministratorAccountCredentials = [pscredential]::new("Administrator",$LocalAdministratorAccountPassword)
-        }
-        if (!$PSRemotingCredentials) {
-            $PSRemotingCredentials = $LocalAdministratorAccountCredentials
-        }
-        if (!$DomainAdminCredentials) {
-            $DomainAdminUserAcct = $DomainSNLower + '\' + $DomainSNLower + 'admin'
-            $DomainAdminPassword = ConvertTo-SecureString 'P@ssword321!' -AsPlainText -Force
-            $DomainAdminCredentials = [pscredential]::new($DomainAdminUserAcct,$DomainAdminPassword)
-        }
-
-        #region >> Rename Server To Be Domain Controller If Necessary
-
-        # Check current HostName (and also set the local Administrator account password)
-        $InvCmdCheckSB = {
-            # Make sure the Local 'Administrator' account has its password set
-            $UserAccount = Get-LocalUser -Name "Administrator"
-            $UserAccount | Set-LocalUser -Password $args[0]
-            $env:ComputerName
-        }
-        $InvCmdCheckSplatParams = @{
-            ComputerName            = $IPofServerToBeDomainController
-            Credential              = $PSRemotingCredentials
-            ScriptBlock             = $InvCmdCheckSB
-            ArgumentList            = $LocalAdministratorAccountCredentials.Password
-            ErrorAction             = "Stop"
-        }
-        try {
-            $RemoteHostNameDC = Invoke-Command @InvCmdCheckSplatParams
-        }
-        catch {
-            Write-Error $_
-            $global:FunctionResult = "1"
-            return
-        }
-
-        $RenameComputerJobSB = {
-            $RenameComputerSBAsString = 'Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart'
-            $RenameComputerSB = [scriptblock]::Create($RenameComputerSBAsString)
-    
-            $InvCmdRenameComputerSplatParams = @{
-                ComputerName    = $args[0]
-                Credential      = $args[1]
-                ScriptBlock     = $RenameComputerSB
-                ArgumentList    = $args[2],$args[1]
-                ErrorAction     = "Stop"
-            }
-    
-            try {
-                $null = Invoke-Command @InvCmdRenameComputerSplatParams
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-
-        $DesiredHostNameDC = $DomainShortName + "DC1"
-    
-        # Rename the Server that will become the DC
-        if ($RemoteHostNameDC -ne $DesiredHostNameDC) {
-            Write-Host "Renaming '$IPofServerToBeDomainController' from '$RemoteHostNameDC' to '$DesiredHostNameDC'..."
-            
-            $RenameDCJobName = NewUniqueString -PossibleNewUniqueString "RenameDC" -ArrayOfStrings $(Get-Job).Name
-
-            $RenameDCArgList = @(
-                $IPofServerToBeDomainController
-                $PSRemotingCredentials
-                $DesiredHostNameDC
-            )
-            $RenameDCJobSplatParams = @{
-                Name            = $RenameDCJobName
-                Scriptblock     = $RenameComputerJobSB
-                ArgumentList    = $RenameDCArgList
-            }
-            $RenameDCJobInfo = Start-Job @RenameDCJobSplatParams
-        }
-
-        if ($RenameDCJobInfo) {
-            $RenameDCResult = Wait-Job -Job $RenameDCJobInfo | Receive-Job
-
-            Write-Host "Sleeping for 5 minutes to give '$IPofServerToBeDomainController' time to reboot after name change..."
-            Start-Sleep -Seconds 300
-        
-            # Try to make a PSSession for 15 minutes to verify the Host Name was changed
-            Write-Host "Trying to remote into DC1 at $IPofServerToBeDomainController after HostName change..."
-            $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToDC1PostRename"
-            $Counter = 0
-            while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
-                try {
-                    $DCPSSession = New-PSSession -ComputerName $IPofServerToBeDomainController -Credential $PSRemotingCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
-                    if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
-                }
-                catch {
-                    if ($Counter -le 60) {
-                        Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
-                        Start-Sleep -Seconds 15
-                    }
-                    else {
-                        Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
-                        $global:FunctionResult = "1"
-                        return
-                    }
-                }
-                $Counter++
-            }
-        
-            # Verify the name of the Remote Host has been changed
-            try {
-                $NewHostNameCheckSplatParams = @{
-                    Session             = $DCPSSession
-                    ScriptBlock         = {$env:ComputerName}
-                }
-                $RemoteHostNameDC = Invoke-Command @NewHostNameCheckSplatParams 
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        
-            if ($RemoteHostNameDC -ne $DesiredHostNameDC) {
-                Write-Error "Failed to rename Server to become Domain Controller '$IPofServerToBeDomainController'! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-
-        #endregion >> Rename Server To Be Domain Controller If Necessary
-
-
-        #region >> Make the Domain Controller
-
-        Write-Host "Creating the New Domain Controller..."
-        $NewDomainControllerSplatParams = @{
-            DesiredHostName                         = $DesiredHostNameDC
-            NewDomainName                           = $NewDomain
-            NewDomainAdminCredentials               = $DomainAdminCredentials
-            ServerIP                                = $IPofServerToBeDomainController
-            PSRemotingLocalAdminCredentials         = $PSRemotingCredentials
-            LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
-        }
-        $NewDomainControllerResults = New-DomainController @NewDomainControllerSplatParams
-
-        if (![bool]$($NewDomainControllerResults -match "DC Installation Success")) {
-            Write-Error "Unable to determine if creatrion of the New Domain Controller '$DesiredHostNameDC' at '$IPofServerToBeDomainController' was successfule! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-
-        #endregion >> Make the Domain Controller
+        $CreateDCResult = Create-Domain @CreateDCSplatParams
     }
 
-    #endregion >> Prep New Domain Controller
+    $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
 
-
-    #region >> Join the Servers to Domain And Rename If Necessary
-
-    $FinalDomainName = if ($ExistingDomain) {$ExistingDomain} else {$NewDomain}
-
-    $JoinDomainJobSB = {
-        $JoinDomainSBAsString = @'
-# Synchronize time with time servers
-$null = W32tm /resync /rediscover /nowait
-
-# Make sure the DNS Client points to $IPofServerToBeDomainController (and others from DHCP)
-$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
-$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
-$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
-$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
-$UpdatedDNSServerList.Insert(0,$args[0])
-$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
-
-$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList
-[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder
-$UpdatedDNSSuffixList.Insert(0,$args[2])
-Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList
-
-# Try resolving the Domain for 30 minutes
-$Counter = 0
-while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {
-    Write-Host "Waiting for DNS to resolve Domain Controller..."
-    Start-Sleep -Seconds 15
-    $Counter++
-}
-if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {
-    Write-Error "Unable to resolve Domain $($args[2])! Halting!"
-    $global:FunctionResult = "1"
-    return
-}
-
-# Join Domain
-Rename-Computer -NewName $args[1]
-Start-Sleep -Seconds 10
-Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart
-'@
-        
-        $JoinDomainSB = [scriptblock]::Create($JoinDomainSBAsString)
-
-        $InvCmdJoinDomainSplatParams = @{
-            ComputerName    = $args[0]
-            Credential      = $args[1]
-            ScriptBlock     = $JoinDomainSB
-            ArgumentList    = $args[2],$args[3],$args[4],$args[5]
-        }
-        try {
-            Invoke-Command @InvCmdJoinDomainSplatParams
-        }
-        catch {
-            Write-Error $_
-            $global:FunctionResult = "1"
-            return
-        }
-    }
-
-    # Check if DC and RootCA should be the same server
-    if ($IPofServerToBeDomainController -ne $IPofServerToBeRootCA) {
-        # Check if RootCA is already part of $ExistingDomain/$NewDomain
-        $InvCmdRootCADomainSplatParams = @{
-            ComputerName        = $IPofServerToBeRootCA
-            Credential          = $PSRemotingCredentials
-            ScriptBlock         = {$(Get-CimInstance win32_computersystem).Domain}
-            ErrorAction         = "Stop"
-        }
-        try {
-            $RootCADomain = Invoke-Command @InvCmdRootCADomainSplatParams
-        }
-        catch {
-            Write-Error $_
-            $global:FunctionResult = "1"
-            return
-        }
-
-        if ($RootCADomain -ne $FinalDomainName) {
-            Write-Host "Joining the Root CA to the Domain..."
-            $DesiredHostNameRootCA = $DomainShortName + "RootCA"
-
-            $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $(Get-Job).Name
-
-            $JoinRootCAArgList = @(
-                $IPofServerToBeRootCA
-                $PSRemotingCredentials
-                $IPofServerToBeDomainController
-                $DesiredHostNameRootCA
-                $FinalDomainName
-                $DomainAdminCredentials
-            )
-            $JoinRootCAJobSplatParams = @{
-                Name            = $JoinRootCAJobName
-                Scriptblock     = $JoinDomainJobSB
-                ArgumentList    = $JoinRootCAArgList
-            }
-            $JoinRootCAJobInfo = Start-Job @JoinRootCAJobSplatParams
-        }
-    }
-
-    # Check if SubCA is already part of $ExistingDomain/$NewDomain
-    $InvCmdSubCADomainSplatParams = @{
-        ComputerName        = $IPofServerToBeSubCA
-        Credential          = $PSRemotingCredentials
-        ScriptBlock         = {$(Get-CimInstance win32_computersystem).Domain}
-        ErrorAction         = "Stop"
-    }
-    try {
-        $SubCADomain = Invoke-Command @InvCmdRootCADomainSplatParams
-    }
-    catch {
-        Write-Error $_
-        $global:FunctionResult = "1"
-        return
-    }
-
-    if ($SubCADomain -ne $FinalDomainName) {
-        Write-Host "Joining the Subordinate CA to the Domain..."
-        $DesiredHostNameSubCA = $DomainShortName + "SubCA"
-        
-        $JoinSubCAJobName = NewUniqueString -PossibleNewUniqueString "JoinSubCA" -ArrayOfStrings $(Get-Job).Name
-
-        $JoinSubCAArgList = @(
-            $IPofServerToBeSubCA
-            $PSRemotingCredentials
-            $IPofServerToBeDomainController
-            $DesiredHostNameSubCA
-            $FinalDomainName
-            $DomainAdminCredentials
-        )
-        $JoinSubCAJobSplatParams = @{
-            Name            = $JoinSubCAJobName
-            Scriptblock     = $JoinDomainJobSB
-            ArgumentList    = $JoinSubCAArgList
-        }
-        $JoinSubCAJobInfo = Start-Job @JoinSubCAJobSplatParams
-    }
-
-    # Collect Job Output
-    if ($JoinRootCAJobInfo) {
-        $JoinRootCAResult = Wait-Job -Job $JoinRootCAJobInfo | Receive-Job
-
-        # Verify Root CA is Joined to Domain
-        # Try to create a PSSession to the Root CA for 15 minutes, then give up
-        Write-Host "Trying to remote into RootCA at '$IPofServerToBeRootCA' with Domain Admin Credentials after Joining Domain..."
-        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCAPostDomainJoin"
-        $Counter = 0
-        while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
-            try {
-                $RootCAPSSessionPostDomainJoin = New-PSSession -ComputerName $IPofServerToBeRootCA -Credential $DomainAdminCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
-                if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
-            }
-            catch {
-                if ($Counter -le 60) {
-                    Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
-                    Start-Sleep -Seconds 15
-                }
-                else {
-                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($DomainAdminCredentials.UserName)'! Halting!"
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-            $Counter++
-        }
-
-        if (!$RootCAPSSessionPostDomainJoin) {
-            Write-Error "Unable to create a PSSession to the Root CA Server at '$IPofServerToBeRootCA' using Domain Admin Credentials $($DomainAdminCredentials.UserName)! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-    }
-    if ($JoinSubCAJobInfo) {
-        $JoinSubCAResult = Wait-Job -Job $JoinSubCAJobInfo | Receive-Job
-        
-        # Verify Subordinate CA is Joined to Domain
-        # Try to create a PSSession to the Sub CA for 15 minutes, then give up
-        Write-Host "Trying to remote into SubCA at '$IPofServerToBeSubCA' with Domain Admin Credentials after Joining Domain..."
-        $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToSubCAPostDomainJoin"
-        $Counter = 0
-        while (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {
-            try {
-                $SubCAPSSessionPostDomainJoin = New-PSSession -ComputerName $IPofServerToBeSubCA -Credential $DomainAdminCredentials -Name $PSSessionName -ErrorAction SilentlyContinue
-                if (![bool]$(Get-PSSession -Name $PSSessionName -ErrorAction SilentlyContinue)) {throw}
-            }
-            catch {
-                if ($Counter -le 60) {
-                    Write-Warning "New-PSSession '$PSSessionName' failed. Trying again in 15 seconds..."
-                    Start-Sleep -Seconds 15
-                }
-                else {
-                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($DomainAdminCredentials.UserName)'! Halting!"
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-            $Counter++
-        }
-
-        if (!$SubCAPSSessionPostDomainJoin) {
-            Write-Error "Unable to create a PSSession to the Root CA Server at '$IPofServerToBeSubCA' using Domain Admin Credentials $($DomainAdminCredentials.UserName)! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-    }
-
-    #endregion >> Join the Servers to Domain And Rename If Necessary
-    
-
-    #region >> Create the Root and Subordinate CAs
-
-    # Remove All Existing PSSessions
-    Get-PSSession | Remove-PSSession
-
-    Write-Host "Creating the New Root CA..."
-    $NewRootCAResult = New-RootCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofServerToBeRootCA
-
-    Write-Host "Creating the New Subordinate CA..."
-    $NewSubCAResult = New-SubordinateCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofServerToBeRootCA -SubCAIPOrFQDN $IPofServerToBeSubCA
-
-    #endregion >> Create the Root and Subordinate CAs
+    $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
 
     $EndTime = Get-Date
     $TotalAllOpsTime = $EndTime - $StartTime
-    Write-Host "All operations took $($TotalAllOpsTime.Hours) hours and $($TotalAllOpsTime.Minutes) minutes" -ForegroundColor Yellow
-    
+    Write-Host "All operations for the $($MyInvocation.MyCommand.Name) function took $($TotalAllOpsTime.Hours) hours and $($TotalAllOpsTime.Minutes) minutes" -ForegroundColor Yellow
+
     $Output = @{
-        NewRootCAResult         = $NewRootCAResult
-        NewSubCAResult          = $NewSubCAResult
+        CreateRootCAResult      = $CreateRootCAResult
+        CreateSubCAResult       = $CreateSubCAResult
     }
-    if ($NewDomainControllerResults) {
-        $Output.Add("NewDomainControllerResult",$NewDomainControllerResults)
+    if ($CreateDCResult) {
+        $Output.Add("CreateDCResult",$CreateDCResult)
     }
 
     [pscustomobject]$Output
+
+    #end >> Create the Services
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUiK+/ph05eRv6yDRZj2wqbqck
-# Ckigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUI0Ze/b6xhjFn5YSXhD6fwS3U
+# Sg+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1057,11 +1033,11 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC1Ev4kWT5b6DpD/
-# ywTaGudCddHnMA0GCSqGSIb3DQEBAQUABIIBAL7Ju+k7BgCcqBXtFdM4rbLylvNA
-# KHYOapTy+piudBT1AalQ+0jeNscycSyndWyuGa6S7APOrzQGcD/S2VwdOFLQe73T
-# rLhijNAgjrfsRiDy46+hpQEIHUCUu2jlPIQFtpCuWmypfut78FwT/SGYmY5+2njP
-# QJ39LXRxi7bw6nBMr2gIfP8c+gsBHq50Ine+CviJy2RKaDlmxF/R+tsOy4NMnzAQ
-# DHSbYkG7G5z3zptNppUJEwUmahoKmLbnSjkqoD+fXu/l7QSsfMF2r8FcCpM5I4J3
-# NJSKYxF9UxEuiRWgRr8vyWD00RpatrXGTi20QChFl+rBv/flxeofpC1oJeY=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKoZva9dCIWHXHSF
+# cUwwqheAE5bSMA0GCSqGSIb3DQEBAQUABIIBAEYlv+pgDPnOf4jyPGdWYVHiDLo7
+# 2pShNDN3eKH+ccSnX0jzS6K0b6AhnXXh3UzXeOqQQYh2mYjqXnSlkjlZQo6Syh4A
+# ja5O832AS3sA/YlRTzvUvkhZqjJVv/iIlGKLhoT31sNySQQsxauCKIeCLq2TQlIE
+# lFobm4Bx4sjP2imA7LVi10b37vq0RjyNolV5hVPM3AkE6U7dCS3HK57PwAfjBTC3
+# kiuau0zplqRi2Nxnz/o7yDa9k1C/S6R7Ao3VI6/7ye/Usy93Dl9UxIhNJcy/oxpF
+# rJvHbRaalvc+1lgW8+WAA89tgRrhlFXdP5wQcvPEMXn2RzpjwgE//QNTAiA=
 # SIG # End signature block

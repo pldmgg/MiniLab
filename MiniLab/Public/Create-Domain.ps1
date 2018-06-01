@@ -1,3 +1,111 @@
+<#
+    .SYNOPSIS
+        This function creates a new Primary Domain Controller by either...
+        
+        A) Creating a brand new Windows Server VM; or
+        B) Using an existing Windows Server on the network
+        
+        ...and then running a DSC configuration on it.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, a new Windows 2016 Standard Server Virtual Machine will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to reatart the localhost
+        before proceeding).
+        
+        This VM will become the new Primary DC.
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER NewDomain
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the name of the new domain you would like to create.
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. A new Domain Account will be created using these credentials. This account will be
+        added to the following Security Groups on the New Domain:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER LocalAdministratorAccountCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter will be applied to the Local Built-In Administrator Account on the
+        target Windows Server. In other words, the pscredential provided to this parameter does NOT need to match
+        the current UserName/Password of the Local Administrator Account on the target Windows Server, because the
+        pscredential provided to this parameter will overwrite whatever the existing credentials are.
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into the target Windows Server. If you're using a Vagrant Box (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER IPOfServerToBeDomainController
+        This parameter is OPTIONAL, however, if you do NOT use the -CreateNewVMs parameter, this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Primary Domain Controller.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ****************
+        PS C:\Users\zeroadmin> $CreateDomainSplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> }
+        PS C:\Users\zeroadmin> $CreateDomainResult = Create-Domain @CreateDomainSplatParams
+        
+#>
 function Create-Domain {
     [CmdletBinding()]
     Param (

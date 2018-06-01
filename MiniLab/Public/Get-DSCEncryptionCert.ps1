@@ -1,3 +1,29 @@
+<#
+    .SYNOPSIS
+        This function creates a New Self-Signed Certificate meant to be used for DSC secret encryption and exports it to the
+        specified directory.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER MachineName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the Subject Alternative Name (SAN) on the Self-Signed Certificate.
+
+    .PARAMETER ExportDirectory
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the full path to a directory that will contain the new Self-Signed Certificate.
+
+    .EXAMPLE
+        # Import the MiniLab Module and -
+
+        PS C:\Users\zeroadmin> Get-DSCEncryptionCert -MachineName $env:ComputerName -ExportDirectory "C:\DSCConfigs"
+
+#>
 function Get-DSCEncryptionCert {
     [CmdletBinding()]
     param (

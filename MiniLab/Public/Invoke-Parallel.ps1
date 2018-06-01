@@ -1,5 +1,4 @@
-function Invoke-Parallel {
-    <#
+<#
     .SYNOPSIS
         Function to control parallel processing using runspaces
 
@@ -147,7 +146,8 @@ function Invoke-Parallel {
 
     .LINK
         https://github.com/RamblingCookieMonster/Invoke-Parallel
-    #>
+#>
+function Invoke-Parallel {
     [cmdletbinding(DefaultParameterSetName='ScriptBlock')]
     Param (
         [Parameter(Mandatory=$false,position=0,ParameterSetName='ScriptBlock')]

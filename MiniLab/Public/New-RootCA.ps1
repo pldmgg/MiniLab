@@ -1,3 +1,117 @@
+<#
+    .SYNOPSIS
+        This function configures the target Windows 2012 R2 or Windows 2016 Server to be a new Enterprise Root Certification Authority.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to configure the new Root CA. This means that
+        the Domain Account provided MUST be a member of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER RootCAIPOrFQDN
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 address or DNS-Resolveable FQDN that refers to the target Windows
+        Server that will become the new Enterprise Root CA. If it is NOT used, then the localhost will be configured as the
+        new Enterprise Root CA.
+
+    .PARAMETER CAType
+        This parameter is OPTIONAL, however, its default value is "EnterpriseRootCA".
+
+        This parameter takes a string that represents the type of Root Certificate Authority that the target server will become.
+        Currently this parameter only accepts "EnterpriseRootCA" as a valid value. But in the future, "StandaloneRootCA" will
+        also become a valid value.
+
+    .PARAMETER NewComputerTemplateCommonName
+        This parameter is OPTIONAL, however, its default value is "<DomainPrefix>" + "Computer".
+
+        This parameter takes a string that represents the desired Common Name for the new custom Computer (Machine)
+        Certificate Template. This updates some undesirable defaults that come with the default Computer (Machine)
+        Certificate Template.
+
+    .PARAMETER NewWebServerTemplateCommonName
+        This parameter is OPTIONAL, however, its default value is "<DomainPrefix>" + "WebServer".
+
+        This parameter takes a string that represents the desired Common Name for the new custom WebServer
+        Certificate Template. This updates some undesirable defaults that come with the default WebServer
+        Certificate Template.
+
+    .PARAMETER FileOutputDirectory
+        This parameter is OPTIONAL, however, its default value is "C:\NewRootCAOutput".
+
+        This parameter takes a string that represents the full path to a directory that will contain all files generated
+        by the New-RootCA function.
+
+        IMPORTANT NOTE: This directory will be made available to the network (it will become an SMB Share) so that the
+        Subordinate Certificate Authority can download needed files. This SMB share will only be available TEMPORARILY.
+        It will NOT survive a reboot.
+
+    .PARAMETER CryptoProvider
+        This parameter is OPTIONAL, however, its default value is "Microsoft Software Key Storage Provider".
+
+        This parameter takes a string that represents the Cryptographic Provider used by the new Root CA.
+        Currently, the only valid value for this parameter is "Microsoft Software Key Storage Provider".
+
+    .PARAMETER KeyLength
+        This parameter is OPTIONAL, however, its default value is 2048.
+
+        This parameter takes an integer with value 2048 or 4096.
+
+    .PARAMETER HashAlgorithm
+        This parameter is OPTIONAL, however, its default value is SHA256.
+
+        This parameter takes a string with acceptable values as follows: "SHA1","SHA256","SHA384","SHA512","MD5","MD4","MD2"
+
+    .PARAMETER KeyAlgorithmValue
+        This parameter is OPTIONAL, however, its default value is RSA.
+
+        This parameter takes a string with acceptable values: "RSA"
+
+    .PARAMETER CDPUrl
+        This parameter is OPTIONAL, however, its default value is "http://pki.$DomainName/certdata/<CaName><CRLNameSuffix>.crl"
+
+        This parameter takes a string that represents a Certificate Distribution List Revocation URL. The current default
+        configuration does not make this Url active, however, it still needs to be configured.
+
+    .PARAMETER AIAUrl
+        This parameter is OPTIONAL, however, its default value is "http://pki.$DomainName/certdata/<CaName><CertificateName>.crt"
+
+        This parameter takes a string that represents an Authority Information Access (AIA) Url (i.e. the location where the certificate of
+        of certificate's issuer can be downloaded). The current default configuration does not mahe this Url active, but it still
+        needs to be configured.
+
+    .EXAMPLE
+        # Make the localhost a Root CA
+
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateRootCASplatParams = @{
+        >> DomainAdminCredentials   = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
+
+    .EXAMPLE
+        # Make the Remote Host a Root CA
+
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateRootCASplatParams = @{
+        >> DomainAdminCredentials   = $DomainAdminCreds
+        >> RootCAIPOrFQDN           = "192.168.2.112"                
+        >> }
+        PS C:\Users\zeroadmin> $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
+
+#>
 function New-RootCA {
     [CmdletBinding()]
     param (

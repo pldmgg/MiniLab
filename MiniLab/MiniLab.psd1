@@ -70,12 +70,11 @@ PowerShellVersion = '5.1'
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
 FunctionsToExport = 'Create-Domain','Create-RootCA','Create-SubordinateCA','Create-TwoTierPKI',
-                    'Create-TwoTierPKIRedux','Deploy-HyperVVagrantBoxManually',
+                    'Create-TwoTierPKI','Deploy-HyperVVagrantBoxManually',
                     'Generate-Certificate','Get-DSCEncryptionCert',
                     'Get-VagrantBoxManualDownload','Invoke-Parallel',
-                    'Join-DomainEx','Manage-HyperVVM',
-                    'New-DomainController', 'New-RootCA',
-                    'New-SelfSignedCertificateEx','New-SubordinateCA','Rename-HostEx'
+                    'Manage-HyperVVM','New-DomainController','New-RootCA',
+                    'New-SelfSignedCertificateEx','New-SubordinateCA'
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 CmdletsToExport = '*'
