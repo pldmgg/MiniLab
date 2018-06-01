@@ -39,6 +39,114 @@ catch {
 
 
 
+<#
+    .SYNOPSIS
+        This function creates a new Primary Domain Controller by either...
+        
+        A) Creating a brand new Windows Server VM; or
+        B) Using an existing Windows Server on the network
+        
+        ...and then running a DSC configuration on it.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, a new Windows 2016 Standard Server Virtual Machine will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to reatart the localhost
+        before proceeding).
+        
+        This VM will become the new Primary DC.
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER NewDomain
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the name of the new domain you would like to create.
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. A new Domain Account will be created using these credentials. This account will be
+        added to the following Security Groups on the New Domain:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER LocalAdministratorAccountCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter will be applied to the Local Built-In Administrator Account on the
+        target Windows Server. In other words, the pscredential provided to this parameter does NOT need to match
+        the current UserName/Password of the Local Administrator Account on the target Windows Server, because the
+        pscredential provided to this parameter will overwrite whatever the existing credentials are.
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into the target Windows Server. If you're using a Vagrant Box (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER IPOfServerToBeDomainController
+        This parameter is OPTIONAL, however, if you do NOT use the -CreateNewVMs parameter, this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Primary Domain Controller.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ****************
+        PS C:\Users\zeroadmin> $CreateDomainSplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> }
+        PS C:\Users\zeroadmin> $CreateDomainResult = Create-Domain @CreateDomainSplatParams
+        
+#>
 function Create-Domain {
     [CmdletBinding()]
     Param (
@@ -620,6 +728,108 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 }
 
 
+<#
+    .SYNOPSIS
+        This function creates a new Enterprise Root Certification Authority by either...
+        
+        A) Creating a brand new Windows Server VM; or
+        B) Using an existing Windows Server on the network
+        
+        ...and then running a configuration script over a PS Remoting Session.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, a new Windows 2016 Standard Server Virtual Machine will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to reatart the localhost
+        before proceeding).
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER ExistingDomain
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Root CA will join.
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to join the Root CA Server to the domain
+        as well as configre the new Root CA. This means that the Domain Account provided to this parameter MUST be a member
+        of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into the target Windows Server. If you're using a Vagrant Box (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER IPOfServerToBeRootCA
+        This parameter is OPTIONAL, however, if you do NOT use the -CreateNewVMs parameter, this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Root CA.
+
+    .PARAMETER IPofDomainController
+        This parameter is OPTIONAL, however, if you cannot resolve the Domain Name provided to the -ExistingDomain parameter
+        from the localhost, then this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 address referring to a Domain Controller (not readonly) on the
+        domain specified by the -ExistingDomain parameter.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateRootCASplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> ExistingDomain                          = "alpha.lab"
+        >> IPOfDomainController                    = "192..168.2.112"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
+
+#>
 function Create-RootCA {
     [CmdletBinding()]
     Param (
@@ -1186,6 +1396,117 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 }
 
 
+<#
+    .SYNOPSIS
+        This function creates a new Enterprise Subordinate/Intermediate/Issuing Certification Authority by either...
+        
+        A) Creating a brand new Windows Server VM; or
+        B) Using an existing Windows Server on the network
+        
+        ...and then running a configuration script over a PS Remoting Session. Since this script needs to 
+        request a Certificate from the Root CA, in order to avoid the double-hop authentication issue,
+        a one-time-use Scheduled Task is created, immediately run, and deleted immediately after completion.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, a new Windows 2016 Standard Server Virtual Machine will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to reatart the localhost
+        before proceeding).
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER ExistingDomain
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Subordinate CA will join.
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to join the Subordinate CA Server to the domain
+        as well as configre the new Subordinate CA. This means that the Domain Account provided to this parameter MUST be a member
+        of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into the target Windows Server. If you're using a Vagrant Box (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER IPOfServerToBeSubCA
+        This parameter is OPTIONAL, however, if you do NOT use the -CreateNewVMs parameter, this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Subordinate CA.
+
+    .PARAMETER IPofDomainController
+        This parameter is OPTIONAL, however, if you cannot resolve the Domain Name provided to the -ExistingDomain parameter
+        from the localhost, then this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 address referring to a Domain Controller (not readonly) on the
+        domain specified by the -ExistingDomain parameter.
+
+    .PARAMETER IPOfRootCA
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents an IPv4 address referring to the Root CA on the domain specified by the
+        -ExistingDomain parameter.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateSubCASplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> ExistingDomain                          = "alpha.lab"
+        >> IPOfDomainController                    = "192.168.2.112"
+        >> IPOfRootCA                              = "192.168.2.113"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
+
+#>
 function Create-SubordinateCA {
     [CmdletBinding()]
     Param (
@@ -1758,6 +2079,188 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 }
 
 
+<#
+    .SYNOPSIS
+        This function creates a new Enterprise Root Certificate Authority and new Enterprise Subordinate/Intermediate/Issuing
+        Certification Authority on a Domain. If you do not want to create the Root and Subordinate CAs on an existing
+        domain, this function is capable of creating a brand new domain and deploying the CAs to that new domain.
+
+    .DESCRIPTION
+        This function is an example of 'Service Deployment' function that can be found within the MiniLab Module. A
+        'Service Deployment' function is responsible for deploying as many servers as is necessary to get a particular
+        service working on a domain/network. This may involve a myriad of feature/role installations and configuration
+        setttings across multiple servers.
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, new Windows 2016 Standard Server Virtual Machines will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to restart the localhost
+        before proceeding).
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER ExistingDomain
+        This parameter is OPTIONAL, however, either this parameter or the -NewDomain parameter are MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Root and Subordinate CAs will
+        join (if they aren't already).
+
+        Example: alpha.lab
+
+    .PARAMETER NewDomain
+        This parameter is OPTIONAL, however, either this parameter or the -ExistingDomain parameter are MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Root and Subordinate CAs will
+        join (if they aren't already).
+        
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to join the Subordinate CA Server to the domain
+        as well as configre the new Subordinate CA. This means that the Domain Account provided to this parameter MUST be a member
+        of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+        If you are creating a New Domain, these credentials will be used to create a new Domain Account that is a member of the
+        aforementioned Security Groups.
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into ALL target Windows Servers. If your target servers are Vagrant Boxes (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER LocalAdministratorAccountCredentials
+        This parameter is OPTIONAL, however, is you are creating a New Domain, then this parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter will be applied to the Local Built-In Administrator Account on the
+        target Windows Server. In other words, the pscredential provided to this parameter does NOT need to match
+        the current UserName/Password of the Local Administrator Account on the target Windows Server, because the
+        pscredential provided to this parameter will overwrite whatever the existing credentials are.
+
+    .PARAMETER DCIsRootCA
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, the  Root CA will be installed on the Primary Domain Controller. This is not
+        best practice, but if you have limited hardware resources, this could come in handy.
+
+    .PARAMETER IPofServerToBeDomainController
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Primary Domain Controller.
+
+    .PARAMETER IPOfServerToBeRootCA
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Root CA.
+    
+    .PARAMETER IPOfServerToBeSubCA
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Subordinate CA.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Create a New Domain With 3 Servers - Primary Domain Controller, Root CA, and Subordinate CA
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+    .EXAMPLE
+        # Create a New Domain With 2 Servers - Primary Domain Controller (which will also be the Root CA), and Subordinate CA
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> SkipHyperVInstallCheck                  = $True
+        >> DCIsRootCA                              = $True
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+    .EXAMPLE
+        # Add Two-Tier PKI to your Existing Domain
+        # IMPORTANT NOTE: If you can't resolve the -ExistingDomain from the localhost, be sure to use the -IPOfServerToBeDomainController
+        # parameter with the IP Address of an EXISTING Domain Controller on the domain specified by -ExistingDomain
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> ExistingDomain                          = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+
+#>
 function Create-TwoTierPKI {
     [CmdletBinding()]
     Param (
@@ -2572,6 +3075,21 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         deployed to Hyper-V. Use https://app.vagrantup.com to search for Vagrant Boxes. One of my favorite
         VMs is 'centos/7'.
 
+    .PARAMETER BoxFilePath
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the full path to a .box file on the filesystem.
+
+        Do NOT use this parameter with the -DecompressedBoxFileDirectory parameter.
+
+    .PARAMETER DecompressedBoxDirectory
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the full path to a directory that contains the contents
+        of a decompressed .box file.
+
+        Do NOT use this parameter with the -BoxFilePath parameter.
+
     .PARAMETER VagrantProvider
         This parameter is MANDATORY.
 
@@ -2593,6 +3111,25 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         IMPORTANT NOTE: Vagrant Boxes are downloaded in a compressed format. A good rule of thumb is that
         you'll need approximately QUADRUPLE the amount of space on the drive in order to decompress and
         deploy the Vagrant VM. This is especially true with Windows Vagrant Box VMs.
+
+    .PARAMETER CopyDecompressedDirectory
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, the director containing the contents of the decompressed .box
+        file will be COPIED as opposed to MOVED to the location specified by the -VMDestinationDirectory
+        parameter.
+
+    .PARAMETER Memory
+        This parameter is OPTIONAL, however, its default value is 2048.
+
+        This parameter takes an integer that represents the amount of memory in MB to
+        allocate to the VM. Valid values are: 1024,2048,4096,8192,12288,16384,32768
+
+    .PARAMETER CPUs
+        This parameter is OPTIONAL, hwoever, its default value is 1.
+
+        This parameter takes an integer that represents the number of vCPUs to allocate
+        to the VM. Valid values are : 1,2
 
     .PARAMETER TemporaryDownloadDirectory
         This parameter is OPTIONAL, but is defacto MANDATORY and defaults to "$HOME\Downloads".
@@ -2662,15 +3199,18 @@ function Deploy-HyperVVagrantBoxManually {
         [string]$VMName,
 
         [Parameter(Mandatory=$True)]
+        [string]$VMDestinationDirectory,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$CopyDecompressedDirectory,
+
+        [Parameter(Mandatory=$True)]
         [ValidateSet(1024,2048,4096,8192,12288,16384,32768)]
         [int]$Memory = 2048,
 
         [Parameter(Mandatory=$True)]
         [ValidateSet(1,2)]
         [int]$CPUs = 1,
-
-        [Parameter(Mandatory=$True)]
-        [string]$VMDestinationDirectory,
 
         [Parameter(Mandatory=$False)]
         [string]$TemporaryDownloadDirectory,
@@ -2686,10 +3226,7 @@ function Deploy-HyperVVagrantBoxManually {
 
         [Parameter(Mandatory=$False)]
         [ValidateSet("Vagrant")]
-        [string]$Repository,
-
-        [Parameter(Mandatory=$False)]
-        [switch]$CopyDecompressedDirectory
+        [string]$Repository
     )
 
     #region >> Variable/Parameter Transforms and PreRun Prep
@@ -2734,6 +3271,26 @@ function Deploy-HyperVVagrantBoxManually {
 
     if (!$TemporaryDownloadDirectory) {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
+    }
+
+    if ($BoxFilePath -and $DecompressedBoxDirectory) {
+        Write-Error "Please use *either* the -BoxFilePath *or* the -DecompressedBoxDirectory parameter (not both)! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$($DecompressedBoxDirectory -match $($VagrantBox -split '/')[0])) {
+        $ErrMsg = "The directory '$DecompressedBoxDirectory' does not match the VagrantBox name " +
+        "'$VagrantBox'! If it is, in fact, a valid decompressed .box file directory, please include " +
+        "'$($($VagrantBox -split'/')[0])' in the directory name. Halting!"
+        Write-Error $ErrMsg
+        $global:FunctionResult = "1"
+        return
+    }
+    if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
+        Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
+        $global:FunctionResult = "1"
+        return
     }
 
     try {
@@ -6629,6 +7186,32 @@ function Generate-Certificate {
 }
 
 
+<#
+    .SYNOPSIS
+        This function creates a New Self-Signed Certificate meant to be used for DSC secret encryption and exports it to the
+        specified directory.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER MachineName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the Subject Alternative Name (SAN) on the Self-Signed Certificate.
+
+    .PARAMETER ExportDirectory
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the full path to a directory that will contain the new Self-Signed Certificate.
+
+    .EXAMPLE
+        # Import the MiniLab Module and -
+
+        PS C:\Users\zeroadmin> Get-DSCEncryptionCert -MachineName $env:ComputerName -ExportDirectory "C:\DSCConfigs"
+
+#>
 function Get-DSCEncryptionCert {
     [CmdletBinding()]
     param (
@@ -6872,8 +7455,7 @@ function Get-VagrantBoxManualDownload {
 }
 
 
-function Invoke-Parallel {
-    <#
+<#
     .SYNOPSIS
         Function to control parallel processing using runspaces
 
@@ -6905,6 +7487,9 @@ function Invoke-Parallel {
 
     .PARAMETER ImportVariables
         If specified, get user session variables and add them to the initial session state
+
+    .PARAMETER ImportModules
+        If specified, get loaded functions, add them to the initial session state
 
     .PARAMETER ImportModules
         If specified, get loaded modules and pssnapins, add them to the initial session state
@@ -7021,7 +7606,8 @@ function Invoke-Parallel {
 
     .LINK
         https://github.com/RamblingCookieMonster/Invoke-Parallel
-    #>
+#>
+function Invoke-Parallel {
     [cmdletbinding(DefaultParameterSetName='ScriptBlock')]
     Param (
         [Parameter(Mandatory=$false,position=0,ParameterSetName='ScriptBlock')]
@@ -8080,6 +8666,101 @@ function Manage-HyperVVM {
 }
 
 
+<#
+    .SYNOPSIS
+        This function creates a new Primary Domain Controller on the specified Windows 2012 R2 or Windows 2016 Server.
+
+        This function MUST be used remotely (i.e. run it from a Workstation that can use PS Remoting to access the target
+        Windows Server that will become the new Domain Controller).
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER DesiredHostName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the HostName that you would like the target Windows 2016 Server to have.
+
+    .PARAMETER NewDomainName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the name of the new domain you would like to create.
+        Example: alpha.lab
+
+    .PARAMETER NewDomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. A new Domain Account will be created using these credentials. This account will be
+        added to the following Security Groups on the New Domain:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER LocalAdministratorAccountCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter will be applied to the Local Built-In Administrator Account on the
+        target Windows Server. In other words, the pscredential provided to this parameter does NOT need to match
+        the current UserName/Password of the Local Administrator Account on the target Windows Server, because the
+        pscredential provided to this parameter will overwrite whatever the existing credentials are.
+
+    .PARAMETER PSRemotingLocalAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into the target Windows Server. If you're using a Vagrant Box (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER ServerIP
+        This parameter is OPTIONAL, however, if you do NOT use the -CreateNewVMs parameter, this parameter becomes MANDATORY.
+
+        This parameter takes a string that represents an IPv4 Address of the Windows Server that will become the new Primary
+        Domain Controller.
+
+    .PARAMETER RemoteDSCDirectory
+        This parameter is OPTIONAL, however, the value defaults to "C:\DSCConfigs".
+
+        This parameter takes a string that represents the full path to a directory on -ServerIP that will contain the DSC
+        configuration files needed to create the new Primary Domain Controller.
+
+    .PARAMETER DSCResultsDownloadDirectory
+        This parameter is OPTIONAL, however, the value defaults to "$HOME\Downloads\DSCConfigResultsFor$DesiredHostName".
+
+        This parameter takes a string that represents the full path to a directory on the localhost that will contain any
+        DSC config output files generated by creating the new Primary Domain Controller. This makes it easy to review what
+        DSC did on the remote host.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ****************
+        PS C:\Users\zeroadmin> $NewDomainControllerSplatParams = @{
+        >> DesiredHostName                         = "AlphaDC01"
+        >> NewDomainName                           = "alpha.lab"
+        >> NewDomainAdminCredentials               = $DomainAdminCreds
+        >> ServerIP                                = "192.168.2.112"
+        >> PSRemotingLocalAdminCredentials         = $VagrantVMAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> }
+        PS C:\Users\zeroadmin> $NewDomainControllerResults = New-DomainController @NewDomainControllerSplatParams
+        
+#>
 function New-DomainController {
     [CmdletBinding()]
     param (
@@ -8092,16 +8773,16 @@ function New-DomainController {
         [string]$NewDomainName,
 
         [Parameter(Mandatory=$True)]
-        [pscredential]$LocalAdministratorAccountCredentials,
-
-        [Parameter(Mandatory=$True)]
         [pscredential]$NewDomainAdminCredentials,
 
         [Parameter(Mandatory=$True)]
-        [string]$ServerIP,
+        [pscredential]$LocalAdministratorAccountCredentials,
 
         [Parameter(Mandatory=$True)]
         [pscredential]$PSRemotingLocalAdminCredentials,
+
+        [Parameter(Mandatory=$True)]
+        [string]$ServerIP,
 
         [Parameter(Mandatory=$False)]
         [string]$RemoteDSCDirectory,
@@ -8131,6 +8812,14 @@ function New-DomainController {
     }
     if ($NewDomainAdminCredentials.UserName -match "$NewDomainShortName\\Administrator$") {
         Write-Error "The User Account provided to the -NewDomainAdminCredentials cannot be: $NewDomainShortName\\Administrator`nHalting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    if ($ServerIP -eq $PrimaryIP) {
+        Write-Error "This $($MyInvocation.MyCommand.Name) function must be run remotely (i.e. from a workstation that can access the target Windows Server via PS Remoting)! Halting!"
         $global:FunctionResult = "1"
         return
     }
@@ -8755,6 +9444,120 @@ configuration NewDomainController {
 }
 
 
+<#
+    .SYNOPSIS
+        This function configures the target Windows 2012 R2 or Windows 2016 Server to be a new Enterprise Root Certification Authority.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to configure the new Root CA. This means that
+        the Domain Account provided MUST be a member of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER RootCAIPOrFQDN
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 address or DNS-Resolveable FQDN that refers to the target Windows
+        Server that will become the new Enterprise Root CA. If it is NOT used, then the localhost will be configured as the
+        new Enterprise Root CA.
+
+    .PARAMETER CAType
+        This parameter is OPTIONAL, however, its default value is "EnterpriseRootCA".
+
+        This parameter takes a string that represents the type of Root Certificate Authority that the target server will become.
+        Currently this parameter only accepts "EnterpriseRootCA" as a valid value. But in the future, "StandaloneRootCA" will
+        also become a valid value.
+
+    .PARAMETER NewComputerTemplateCommonName
+        This parameter is OPTIONAL, however, its default value is "<DomainPrefix>" + "Computer".
+
+        This parameter takes a string that represents the desired Common Name for the new custom Computer (Machine)
+        Certificate Template. This updates some undesirable defaults that come with the default Computer (Machine)
+        Certificate Template.
+
+    .PARAMETER NewWebServerTemplateCommonName
+        This parameter is OPTIONAL, however, its default value is "<DomainPrefix>" + "WebServer".
+
+        This parameter takes a string that represents the desired Common Name for the new custom WebServer
+        Certificate Template. This updates some undesirable defaults that come with the default WebServer
+        Certificate Template.
+
+    .PARAMETER FileOutputDirectory
+        This parameter is OPTIONAL, however, its default value is "C:\NewRootCAOutput".
+
+        This parameter takes a string that represents the full path to a directory that will contain all files generated
+        by the New-RootCA function.
+
+        IMPORTANT NOTE: This directory will be made available to the network (it will become an SMB Share) so that the
+        Subordinate Certificate Authority can download needed files. This SMB share will only be available TEMPORARILY.
+        It will NOT survive a reboot.
+
+    .PARAMETER CryptoProvider
+        This parameter is OPTIONAL, however, its default value is "Microsoft Software Key Storage Provider".
+
+        This parameter takes a string that represents the Cryptographic Provider used by the new Root CA.
+        Currently, the only valid value for this parameter is "Microsoft Software Key Storage Provider".
+
+    .PARAMETER KeyLength
+        This parameter is OPTIONAL, however, its default value is 2048.
+
+        This parameter takes an integer with value 2048 or 4096.
+
+    .PARAMETER HashAlgorithm
+        This parameter is OPTIONAL, however, its default value is SHA256.
+
+        This parameter takes a string with acceptable values as follows: "SHA1","SHA256","SHA384","SHA512","MD5","MD4","MD2"
+
+    .PARAMETER KeyAlgorithmValue
+        This parameter is OPTIONAL, however, its default value is RSA.
+
+        This parameter takes a string with acceptable values: "RSA"
+
+    .PARAMETER CDPUrl
+        This parameter is OPTIONAL, however, its default value is "http://pki.$DomainName/certdata/<CaName><CRLNameSuffix>.crl"
+
+        This parameter takes a string that represents a Certificate Distribution List Revocation URL. The current default
+        configuration does not make this Url active, however, it still needs to be configured.
+
+    .PARAMETER AIAUrl
+        This parameter is OPTIONAL, however, its default value is "http://pki.$DomainName/certdata/<CaName><CertificateName>.crt"
+
+        This parameter takes a string that represents an Authority Information Access (AIA) Url (i.e. the location where the certificate of
+        of certificate's issuer can be downloaded). The current default configuration does not mahe this Url active, but it still
+        needs to be configured.
+
+    .EXAMPLE
+        # Make the localhost a Root CA
+
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateRootCASplatParams = @{
+        >> DomainAdminCredentials   = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
+
+    .EXAMPLE
+        # Make the Remote Host a Root CA
+
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateRootCASplatParams = @{
+        >> DomainAdminCredentials   = $DomainAdminCreds
+        >> RootCAIPOrFQDN           = "192.168.2.112"                
+        >> }
+        PS C:\Users\zeroadmin> $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
+
+#>
 function New-RootCA {
     [CmdletBinding()]
     param (
@@ -9553,11 +10356,11 @@ function New-RootCA {
         Specifies whether the certificate is CA (IsCA = $true) or end entity (IsCA = $false)
         certificate. If this parameter is set to $false, PathLength parameter is ignored.
         Basic Constraints extension is marked as critical.
-    .PathLength
+    .Parameter PathLength
         Specifies the number of additional CA certificates in the chain under this certificate. If
         PathLength parameter is set to zero, then no additional (subordinate) CA certificates are
         permitted under this CA.
-    .CustomExtension
+    .Parameter CustomExtension
         Specifies the custom extension to include to a self-signed certificate. This parameter
         must not be used to specify the extension that is supported via other parameters. In order
         to use this parameter, the extension must be formed in a collection of initialized
@@ -9590,38 +10393,43 @@ function New-RootCA {
     .Parameter Exportable
         Marks private key as exportable. Smart card providers usually do not allow
         exportable keys.
-    .Example
+	.Example
+		# Creates a self-signed certificate intended for code signing and which is valid for 5 years. Certificate
+		# is saved in the Personal store of the current user account.
+		
         New-SelfsignedCertificateEx -Subject "CN=Test Code Signing" -EKU "Code Signing" -KeySpec "Signature" `
         -KeyUsage "DigitalSignature" -FriendlyName "Test code signing" -NotAfter [datetime]::now.AddYears(5)
         
-        Creates a self-signed certificate intended for code signing and which is valid for 5 years. Certificate
-        is saved in the Personal store of the current user account.
+        
     .Example
-        New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
+		# Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
+        # certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
+        # so you can export the certificate with a associated private key to a file at any time. The certificate
+		# includes SMIME capabilities.
+		
+		New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
         -KeyUsage "KeyEcipherment, DigitalSignature" -SAN "sub.domain.com","www.domain.com","192.168.1.1" `
         -AllowSMIME -Path C:\test\ssl.pfx -Password (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force) -Exportable `
         -StoreLocation "LocalMachine"
         
-        Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
-        certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
-        so you can export the certificate with a associated private key to a file at any time. The certificate
-        includes SMIME capabilities.
     .Example
-        New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
+		# Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
+        # certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
+        # so you can export the certificate with a associated private key to a file at any time. Certificate uses
+        # Ellyptic Curve Cryptography (ECC) key algorithm ECDH with 256-bit key. The certificate is signed by using
+		# SHA256 algorithm.
+		
+		New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
         -KeyUsage "KeyEcipherment, DigitalSignature" -SAN "sub.domain.com","www.domain.com","192.168.1.1" `
         -StoreLocation "LocalMachine" -ProviderName "Microsoft Software Key Storae Provider" -AlgorithmName ecdh_256 `
-        -KeyLength 256 -SignatureAlgorithm sha256
-        
-        Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
-        certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
-        so you can export the certificate with a associated private key to a file at any time. Certificate uses
-        Ellyptic Curve Cryptography (ECC) key algorithm ECDH with 256-bit key. The certificate is signed by using
-        SHA256 algorithm.
+		-KeyLength 256 -SignatureAlgorithm sha256
+		
     .Example
-        New-SelfsignedCertificateEx -Subject "CN=Test Root CA, OU=Sandbox" -IsCA $true -ProviderName `
-        "Microsoft Software Key Storage Provider" -Exportable
-        
-        Creates self-signed root CA certificate.
+		# Creates self-signed root CA certificate.
+
+		New-SelfsignedCertificateEx -Subject "CN=Test Root CA, OU=Sandbox" -IsCA $true -ProviderName `
+		"Microsoft Software Key Storage Provider" -Exportable
+		
 #>
 function New-SelfSignedCertificateEx {
     [CmdletBinding(DefaultParameterSetName = '__store')]
@@ -9864,8 +10672,122 @@ function New-SelfSignedCertificateEx {
 }
 
 
-# NOTE: For additional guidance, see:
-# https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-R2-and-2012/hh831348(v=ws.11)
+<#
+    .SYNOPSIS
+        This function configures the target Windows 2012 R2 or Windows 2016 Server to be a new Enterprise Root Certification Authority.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+        # NOTE: For additional guidance, see:
+        # https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-R2-and-2012/hh831348(v=ws.11)
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to configure the new Subordinate CA. This means that
+        the Domain Account provided MUST be a member of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+    .PARAMETER RootCAIPOrFQDN
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents an IPv4 address or DNS-Resolveable FQDN that refers to the existing
+        Enterprise Root CA. When configuring th Subordinate CA, files from the Root CA are needed. This parameter tells the
+        Subordinate CA where to find them.
+
+    .PARAMETER SubCAIPOrFQDN
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 address or DNS-Resolveable FQDN that refers to the target Windows
+        Server that will become the new Enterprise Subordinate CA. If it is NOT used, then the localhost will be configured as the
+        new Enterprise Subordinate CA.
+
+    .PARAMETER CAType
+        This parameter is OPTIONAL, however, its default value is "EnterpriseSubordinateCA".
+
+        This parameter takes a string that represents the type of Subordinate Certificate Authority that the target server will become.
+        Currently this parameter only accepts "EnterpriseSubordinateCA" as a valid value.
+
+    .PARAMETER NewComputerTemplateCommonName
+        This parameter is OPTIONAL, however, its default value is "Machine".
+
+        If you would like to make the the custom Computer/Machine Certificate Template generated by the New-RootCA function
+        available for use on the Subordinate CA, then set this value to "<DomainPrefix>" + "Computer".
+
+    .PARAMETER NewWebServerTemplateCommonName
+        This parameter is OPTIONAL, however, its default value is "WebServer".
+
+        If you would like to make the the custom WebServer Certificate Template generated by the New-RootCA function
+        available for use on the Subordinate CA, then set this value to "<DomainPrefix>" + "WebServer".
+
+    .PARAMETER FileOutputDirectory
+        This parameter is OPTIONAL, however, its default value is "C:\NewSubCAOutput".
+
+        This parameter takes a string that represents the full path to a directory that will contain all files generated
+        by the New-SubordinateCA function.
+
+    .PARAMETER CryptoProvider
+        This parameter is OPTIONAL, however, its default value is "Microsoft Software Key Storage Provider".
+
+        This parameter takes a string that represents the Cryptographic Provider used by the new Subordinate CA.
+        Currently, the only valid value for this parameter is "Microsoft Software Key Storage Provider".
+
+    .PARAMETER KeyLength
+        This parameter is OPTIONAL, however, its default value is 2048.
+
+        This parameter takes an integer with value 2048 or 4096.
+
+    .PARAMETER HashAlgorithm
+        This parameter is OPTIONAL, however, its default value is SHA256.
+
+        This parameter takes a string with acceptable values as follows: "SHA1","SHA256","SHA384","SHA512","MD5","MD4","MD2"
+
+    .PARAMETER KeyAlgorithmValue
+        This parameter is OPTIONAL, however, its default value is RSA.
+
+        This parameter takes a string with acceptable values: "RSA"
+
+    .PARAMETER CDPUrl
+        This parameter is OPTIONAL, however, its default value is "http://pki.$DomainName/certdata/<CaName><CRLNameSuffix>.crl"
+
+        This parameter takes a string that represents a Certificate Distribution List Revocation URL.
+
+    .PARAMETER AIAUrl
+        This parameter is OPTIONAL, however, its default value is "http://pki.$DomainName/certdata/<CaName><CertificateName>.crt"
+
+        This parameter takes a string that represents an Authority Information Access (AIA) Url (i.e. the location where the certificate of
+        of certificate's issuer can be downloaded).
+
+    .EXAMPLE
+        # Make the localhost a Subordinate CA
+
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateSubCASplatParams = @{
+        >> DomainAdminCredentials   = $DomainAdminCreds
+        >> RootCAIPOrFQDN           = "192.168.2.112"   
+        >> }
+        PS C:\Users\zeroadmin> $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
+
+    .EXAMPLE
+        # Make the Remote Host a Subordinate CA
+
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $CreateSubCASplatParams = @{
+        >> DomainAdminCredentials   = $DomainAdminCreds
+        >> RootCAIPOrFQDN           = "192.168.2.112" 
+        >> SubCAIPOrFQDN            = "192.168.2.113"                
+        >> }
+        PS C:\Users\zeroadmin> $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
+        
+#>
 function New-SubordinateCA {
     [CmdletBinding()]
     param (
@@ -9929,369 +10851,10 @@ function New-SubordinateCA {
 
     #region >> Helper Functions
 
-    function NewUniqueString {
-        [CmdletBinding()]
-        Param(
-            [Parameter(Mandatory=$False)]
-            [string[]]$ArrayOfStrings,
-    
-            [Parameter(Mandatory=$True)]
-            [string]$PossibleNewUniqueString
-        )
-    
-        if (!$ArrayOfStrings -or $ArrayOfStrings.Count -eq 0 -or ![bool]$($ArrayOfStrings -match "[\w]")) {
-            $PossibleNewUniqueString
-        }
-        else {
-            $OriginalString = $PossibleNewUniqueString
-            $Iteration = 1
-            while ($ArrayOfStrings -contains $PossibleNewUniqueString) {
-                $AppendedValue = "_$Iteration"
-                $PossibleNewUniqueString = $OriginalString + $AppendedValue
-                $Iteration++
-            }
-    
-            $PossibleNewUniqueString
-        }
-    }
-
-    function TestIsValidIPAddress([string]$IPAddress) {
-        [boolean]$Octets = (($IPAddress.Split(".") | Measure-Object).Count -eq 4) 
-        [boolean]$Valid  =  ($IPAddress -as [ipaddress]) -as [boolean]
-        Return  ($Valid -and $Octets)
-    }
-
-    function ResolveHost {
-        [CmdletBinding()]
-        Param(
-            [Parameter(Mandatory=$True)]
-            [string]$HostNameOrIP
-        )
-    
-        ##### BEGIN Main Body #####
-    
-        $RemoteHostNetworkInfoArray = @()
-        if (!$(TestIsValidIPAddress -IPAddress $HostNameOrIP)) {
-            try {
-                $HostNamePrep = $HostNameOrIP
-                [System.Collections.ArrayList]$RemoteHostArrayOfIPAddresses = @()
-                $IPv4AddressFamily = "InterNetwork"
-                $IPv6AddressFamily = "InterNetworkV6"
-    
-                $ResolutionInfo = [System.Net.Dns]::GetHostEntry($HostNamePrep)
-                $ResolutionInfo.AddressList | Where-Object {
-                    $_.AddressFamily -eq $IPv4AddressFamily
-                } | foreach {
-                    if ($RemoteHostArrayOfIPAddresses -notcontains $_.IPAddressToString) {
-                        $null = $RemoteHostArrayOfIPAddresses.Add($_.IPAddressToString)
-                    }
-                }
-            }
-            catch {
-                Write-Verbose "Unable to resolve $HostNameOrIP when treated as a Host Name (as opposed to IP Address)!"
-            }
-        }
-        if (TestIsValidIPAddress -IPAddress $HostNameOrIP) {
-            try {
-                $HostIPPrep = $HostNameOrIP
-                [System.Collections.ArrayList]$RemoteHostArrayOfIPAddresses = @()
-                $null = $RemoteHostArrayOfIPAddresses.Add($HostIPPrep)
-    
-                $ResolutionInfo = [System.Net.Dns]::GetHostEntry($HostIPPrep)
-    
-                [System.Collections.ArrayList]$RemoteHostFQDNs = @() 
-                $null = $RemoteHostFQDNs.Add($ResolutionInfo.HostName)
-            }
-            catch {
-                Write-Verbose "Unable to resolve $HostNameOrIP when treated as an IP Address (as opposed to Host Name)!"
-            }
-        }
-    
-        if ($RemoteHostArrayOfIPAddresses.Count -eq 0) {
-            Write-Error "Unable to determine IP Address of $HostNameOrIP! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-    
-        # At this point, we have $RemoteHostArrayOfIPAddresses...
-        [System.Collections.ArrayList]$RemoteHostFQDNs = @()
-        foreach ($HostIP in $RemoteHostArrayOfIPAddresses) {
-            try {
-                $FQDNPrep = [System.Net.Dns]::GetHostEntry($HostIP).HostName
-            }
-            catch {
-                Write-Verbose "Unable to resolve $HostIP. No PTR Record? Please check your DNS config."
-                continue
-            }
-            if ($RemoteHostFQDNs -notcontains $FQDNPrep) {
-                $null = $RemoteHostFQDNs.Add($FQDNPrep)
-            }
-        }
-    
-        if ($RemoteHostFQDNs.Count -eq 0) {
-            $null = $RemoteHostFQDNs.Add($ResolutionInfo.HostName)
-        }
-    
-        [System.Collections.ArrayList]$HostNameList = @()
-        [System.Collections.ArrayList]$DomainList = @()
-        foreach ($fqdn in $RemoteHostFQDNs) {
-            $PeriodCheck = $($fqdn | Select-String -Pattern "\.").Matches.Success
-            if ($PeriodCheck) {
-                $HostName = $($fqdn -split "\.")[0]
-                $Domain = $($fqdn -split "\.")[1..$($($fqdn -split "\.").Count-1)] -join '.'
-            }
-            else {
-                $HostName = $fqdn
-                $Domain = "Unknown"
-            }
-    
-            $null = $HostNameList.Add($HostName)
-            $null = $DomainList.Add($Domain)
-        }
-    
-        if ($RemoteHostFQDNs[0] -eq $null -and $HostNameList[0] -eq $null -and $DomainList -eq "Unknown" -and $RemoteHostArrayOfIPAddresses) {
-            [System.Collections.ArrayList]$SuccessfullyPingedIPs = @()
-            # Test to see if we can reach the IP Addresses
-            foreach ($ip in $RemoteHostArrayOfIPAddresses) {
-                if ([bool]$(Test-Connection $ip -Count 1 -ErrorAction SilentlyContinue)) {
-                    $null = $SuccessfullyPingedIPs.Add($ip)
-                }
-            }
-    
-            if ($SuccessfullyPingedIPs.Count -eq 0) {
-                Write-Error "Unable to resolve $HostNameOrIP! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-    
-        $FQDNPrep = if ($RemoteHostFQDNs) {$RemoteHostFQDNs[0]} else {$null}
-        if ($FQDNPrep -match ',') {
-            $FQDN = $($FQDNPrep -split ',')[0]
-        }
-        else {
-            $FQDN = $FQDNPrep
-        }
-    
-        $DomainPrep = if ($DomainList) {$DomainList[0]} else {$null}
-        if ($DomainPrep -match ',') {
-            $Domain = $($DomainPrep -split ',')[0]
-        }
-        else {
-            $Domain = $DomainPrep
-        }
-    
-        [pscustomobject]@{
-            IPAddressList   = [System.Collections.ArrayList]@($(if ($SuccessfullyPingedIPs) {$SuccessfullyPingedIPs} else {$RemoteHostArrayOfIPAddresses}))
-            FQDN            = $FQDN
-            HostName        = if ($HostNameList) {$HostNameList[0].ToLowerInvariant()} else {$null}
-            Domain          = $Domain
-        }
-    
-        ##### END Main Body #####
-    
-    }
-
-    function GetDomainController {
-        [CmdletBinding()]
-        Param (
-            [Parameter(Mandatory=$False)]
-            [String]$Domain,
-
-            [Parameter(Mandatory=$False)]
-            [switch]$UseLogonServer
-        )
-    
-        ##### BEGIN Helper Functions #####
-    
-        function Parse-NLTest {
-            [CmdletBinding()]
-            Param (
-                [Parameter(Mandatory=$True)]
-                [string]$Domain
-            )
-    
-            while ($Domain -notmatch "\.") {
-                Write-Warning "The provided value for the -Domain parameter is not in the correct format. Please use the entire domain name (including periods)."
-                $Domain = Read-Host -Prompt "Please enter the full domain name (including periods)"
-            }
-    
-            if (![bool]$(Get-Command nltest -ErrorAction SilentlyContinue)) {
-                Write-Error "Unable to find nltest.exe! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-    
-            $DomainPrefix = $($Domain -split '\.')[0]
-            $PrimaryDomainControllerPrep = Invoke-Expression "nltest /dclist:$DomainPrefix 2>null"
-            if (![bool]$($PrimaryDomainControllerPrep | Select-String -Pattern 'PDC')) {
-                Write-Error "Can't find the Primary Domain Controller for domain $DomainPrefix"
-                return
-            }
-            $PrimaryDomainControllerPrep = $($($PrimaryDomainControllerPrep -match 'PDC').Trim() -split ' ')[0]
-            if ($PrimaryDomainControllerPrep -match '\\\\') {
-                $PrimaryDomainController = $($PrimaryDomainControllerPrep -replace '\\\\','').ToLower() + ".$Domain"
-            }
-            else {
-                $PrimaryDomainController = $PrimaryDomainControllerPrep.ToLower() + ".$Domain"
-            }
-    
-            $PrimaryDomainController
-        }
-    
-        ##### END Helper Functions #####
-    
-    
-        ##### BEGIN Variable/Parameter Transforms and PreRun Prep #####
-    
-        $ComputerSystemCim = Get-CimInstance Win32_ComputerSystem
-        $PartOfDomain = $ComputerSystemCim.PartOfDomain
-    
-        ##### END Variable/Parameter Transforms and PreRun Prep #####
-    
-    
-        ##### BEGIN Main Body #####
-    
-        if (!$PartOfDomain -and !$Domain) {
-            Write-Error "$env:ComputerName is NOT part of a Domain and the -Domain parameter was not used in order to specify a domain! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-        
-        $ThisMachinesDomain = $ComputerSystemCim.Domain
-    
-        # If we're in a PSSession, [system.directoryservices.activedirectory] won't work due to Double-Hop issue
-        # So just get the LogonServer if possible
-        if ($Host.Name -eq "ServerRemoteHost" -or $UseLogonServer) {
-            if (!$Domain -or $Domain -eq $ThisMachinesDomain) {
-                $Counter = 0
-                while ([string]::IsNullOrWhitespace($DomainControllerName) -or $Counter -le 20) {
-                    $DomainControllerName = $(Get-CimInstance win32_ntdomain).DomainControllerName
-                    if ([string]::IsNullOrWhitespace($DomainControllerName)) {
-                        Write-Warning "The win32_ntdomain CimInstance has a null value for the 'DomainControllerName' property! Trying again in 15 seconds (will try for 5 minutes total)..."
-                        Start-Sleep -Seconds 15
-                    }
-                    $Counter++
-                }
-
-                if ([string]::IsNullOrWhitespace($DomainControllerName)) {
-                    $IPOfDNSServerWhichIsProbablyDC = $(Resolve-DNSName $ThisMachinesDomain).IPAddress
-                    $DomainControllerFQDN = $(ResolveHost -HostNameOrIP $IPOfDNSServerWhichIsProbablyDC).FQDN
-                }
-                else {
-                    $LogonServer = $($DomainControllerName | Where-Object {![string]::IsNullOrWhiteSpace($_)}).Replace('\\','').Trim()
-                    $DomainControllerFQDN = $LogonServer + '.' + $RelevantSubCANetworkInfo.DomainName
-                }
-    
-                [pscustomobject]@{
-                    FoundDomainControllers      = [array]$DomainControllerFQDN
-                    PrimaryDomainController     = $DomainControllerFQDN
-                }
-    
-                return
-            }
-            else {
-                Write-Error "Unable to determine Domain Controller(s) network location due to the Double-Hop Authentication issue! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-    
-        if ($Domain) {
-            try {
-                $Forest = [system.directoryservices.activedirectory.Forest]::GetCurrentForest()
-            }
-            catch {
-                Write-Verbose "Cannot connect to current forest."
-            }
-    
-            if ($ThisMachinesDomain -eq $Domain -and $Forest.Domains -contains $Domain) {
-                [System.Collections.ArrayList]$FoundDomainControllers = $Forest.Domains | Where-Object {$_.Name -eq $Domain} | foreach {$_.DomainControllers} | foreach {$_.Name}
-                $PrimaryDomainController = $Forest.Domains.PdcRoleOwner.Name
-            }
-            if ($ThisMachinesDomain -eq $Domain -and $Forest.Domains -notcontains $Domain) {
-                try {
-                    $GetCurrentDomain = [system.directoryservices.activedirectory.domain]::GetCurrentDomain()
-                    [System.Collections.ArrayList]$FoundDomainControllers = $GetCurrentDomain | foreach {$_.DomainControllers} | foreach {$_.Name}
-                    $PrimaryDomainController = $GetCurrentDomain.PdcRoleOwner.Name
-                }
-                catch {
-                    try {
-                        Write-Warning "Only able to report the Primary Domain Controller for $Domain! Other Domain Controllers most likely exist!"
-                        Write-Warning "For a more complete list, try running this function on a machine that is part of the domain $Domain!"
-                        $PrimaryDomainController = Parse-NLTest -Domain $Domain
-                        [System.Collections.ArrayList]$FoundDomainControllers = @($PrimaryDomainController)
-                    }
-                    catch {
-                        Write-Error $_
-                        $global:FunctionResult = "1"
-                        return
-                    }
-                }
-            }
-            if ($ThisMachinesDomain -ne $Domain -and $Forest.Domains -contains $Domain) {
-                [System.Collections.ArrayList]$FoundDomainControllers = $Forest.Domains | foreach {$_.DomainControllers} | foreach {$_.Name}
-                $PrimaryDomainController = $Forest.Domains.PdcRoleOwner.Name
-            }
-            if ($ThisMachinesDomain -ne $Domain -and $Forest.Domains -notcontains $Domain) {
-                try {
-                    Write-Warning "Only able to report the Primary Domain Controller for $Domain! Other Domain Controllers most likely exist!"
-                    Write-Warning "For a more complete list, try running this function on a machine that is part of the domain $Domain!"
-                    $PrimaryDomainController = Parse-NLTest -Domain $Domain
-                    [System.Collections.ArrayList]$FoundDomainControllers = @($PrimaryDomainController)
-                }
-                catch {
-                    Write-Error $_
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-        }
-        else {
-            try {
-                $Forest = [system.directoryservices.activedirectory.Forest]::GetCurrentForest()
-                [System.Collections.ArrayList]$FoundDomainControllers = $Forest.Domains | foreach {$_.DomainControllers} | foreach {$_.Name}
-                $PrimaryDomainController = $Forest.Domains.PdcRoleOwner.Name
-            }
-            catch {
-                Write-Verbose "Cannot connect to current forest."
-    
-                try {
-                    $GetCurrentDomain = [system.directoryservices.activedirectory.domain]::GetCurrentDomain()
-                    [System.Collections.ArrayList]$FoundDomainControllers = $GetCurrentDomain | foreach {$_.DomainControllers} | foreach {$_.Name}
-                    $PrimaryDomainController = $GetCurrentDomain.PdcRoleOwner.Name
-                }
-                catch {
-                    $Domain = $ThisMachinesDomain
-    
-                    try {
-                        $CurrentUser = "$(whoami)"
-                        Write-Warning "Only able to report the Primary Domain Controller for the domain that $env:ComputerName is joined to (i.e. $Domain)! Other Domain Controllers most likely exist!"
-                        Write-Host "For a more complete list, try one of the following:" -ForegroundColor Yellow
-                        if ($($CurrentUser -split '\\') -eq $env:ComputerName) {
-                            Write-Host "- Try logging into $env:ComputerName with a domain account (as opposed to the current local account $CurrentUser" -ForegroundColor Yellow
-                        }
-                        Write-Host "- Try using the -Domain parameter" -ForegroundColor Yellow
-                        Write-Host "- Run this function on a computer that is joined to the Domain you are interested in" -ForegroundColor Yellow
-                        $PrimaryDomainController = Parse-NLTest -Domain $Domain
-                        [System.Collections.ArrayList]$FoundDomainControllers = @($PrimaryDomainController)
-                    }
-                    catch {
-                        Write-Error $_
-                        $global:FunctionResult = "1"
-                        return
-                    }
-                }
-            }
-        }
-    
-        [pscustomobject]@{
-            FoundDomainControllers      = $FoundDomainControllers
-            PrimaryDomainController     = $PrimaryDomainController
-        }
-    
-        ##### END Main Body #####
-    }
+    # NewUniqueString
+    # TestIsValidIPAddress
+    # ResolveHost
+    # GetDomainController
 
     function SetupSubCA {
         [CmdletBinding()]
@@ -11390,8 +11953,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQURI3kHwaD9VZ/4+a9Jz5c+cmS
-# 38egggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUROULFSZnehlfEeeuWLgf90LL
+# DXSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -11448,11 +12011,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC8HPJmVEL5VTqFY
-# iUAH28uCFt7GMA0GCSqGSIb3DQEBAQUABIIBAKI8odyBUkGGcuiPBrj0pmbF96VI
-# fWOfVJb8kwHYQds82RDVuacPGiw6iVbH4cPWkEgq1ay5uo0W0HKW4B4FJNovwYCN
-# WUSern2iSruASKfjiSeRl+Q+v0KPzkLmERh+KsAzrJ8Slo1smszRC28kyU781frp
-# EofPQLJM/TEmW/Jkjv1W/X50Kw7SJcCWbP/jPSFIhQ61sx10cWI0sAkdPpoExwqo
-# /YEyvBr1DMzEeEbocbkoaLXKAzsA1wOGvccTSAQnRFt4UJqmc5sUQK1trUfmiWuG
-# W5cXgdQZ8Xf/EX9qnRXErx/jF3loPz/ERLn76GLVcIjtHlekpfRdEPx0dTQ=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFG7QjfDAboAHcXgE
+# KKnD7GNhDAq2MA0GCSqGSIb3DQEBAQUABIIBADLIrqEp79x5fpjXhGFVvKH5ES45
+# LoCB65q42Os2LFNaobV4sQDhUqk8B55iCChT8bxnyyfWuCEW9ZJ5VsQi+bfxwrlI
+# izKqO7CRoTwyaBKJfGTsXisQnjHs22/uFDdCIq5lFH3NkAw7D1U1ONI5Ss/aJf+1
+# ENCv8ktVDPJcWN+FfGUn2RO0AKogZPlurbwuud5aWe8hXPXi/mYg6pEMcl+KC3GH
+# Z2glMKGfcigrWgrD3m+DzAlM3BLbCt+QHPtyDwTHcevjExEXGkUtY34O+RibgHOk
+# DAeGSrKbw4/dmzHacJ1dV1/dNnrE95ylSSgZ0kGhciIQRk3DbqaOdxK1Z2E=
 # SIG # End signature block

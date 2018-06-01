@@ -31,6 +31,9 @@
     .PARAMETER ImportVariables
         If specified, get user session variables and add them to the initial session state
 
+    .PARAMETER ImportFunctions
+        If specified, get loaded functions, add them to the initial session state
+
     .PARAMETER ImportModules
         If specified, get loaded modules and pssnapins, add them to the initial session state
 
@@ -560,8 +563,8 @@ function Invoke-Parallel {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKFz3m0eVZj/IYSynzknW1Ef0
-# gVGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0xgKKqAXKquolPZCCsNaXO6/
+# CJ+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -618,11 +621,11 @@ function Invoke-Parallel {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIc1UQgxIR5l0K0A
-# aVr9bCuB3V4GMA0GCSqGSIb3DQEBAQUABIIBACph9mB53gCdkFJ0gAa2FweRf2aS
-# k7qrQEQTuVno/WAtrlQ/Yd8RKvJENWeb13eJroqKeYQ/l5PMoUIPA0rYDuwfCEzs
-# +EfcPScqx9LR1NpzA+Jti6rpAmpr3WAEGZitYtJYDhKj6X55hf5w9Vp1MfrA4n6b
-# dnWE5xFAUbB1SZRzvnNco2X+LAw6VjjlXGGERRO3MVpTf1AWRGmKooitiFKdNT9W
-# fEzIYB/0x0DbLt2kOj/uhJw48xNMIgLYIO8XMvq6EDYqel0kF+f96bi7XNvSmVUS
-# gGzEix64yM5ULviMPa2X/zG1ZHqPbZBEdWOx4Mi2FMZGBd/Qar+rfkgmTXk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFYPSpYS7m0cAzk3
+# I8mdDQ483pJmMA0GCSqGSIb3DQEBAQUABIIBAIycHEMRxrnjNM1mBjP79zDVKVGx
+# 7g/aUreu0qT1GKLlkQo5kg3niERjKFJNNuKO5+PRlFez8E8N6cMi9iJFXKdzJd97
+# if9fFdsDBdvOfEe8mq2WYDsLZbYlfXJKKktS+FnUTDX7Yv6xNW2T7VkoAWLPgMqh
+# CUKgyD3Luuv5sw3dbzGEnbyii71XDoRkUaDchoyDq/pU0rYPtgC85vNQy9CYk7rg
+# OHt4zeX0i+0cebceB3oy4n1O0KXP2qUXBN/ypGDHN9TGqlc2t0Isjldver1YoDa2
+# xmYU88eQAgUDXOImFsPps+8xjMGyJA3JaJdXM8L+niyRUTaUWxHGvaXXcLQ=
 # SIG # End signature block

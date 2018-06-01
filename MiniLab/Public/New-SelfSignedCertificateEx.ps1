@@ -47,7 +47,7 @@
         Specifies the intended uses of the public key contained in a certificate. You can
         specify either, EKU friendly name (for example 'Server Authentication') or
         object identifier (OID) value (for example '1.3.6.1.5.5.7.3.1').
-    .Parameter KeyUsages
+    .Parameter KeyUsage
         Specifies restrictions on the operations that can be performed by the public key contained in the certificate.
         Possible values (and their respective integer values to make bitwise operations) are:
         EncipherOnly
@@ -80,11 +80,11 @@
         Specifies whether the certificate is CA (IsCA = $true) or end entity (IsCA = $false)
         certificate. If this parameter is set to $false, PathLength parameter is ignored.
         Basic Constraints extension is marked as critical.
-    .PathLength
+    .Parameter PathLength
         Specifies the number of additional CA certificates in the chain under this certificate. If
         PathLength parameter is set to zero, then no additional (subordinate) CA certificates are
         permitted under this CA.
-    .CustomExtension
+    .Parameter CustomExtension
         Specifies the custom extension to include to a self-signed certificate. This parameter
         must not be used to specify the extension that is supported via other parameters. In order
         to use this parameter, the extension must be formed in a collection of initialized
@@ -117,38 +117,43 @@
     .Parameter Exportable
         Marks private key as exportable. Smart card providers usually do not allow
         exportable keys.
-    .Example
+	.Example
+		# Creates a self-signed certificate intended for code signing and which is valid for 5 years. Certificate
+		# is saved in the Personal store of the current user account.
+		
         New-SelfsignedCertificateEx -Subject "CN=Test Code Signing" -EKU "Code Signing" -KeySpec "Signature" `
         -KeyUsage "DigitalSignature" -FriendlyName "Test code signing" -NotAfter [datetime]::now.AddYears(5)
         
-        Creates a self-signed certificate intended for code signing and which is valid for 5 years. Certificate
-        is saved in the Personal store of the current user account.
+        
     .Example
-        New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
+		# Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
+        # certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
+        # so you can export the certificate with a associated private key to a file at any time. The certificate
+		# includes SMIME capabilities.
+		
+		New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
         -KeyUsage "KeyEcipherment, DigitalSignature" -SAN "sub.domain.com","www.domain.com","192.168.1.1" `
         -AllowSMIME -Path C:\test\ssl.pfx -Password (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force) -Exportable `
         -StoreLocation "LocalMachine"
         
-        Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
-        certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
-        so you can export the certificate with a associated private key to a file at any time. The certificate
-        includes SMIME capabilities.
     .Example
-        New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
+		# Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
+        # certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
+        # so you can export the certificate with a associated private key to a file at any time. Certificate uses
+        # Ellyptic Curve Cryptography (ECC) key algorithm ECDH with 256-bit key. The certificate is signed by using
+		# SHA256 algorithm.
+		
+		New-SelfsignedCertificateEx -Subject "CN=www.domain.com" -EKU "Server Authentication", "Client authentication" `
         -KeyUsage "KeyEcipherment, DigitalSignature" -SAN "sub.domain.com","www.domain.com","192.168.1.1" `
         -StoreLocation "LocalMachine" -ProviderName "Microsoft Software Key Storae Provider" -AlgorithmName ecdh_256 `
-        -KeyLength 256 -SignatureAlgorithm sha256
-        
-        Creates a self-signed SSL certificate with multiple subject names and saves it to a file. Additionally, the
-        certificate is saved in the Personal store of the Local Machine store. Private key is marked as exportable,
-        so you can export the certificate with a associated private key to a file at any time. Certificate uses
-        Ellyptic Curve Cryptography (ECC) key algorithm ECDH with 256-bit key. The certificate is signed by using
-        SHA256 algorithm.
+		-KeyLength 256 -SignatureAlgorithm sha256
+		
     .Example
-        New-SelfsignedCertificateEx -Subject "CN=Test Root CA, OU=Sandbox" -IsCA $true -ProviderName `
-        "Microsoft Software Key Storage Provider" -Exportable
-        
-        Creates self-signed root CA certificate.
+		# Creates self-signed root CA certificate.
+
+		New-SelfsignedCertificateEx -Subject "CN=Test Root CA, OU=Sandbox" -IsCA $true -ProviderName `
+		"Microsoft Software Key Storage Provider" -Exportable
+		
 #>
 function New-SelfSignedCertificateEx {
     [CmdletBinding(DefaultParameterSetName = '__store')]
@@ -393,8 +398,8 @@ function New-SelfSignedCertificateEx {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5pDEUlvsWKrfNUiwzM//U5LO
-# r5mgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWebUfvFblVk6iNp8qc6pZdAl
+# SPugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -451,11 +456,11 @@ function New-SelfSignedCertificateEx {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKCg98+gBfmD2HBv
-# ee0BY4cdU7CWMA0GCSqGSIb3DQEBAQUABIIBAEv5e6DwILQcPSImY08OOVfzWK1U
-# EquKeqfWvXPM4usAdLycIaK4s2C6L8tb6stdjIh0PBmnEuAF2XnvvhS6QauZKmNU
-# zB3efmeEr+LbsjAarcJmAwaz7algwFWbbakCI8I1RZ+TYDqyEF+qi6Oolf1VeQuN
-# rbtb3oTGDVrb9jAuUnP4Av9sb95JJWwZKShEAEeFuOuiZlKrJAFjvN892D/y8EVZ
-# Zj9E7Sni5GqRPhsPxYrUGikfFG2L895DEb3bZDfMGv7+oMgJXEU3eASYS4uAWn8y
-# y+utk6A57r5MUU9UHgx2sdaXblD++qmPgHygJM2lVQi0wlIuzS8dydkk6qo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBpFqLFR1MmVrPF6
+# foPjBegnwseWMA0GCSqGSIb3DQEBAQUABIIBAIBsyk/eTCqXsmP+5lvEMJVRFb82
+# KdfClVdSLRxaqJtK9V4aS1S6IIcxoMIsLQI/ySmHJ2fwoXoIbV4sqUrVpyjIrpSy
+# R7yv7Wqvys9fP8IB9ayDdWz6ovme951ocz2BaAx+hEjjeRRl2/4jens0pBJRviqS
+# zDOZsLmSpyhDOEr8BOLBjWIyM89vujNw8cbvdiwbdCsd2aTf7unmwcZkc7sLa9OQ
+# 4L1Fs6KsKDTFsOflrNYk+kLw0ois65iqaSY09Fw3PVtAsN9lWEt976IyebOUHULA
+# CSl3SVCFfzRlF0aN4iRngbPHtvtkNX8L6opc7YNZcIQ7ghEM3NmpOkbAPbU=
 # SIG # End signature block

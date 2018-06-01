@@ -19,6 +19,21 @@
         deployed to Hyper-V. Use https://app.vagrantup.com to search for Vagrant Boxes. One of my favorite
         VMs is 'centos/7'.
 
+    .PARAMETER BoxFilePath
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the full path to a .box file on the filesystem.
+
+        Do NOT use this parameter with the -DecompressedBoxFileDirectory parameter.
+
+    .PARAMETER DecompressedBoxDirectory
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the full path to a directory that contains the contents
+        of a decompressed .box file.
+
+        Do NOT use this parameter with the -BoxFilePath parameter.
+
     .PARAMETER VagrantProvider
         This parameter is MANDATORY.
 
@@ -40,6 +55,25 @@
         IMPORTANT NOTE: Vagrant Boxes are downloaded in a compressed format. A good rule of thumb is that
         you'll need approximately QUADRUPLE the amount of space on the drive in order to decompress and
         deploy the Vagrant VM. This is especially true with Windows Vagrant Box VMs.
+
+    .PARAMETER CopyDecompressedDirectory
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, the director containing the contents of the decompressed .box
+        file will be COPIED as opposed to MOVED to the location specified by the -VMDestinationDirectory
+        parameter.
+
+    .PARAMETER Memory
+        This parameter is OPTIONAL, however, its default value is 2048.
+
+        This parameter takes an integer that represents the amount of memory in MB to
+        allocate to the VM. Valid values are: 1024,2048,4096,8192,12288,16384,32768
+
+    .PARAMETER CPUs
+        This parameter is OPTIONAL, hwoever, its default value is 1.
+
+        This parameter takes an integer that represents the number of vCPUs to allocate
+        to the VM. Valid values are : 1,2
 
     .PARAMETER TemporaryDownloadDirectory
         This parameter is OPTIONAL, but is defacto MANDATORY and defaults to "$HOME\Downloads".
@@ -109,15 +143,18 @@ function Deploy-HyperVVagrantBoxManually {
         [string]$VMName,
 
         [Parameter(Mandatory=$True)]
+        [string]$VMDestinationDirectory,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$CopyDecompressedDirectory,
+
+        [Parameter(Mandatory=$True)]
         [ValidateSet(1024,2048,4096,8192,12288,16384,32768)]
         [int]$Memory = 2048,
 
         [Parameter(Mandatory=$True)]
         [ValidateSet(1,2)]
         [int]$CPUs = 1,
-
-        [Parameter(Mandatory=$True)]
-        [string]$VMDestinationDirectory,
 
         [Parameter(Mandatory=$False)]
         [string]$TemporaryDownloadDirectory,
@@ -133,10 +170,7 @@ function Deploy-HyperVVagrantBoxManually {
 
         [Parameter(Mandatory=$False)]
         [ValidateSet("Vagrant")]
-        [string]$Repository,
-
-        [Parameter(Mandatory=$False)]
-        [switch]$CopyDecompressedDirectory
+        [string]$Repository
     )
 
     #region >> Variable/Parameter Transforms and PreRun Prep
@@ -181,6 +215,26 @@ function Deploy-HyperVVagrantBoxManually {
 
     if (!$TemporaryDownloadDirectory) {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
+    }
+
+    if ($BoxFilePath -and $DecompressedBoxDirectory) {
+        Write-Error "Please use *either* the -BoxFilePath *or* the -DecompressedBoxDirectory parameter (not both)! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$($DecompressedBoxDirectory -match $($VagrantBox -split '/')[0])) {
+        $ErrMsg = "The directory '$DecompressedBoxDirectory' does not match the VagrantBox name " +
+        "'$VagrantBox'! If it is, in fact, a valid decompressed .box file directory, please include " +
+        "'$($($VagrantBox -split'/')[0])' in the directory name. Halting!"
+        Write-Error $ErrMsg
+        $global:FunctionResult = "1"
+        return
+    }
+    if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
+        Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
+        $global:FunctionResult = "1"
+        return
     }
 
     try {
@@ -464,8 +518,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUndOvGkrHNk/7QA30bVvBKFyl
-# mmGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWybV7YY3TKQTm48Rz41jF5jI
+# utigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -522,11 +576,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIGXVCdK69RtzrZ5
-# 9wEM82urMqGEMA0GCSqGSIb3DQEBAQUABIIBAJStNuhrHF1OaLSmZMCuC30HXgIA
-# Td0Eg5SGhddg9f0yoHboCpvXrCqOZwObOTfvg5/4P1D3fav5ddClLbhhU63Eo+G9
-# uPizSxe7OG0IsEpNO0s/YVZlkp73h5tkd+ZskAwrTIjQVoET7RAWxjHPU7QFshB6
-# itz9E/5/5+HVCQkrr8+vrsa+4CN7OLmFGldPYPaOFCN/mydRRCP4huGegADMvdbA
-# +Ksb0izK3IlmURM+qu4lh5Fquo77VXBDKouhtvCAPYyxk7i03LTUwa3dc6JK+VcW
-# 39CDOJ/RsHgGqTkq5zjh45Y5unwRp23T8Q08DUgPVbsee+ROMX6E5rvLiDw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBwL8IGVxvtqzw7l
+# yCdPWpPkLNqqMA0GCSqGSIb3DQEBAQUABIIBAAMd6WrPfdZj/Mi3/vL3rjMmcCLn
+# MpFMkxxgZGQzny1Qz6rPguSX7fcp+5CbFXbFh56hufrU15MXLIlzanTR7NtQ8F3L
+# M6o7TiACEaob+g9bZ9KqBkmOsDx8cs6yycKF8jpOZSxsz0WJhwzo2bGMN9UbHkw8
+# 6I0eRBo9cVBXsPpi92SCWf7NEY1KbF7+d/JEkDncB1SkShm8wQJ4HeWGysC3Sw6D
+# pi61uVKiYoP1o8ftQipRN/EZyRRx3OjeWWFFr0NdadRfcU8K6+tm4vPAndCc6W+G
+# cpD7RYxm/RktJh/r1h3FHBkV1R3XjORrM8Lz7mFyuycKzTkse9MuldeCHio=
 # SIG # End signature block
