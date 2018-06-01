@@ -94,4 +94,4 @@ Create-TwoTierPKI @CreateTwoTierPKISplatParams
 
 ## Notes
 
-* PSGallery: 
+* PSGallery: https://www.powershellgallery.com/packages/MiniLab
