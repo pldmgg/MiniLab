@@ -222,24 +222,26 @@ function Deploy-HyperVVagrantBoxManually {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
     }
 
-    if ($BoxFilePath -and $DecompressedBoxDirectory) {
+    if ($PSBoundParameters['BoxFilePath'] -and $PSBoundParameters['DecompressedBoxDirectory']) {
         Write-Error "Please use *either* the -BoxFilePath *or* the -DecompressedBoxDirectory parameter (not both)! Halting!"
         $global:FunctionResult = "1"
         return
     }
 
-    if (!$($DecompressedBoxDirectory -match $($VagrantBox -split '/')[0])) {
-        $ErrMsg = "The directory '$DecompressedBoxDirectory' does not match the VagrantBox name " +
-        "'$VagrantBox'! If it is, in fact, a valid decompressed .box file directory, please include " +
-        "'$($($VagrantBox -split'/')[0])' in the directory name. Halting!"
-        Write-Error $ErrMsg
-        $global:FunctionResult = "1"
-        return
-    }
-    if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
-        Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
-        $global:FunctionResult = "1"
-        return
+    if ($PSBoundParameters['DecompressedBoxDirectory']) {
+        if (!$($DecompressedBoxDirectory -match $($VagrantBox -split '/')[0])) {
+            $ErrMsg = "The directory '$DecompressedBoxDirectory' does not match the VagrantBox name " +
+            "'$VagrantBox'! If it is, in fact, a valid decompressed .box file directory, please include " +
+            "'$($($VagrantBox -split'/')[0])' in the directory name. Halting!"
+            Write-Error $ErrMsg
+            $global:FunctionResult = "1"
+            return
+        }
+        if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
+            Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
     }
 
     try {
@@ -392,7 +394,10 @@ function Deploy-HyperVVagrantBoxManually {
                 Remove-Item -Path "$VMDestinationDirectory\$NewVMName" -Recurse -Force
             }
             Move-Item -Path $DecompressedBoxDirectory -Destination $VMDestinationDirectory -Force -ErrorAction Stop
-            Rename-Item -Path "$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -NewName $NewVMName
+
+            if ("$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -ne "$VMDestinationDirectory\$NewVMName") {
+                Rename-Item -Path "$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -NewName $NewVMName
+            }
         }
 
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
@@ -471,7 +476,7 @@ function Deploy-HyperVVagrantBoxManually {
     # Wait for up to 30 minutes for the new VM to report its IP Address
     $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
     $Counter = 0
-    while (!$NewVMIP -or $Counter -le 30) {
+    while (!$NewVMIP -and $Counter -le 30) {
         Write-Host "Waiting for VM $NewVMName to report its IP Address..."
         Start-Sleep -Seconds 60
         $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
@@ -523,8 +528,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0Jw5YzLTwtZ3O3f1YxlPenU0
-# SvOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUndHjJfnU9QGCV1nraNsLHCQG
+# kDGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -581,11 +586,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFN//Z0caecUuur3H
-# Ol3H6hPpLcW5MA0GCSqGSIb3DQEBAQUABIIBAMKV8tVqbI2ikFG93iD4rc0cML0c
-# YaqUgGagP2vwDPG5WHiKIOMZtdQh+UtUirOBCI5yxPManZYRvb+YsxBszZ0vzDRi
-# Frv13Ie0axp98eQwH7LUpoTNyhyXMVtT0+JkmA3uCfzYrvZpk4/wKmoQs2rsM4Fz
-# 2m+jCmjxIFsb6iGqSHzMI6IMbP4nHD6whGK5kTPkRlnbJXSNT4rCSIzPopW0baG3
-# w5c3OdE/TtMiR/wDoKJ9X1wVOOYcLq3sllHX/GJN6rQXnNDkDNpC9UIryc9OZdqp
-# z+6fzsSYSE5KRIvry5FqAUCbPAiXxfT/xjsuc6Ij4OfTGMqhDcIeUvZ+i6k=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC9gGpXeL5rwz85Q
+# szJfxXonYkUGMA0GCSqGSIb3DQEBAQUABIIBAGFSmfrm40yoSIuUmyR89gSdi9QE
+# kft94hWG02THdlF9DAqK/H768MzngLtc5uyl36Sb8aMvoKUabaziFwXlOFtX2lOH
+# yBKItN62wMRhSndwCcmg5X6Jw+BaQAHNerP2lJIe4ApBI/MrPoIN3vMD+D6J1Xvi
+# sNv+C64r0RuUQbz8oPD+YNUHiK7tC+vj6NiAf4ZacQU8ks1uzbulyrobmAriq+ws
+# aSl80JlTr8KLL1/jUDJYjmdblnfCR2Zv4WQD3RPsFNPeHJpncurBqOYQTvco+ZRT
+# HPlIyGvI392Z80SKoRxeMF5mpZdQvL3SXAt0Ggis2tGYtmHpQJHkiaJEr9c=
 # SIG # End signature block

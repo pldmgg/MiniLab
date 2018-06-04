@@ -3540,24 +3540,26 @@ function Deploy-HyperVVagrantBoxManually {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
     }
 
-    if ($BoxFilePath -and $DecompressedBoxDirectory) {
+    if ($PSBoundParameters['BoxFilePath'] -and $PSBoundParameters['DecompressedBoxDirectory']) {
         Write-Error "Please use *either* the -BoxFilePath *or* the -DecompressedBoxDirectory parameter (not both)! Halting!"
         $global:FunctionResult = "1"
         return
     }
 
-    if (!$($DecompressedBoxDirectory -match $($VagrantBox -split '/')[0])) {
-        $ErrMsg = "The directory '$DecompressedBoxDirectory' does not match the VagrantBox name " +
-        "'$VagrantBox'! If it is, in fact, a valid decompressed .box file directory, please include " +
-        "'$($($VagrantBox -split'/')[0])' in the directory name. Halting!"
-        Write-Error $ErrMsg
-        $global:FunctionResult = "1"
-        return
-    }
-    if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
-        Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
-        $global:FunctionResult = "1"
-        return
+    if ($PSBoundParameters['DecompressedBoxDirectory']) {
+        if (!$($DecompressedBoxDirectory -match $($VagrantBox -split '/')[0])) {
+            $ErrMsg = "The directory '$DecompressedBoxDirectory' does not match the VagrantBox name " +
+            "'$VagrantBox'! If it is, in fact, a valid decompressed .box file directory, please include " +
+            "'$($($VagrantBox -split'/')[0])' in the directory name. Halting!"
+            Write-Error $ErrMsg
+            $global:FunctionResult = "1"
+            return
+        }
+        if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
+            Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
     }
 
     try {
@@ -3710,7 +3712,10 @@ function Deploy-HyperVVagrantBoxManually {
                 Remove-Item -Path "$VMDestinationDirectory\$NewVMName" -Recurse -Force
             }
             Move-Item -Path $DecompressedBoxDirectory -Destination $VMDestinationDirectory -Force -ErrorAction Stop
-            Rename-Item -Path "$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -NewName $NewVMName
+
+            if ("$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -ne "$VMDestinationDirectory\$NewVMName") {
+                Rename-Item -Path "$VMDestinationDirectory\$($DecompressedBoxDirectory | Split-Path -Leaf)" -NewName $NewVMName
+            }
         }
 
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
@@ -3789,7 +3794,7 @@ function Deploy-HyperVVagrantBoxManually {
     # Wait for up to 30 minutes for the new VM to report its IP Address
     $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
     $Counter = 0
-    while (!$NewVMIP -or $Counter -le 30) {
+    while (!$NewVMIP -and $Counter -le 30) {
         Write-Host "Waiting for VM $NewVMName to report its IP Address..."
         Start-Sleep -Seconds 60
         $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
@@ -12220,8 +12225,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUMktD6YqWmu5JvNym1ZPZYJNv
-# b86gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUOcLaxpjO5wWDpQVh6llgcr29
+# T+ugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12278,11 +12283,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFA7x3Yx0gstYECxk
-# dmt1sfo+KpYrMA0GCSqGSIb3DQEBAQUABIIBAJQdo+2dBfJueltPinkLrrST3DYS
-# 0dWX+2wcFFgcHJDdtPsigv+Ik6oEzRoIojhbrZIZ57lQQY8M/xwxmQ22vULMehXd
-# dXRegWKkgi3ek5yUmwfVQlAp5nOUzkhWKWKbf2VHlfevb8yJiN1MdHmCpJRj1ZI/
-# 0e4+1G2IrRUmJ/Tr15e62H4JYrv2CSU7ft32B6taqO5V2UJjj0YesJviFUBXe5bR
-# gF+hWJrXartBi7ovOlJ+xw3v0lgSTWzlqe+ERwr4w488Y1ku2uuy9CsnFaXdbfR5
-# 5SxN5kMxqN8L0lwRejMPb5f2eHS61OsHyB/6Kkze2RIoKN47cprJhYH7Uwo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJRGkRi1xhzgikcA
+# hCBSvPoATV4tMA0GCSqGSIb3DQEBAQUABIIBALmCs5IKRYci04HGirciHW+l2SrO
+# Wp0H1r0CUcPCShfxqFbYkG8qEObYXgNuHgF9nIm98n9N52G8OVGzjnmmHhutfCWJ
+# RjVZE/c4KUmAED4ZUDn3OXtdq3JOyrT29ZBtjtBzork6HFtWMT9ogUHd7Ge0NFf4
+# baSmNtmR39GbYgwfeoJowg2QEVjrRgkSgl/Sz05MqMIacAWKAOr2KQXMCXqfBBOt
+# DLI6Zf0Cl07b/vVf6LmHKzNMqSldY5MHuJYLpbRSo7vE3WvhstjW9e5dmsS3zucf
+# lTjmPtdm7pgNkzGcQMcGW9Rl2LDPx9BvbvPrIghoQ+VYDybI2+kHqGkFgMo=
 # SIG # End signature block
