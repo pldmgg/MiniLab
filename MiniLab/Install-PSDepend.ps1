@@ -30,17 +30,23 @@ $ExistingProgressPreference = "$ProgressPreference"
 $ProgressPreference = 'SilentlyContinue'
 try {
     # Bootstrap nuget if we don't have it
-    if(-not ($NugetPath = (Get-Command 'nuget.exe' -ErrorAction SilentlyContinue).Path)) {
+    if(!$(Get-Command 'nuget.exe' -ErrorAction SilentlyContinue)) {
         $NugetPath = Join-Path $ENV:USERPROFILE nuget.exe
         if(-not (Test-Path $NugetPath)) {
             Invoke-WebRequest -uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $NugetPath
         }
     }
+    else {
+        $NugetPath = $(Get-Command 'nuget.exe').Path
+    }
+
+    Write-Host "nuget.exe path is '$NugetPath'"
 
     # Bootstrap PSDepend, re-use nuget.exe for the module
     if($path) { $null = mkdir $path -Force }
     $NugetParams = 'install', 'PSDepend', '-Source', 'https://www.powershellgallery.com/api/v2/',
                 '-ExcludeVersion', '-NonInteractive', '-OutputDirectory', $Path
+    Write-Host "Running '& $NugetPath @NugetParams'"
     & $NugetPath @NugetParams
     if (!$(Test-Path "$(Join-Path $Path PSDepend)\nuget.exe")) {
         Move-Item -Path $NugetPath -Destination "$(Join-Path $Path PSDepend)\nuget.exe" -Force
@@ -53,8 +59,8 @@ finally {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUzjMbJrM7u2AEHqRtgy0szKTk
-# GJegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUnAvZ3+vf9PV+QhzpauVS7QXh
+# jgSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -111,11 +117,11 @@ finally {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPhFOL6/a9IpTfcP
-# XRU2cU/99trhMA0GCSqGSIb3DQEBAQUABIIBAL3G7cC4WnDUnXAyu3Vp4BjXEaAm
-# zRO8/DYSqyNMiD0GxO53Wmk5wjEZr0Vrntqf2PANyT2dm4Fs0Kte6SjYFE7M2gtW
-# kdqMZ+3iGu0P+2CkVLRtoj3s1ljGM8NbwZ0f/9uR7y30b0coCFihhx1q8T75v3t+
-# NtDBOfSFydXHPMqvAmWyvgMj30uMVY+Kzyi/8t9aNBrQ5QUaRgFK0LXGVI/c17Bk
-# koXEUx1F5Fts3YDdof3+KTWMhCOs5W5PjyacpBP4Csy3kPrPOWm0st8JiqHdkDtR
-# hrbduZgP/vkpUdMLFOtAVcV8AxBu4gqNd3DNRbiV0DB0ewTTgYiTftQwWUc=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIyPAGKzq5p5MDhP
+# 2QOSwmf4tC7XMA0GCSqGSIb3DQEBAQUABIIBAAbhvd7j7PY1DKUZ3s0k/XxqI/kK
+# JK771ruZy3UiA+5gzSj5sO0ZYB2ESapsTzn2wvS0/PQK2eCit8eh8ydFqDcwMMaq
+# DR+FaXSDlt4PaMTpBx72vOQqWy/XYLDGeXc3aFtKMW26rr/2Fde1ExIAhI9WDerN
+# 96emgsrB79RgBLnjCmYnq1KD/HM+41LtjuncatoRoOWu+3RrXoBHGp3Rd8w6Dbs5
+# GlR3QZ2xKqRruOtKnN295HJzIs/zHBGGiON/wqEVsR/o+k9CXWVZqs+1qA65hRCn
+# EPnIjHYJaPKvh/PxC6ep0Lx5Gg1d4pEgxDQHVSehhm4vmLfkOf8727T8MAo=
 # SIG # End signature block

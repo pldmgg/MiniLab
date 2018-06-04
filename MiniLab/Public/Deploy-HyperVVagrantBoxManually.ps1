@@ -209,6 +209,11 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    if (!$(Test-Path $VMDestinationDirectory)) {
+        Write-Error "The path '$VMDestinationDirectory' does not exist! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
     if ($($VMDestinationDirectory | Split-Path -Leaf) -eq $VMName) {
         $VMDestinationDirectory = $VMDestinationDirectory | Split-Path -Parent
     }
@@ -518,8 +523,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWybV7YY3TKQTm48Rz41jF5jI
-# utigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0Jw5YzLTwtZ3O3f1YxlPenU0
+# SvOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -576,11 +581,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBwL8IGVxvtqzw7l
-# yCdPWpPkLNqqMA0GCSqGSIb3DQEBAQUABIIBAAMd6WrPfdZj/Mi3/vL3rjMmcCLn
-# MpFMkxxgZGQzny1Qz6rPguSX7fcp+5CbFXbFh56hufrU15MXLIlzanTR7NtQ8F3L
-# M6o7TiACEaob+g9bZ9KqBkmOsDx8cs6yycKF8jpOZSxsz0WJhwzo2bGMN9UbHkw8
-# 6I0eRBo9cVBXsPpi92SCWf7NEY1KbF7+d/JEkDncB1SkShm8wQJ4HeWGysC3Sw6D
-# pi61uVKiYoP1o8ftQipRN/EZyRRx3OjeWWFFr0NdadRfcU8K6+tm4vPAndCc6W+G
-# cpD7RYxm/RktJh/r1h3FHBkV1R3XjORrM8Lz7mFyuycKzTkse9MuldeCHio=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFN//Z0caecUuur3H
+# Ol3H6hPpLcW5MA0GCSqGSIb3DQEBAQUABIIBAMKV8tVqbI2ikFG93iD4rc0cML0c
+# YaqUgGagP2vwDPG5WHiKIOMZtdQh+UtUirOBCI5yxPManZYRvb+YsxBszZ0vzDRi
+# Frv13Ie0axp98eQwH7LUpoTNyhyXMVtT0+JkmA3uCfzYrvZpk4/wKmoQs2rsM4Fz
+# 2m+jCmjxIFsb6iGqSHzMI6IMbP4nHD6whGK5kTPkRlnbJXSNT4rCSIzPopW0baG3
+# w5c3OdE/TtMiR/wDoKJ9X1wVOOYcLq3sllHX/GJN6rQXnNDkDNpC9UIryc9OZdqp
+# z+6fzsSYSE5KRIvry5FqAUCbPAiXxfT/xjsuc6Ij4OfTGMqhDcIeUvZ+i6k=
 # SIG # End signature block

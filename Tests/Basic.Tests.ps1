@@ -72,6 +72,7 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'Create-RootCA' | Should Be $True
         $Commands -contains 'Create-SubordinateCA' | Should Be $True
         $Commands -contains 'Create-TwoTierPKI' | Should Be $True
+        $Commands -contains 'Create-TwoTierPKICFSSL' | Should Be $True
         $Commands -contains 'Deploy-HyperVVagrantBoxManually' | Should Be $True
         $Commands -contains 'Generate-Certificate' | Should Be $True
         $Commands -contains 'Get-DSCEncryptionCert' | Should Be $True
@@ -105,8 +106,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU9cEI+q6VooyrDRZ6c80NfXS9
-# Edagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU3wXwxAnf2R6ZI2FF2EQ5xIvI
+# zWWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -163,11 +164,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEmkUUzT2bUh6p8D
-# fOSZeIMTWhGDMA0GCSqGSIb3DQEBAQUABIIBAJeZWoyxJF/viSUqQWCJ0Sgob4Gs
-# Dim1wF2i8eELFf85Jtai6Bj7Rz/X2dFraHmVsl48YdO1w7mTrNev5O47AqTHMBLP
-# Okh+fBD1Sgqer8M725zixGz056cunqCV/XRgeP44BR1sShcMLL7Ijkk8Sz5YP7RK
-# fnd1V89Mjkn6ip1z5+KKCSI8ydDiV2v9KtNZwYHUE+HIb4K3V2r3sPtckMHoVWtf
-# GNuJQKj7Mkn5IkWMwkq800juuqxYsGd4WTAnffMRH53u2pjv7brm6CDVeojkYCNZ
-# hqdTwkczE5PM79QsHjITLNVPdYjIyDcVPszyo7tH+iwHlzfnrxzFfL+s2ig=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHRQczsJCet57d07
+# 7QQR2cRv2CZNMA0GCSqGSIb3DQEBAQUABIIBAANTJd6B3vNAma3gF5BzM4UekAu0
+# iFwU/mCpoS6MIjxwDUziALOoWuKwMAwNi7FaNXvylWceymRYgxhY59yPgX70l8Pp
+# 6HFyFuyV51e+NLpHFiqiW/gSP8nTLcu9lG33OK/WtdRROhbSNkdL4gBPGy3KoQGy
+# XuAt/B/i8emuFIVWzFdCX4AOZMHzwYFJvGMb6FXBRCaMcMRAVP/iEMlugFYyoZX3
+# Zibjna9dg5Q4qIAuFtc3TOCThRZ5Eldn7E4zQYGj2uVhaCDs4OBE3LQocta6iu6g
+# Th8tk9WERoQeqeRVOyvhz/VXrrTlFnjCQ2XRy+kfdnZo8Mq9EJ7n0HKW+pw=
 # SIG # End signature block

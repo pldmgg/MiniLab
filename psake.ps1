@@ -84,15 +84,49 @@ foreach ($import in $Private) {
 
     # Optionally Install-PSDepend and install any dependency Modules
     $PSDependOperations = @'
-try {
-    & "$PSScriptRoot\Install-PSDepend.ps1"
-}
-catch {
-    Remove-Module WinSSH -ErrorAction SilentlyContinue
-    Write-Error $_
-    Write-Error "Installing the PSDepend Module failed! The WinSSH Module will not be loaded. Halting!"
-    $global:FunctionResult = "1"
-    return
+if (!$(Get-Module -ListAvailable PSDepend)) {
+    try {
+        [string]$Path = $(Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules')
+        $ExistingProgressPreference = "$ProgressPreference"
+        $ProgressPreference = 'SilentlyContinue'
+        try {
+            # Bootstrap nuget if we don't have it
+            if(!$(Get-Command 'nuget.exe' -ErrorAction SilentlyContinue)) {
+                $NugetPath = Join-Path $ENV:USERPROFILE nuget.exe
+                if(-not (Test-Path $NugetPath)) {
+                    Invoke-WebRequest -uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $NugetPath
+                }
+            }
+            else {
+                $NugetPath = $(Get-Command 'nuget.exe').Path
+            }
+        
+            # Bootstrap PSDepend, re-use nuget.exe for the module
+            if($path) { $null = mkdir $path -Force }
+            $NugetParams = 'install', 'PSDepend', '-Source', 'https://www.powershellgallery.com/api/v2/',
+                        '-ExcludeVersion', '-NonInteractive', '-OutputDirectory', $Path
+            & $NugetPath @NugetParams
+            if (!$(Test-Path "$(Join-Path $Path PSDepend)\nuget.exe")) {
+                Move-Item -Path $NugetPath -Destination "$(Join-Path $Path PSDepend)\nuget.exe" -Force
+            }
+        }
+        finally {
+            $ProgressPreference = $ExistingProgressPreference
+        }
+    }
+    catch {
+
+'@ + @"
+
+        Remove-Module $env:BHProjectName -ErrorAction SilentlyContinue
+        Write-Error `$_
+        Write-Error "Installing the PSDepend Module failed! The $env:BHProjectName Module will not be loaded. Halting!"
+
+"@ + @'
+
+        $global:FunctionResult = "1"
+        return
+    }
 }
 
 try {
@@ -100,9 +134,15 @@ try {
     $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
 }
 catch {
-    Remove-Module WinSSH -ErrorAction SilentlyContinue
+
+'@ + @"
+
+    Remove-Module $env:BHProjectName -ErrorAction SilentlyContinue
     Write-Error $_
-    Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The WinSSH Module will not be loaded. Halting!"
+    Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The $env:BHProjectName Module will not be loaded. Halting!"
+
+"@ + @'
+
     $global:FunctionResult = "1"
     return
 }
@@ -110,41 +150,6 @@ catch {
 '@
 
     Add-Content -Path "$env:BHModulePath\$env:BHProjectName.psm1" -Value $PSDependOperations
-
-    <#
-    Add-Content -Path "$env:BHModulePath\$env:BHProjectName.psm1" -Value '& $PSScriptRoot\Install-PSDepend.ps1'
-    
-    $RequiredModules = @("NTFSSecurity","ProgramManagement")
-    $InstallImportRequiredModules = @'
-if (!$(Get-Module -ListAvailable RequiredModuleNameMatch)) {
-    try {
-        Install-Module RequiredModuleNameMatch -ErrorAction Stop
-    }
-    catch {
-        Write-Error $_
-        Write-Error "Problem installing Module PrimaryModuleNameMatch dependency Module RequiredModuleNameMatch! Module PrimaryModuleNameMatch will NOT be loaded. Halting!"
-        $global:FunctionResult = "1"
-        return
-    }
-}
-try {
-    Import-Module RequiredModuleNameMatch -ErrorAction Stop
-}
-catch {
-    Write-Error $_
-    Write-Error "Problem importing Module PrimaryModulenameMatch dependency Module RequiredModuleNameMatch! Module PrimaryModuleNameMatch will NOT be loaded. Halting!"
-    $global:FunctionResult = "1"
-    return
-}
-
-'@
-
-    foreach ($ModuleDependency in $RequiredModules) {
-        $UpdatedModuleInstallBlock = $InstallImportRequiredModules -replace 'RequiredModuleNameMatch',$ModuleDependency -replace 'PrimaryModuleNameMatch','$env:BHProjectName'
-        Add-Content -Path "$env:BHModulePath\$env:BHProjectName.psm1" -Value $UpdatedModuleInstallBlock
-    }
-    #>
-
 
     [System.Collections.ArrayList]$FunctionTextToAdd = @()
     foreach ($ScriptFileItem in $PublicScriptFiles) {
@@ -248,8 +253,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUJszjefZVJmIRy9xnfxf3ErAN
-# KQKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUl40lK0c1MTws4Sx/9g8pEdSq
+# jTugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -306,11 +311,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFODmV+ftfOexJmmx
-# B8ZCtcVwzPORMA0GCSqGSIb3DQEBAQUABIIBACf+USDLCyfOqN9srZDRDJNSe+Bn
-# UfmeDDaZmEIy3FeawZGmyVLRCcaIh6P5WTTakSESTnVa2D2l15SnhJd5uUGWY2Q+
-# 5x6derX5GefBwoSBap8K1OTHbl52CZe16ek7LiWtaxl+drxgptzTC754kK+JVU/0
-# /jVT2MSqWbHDRMipcSRjYVpidlkdX+Q2aUnksCktPhTIkp57+8jfPOxgsy7+EGVv
-# wAw43tfNAnzVfqM9LJjuQbm6lKAPUY7vQtifxNyMDtIu+bkpIGSdVSdAfOE4BkX8
-# jr/cBX/PwrG/MUku/aHXtANrGfFKHeYg3rDCvnvkgEB3uvqnxtdCF9+gk8Q=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNsFrIv3cAvKsFia
+# 9W6Cs9jHDSdiMA0GCSqGSIb3DQEBAQUABIIBALYHfucSGlYZ8fYQ+b6lBHF32ns8
+# f2JJfHNAoN9TXIwsOfIbZSc+eHKqNth9xt9RcuFwYyYy0rh+rnKNVw0U9eGZbMlk
+# UyQxCBJ5ybwKKVjc8+AkwNOO0nbuXIzwEwa/6+EWjJCYZSv8oNEjBru3IHux1mLL
+# pCj8D1gV9Sq2DeI2Al3xuGNzYSsm9w6y4tH/R5kW+TY6wUkYsU1HXzcso7iH7whQ
+# G3Fr8A5Ywu+NgweRdKdugEPMCwAY1XGXinpxlSba4Go2q1dDEexzzB9MKM6AD09l
+# Ejbe1ykvUAxW4aZDwuM84TAdyeXtpirBhEjBtFnP5yqn1o5vHZCMc7rrANs=
 # SIG # End signature block

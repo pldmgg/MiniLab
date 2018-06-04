@@ -14,15 +14,45 @@ foreach ($import in $Private) {
     }
 }
 
-try {
-    & "$PSScriptRoot\Install-PSDepend.ps1"
-}
-catch {
-    Remove-Module WinSSH -ErrorAction SilentlyContinue
-    Write-Error $_
-    Write-Error "Installing the PSDepend Module failed! The WinSSH Module will not be loaded. Halting!"
-    $global:FunctionResult = "1"
-    return
+if (!$(Get-Module -ListAvailable PSDepend)) {
+    try {
+        [string]$Path = $(Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules')
+        $ExistingProgressPreference = "$ProgressPreference"
+        $ProgressPreference = 'SilentlyContinue'
+        try {
+            # Bootstrap nuget if we don't have it
+            if(!$(Get-Command 'nuget.exe' -ErrorAction SilentlyContinue)) {
+                $NugetPath = Join-Path $ENV:USERPROFILE nuget.exe
+                if(-not (Test-Path $NugetPath)) {
+                    Invoke-WebRequest -uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $NugetPath
+                }
+            }
+            else {
+                $NugetPath = $(Get-Command 'nuget.exe').Path
+            }
+        
+            # Bootstrap PSDepend, re-use nuget.exe for the module
+            if($path) { $null = mkdir $path -Force }
+            $NugetParams = 'install', 'PSDepend', '-Source', 'https://www.powershellgallery.com/api/v2/',
+                        '-ExcludeVersion', '-NonInteractive', '-OutputDirectory', $Path
+            & $NugetPath @NugetParams
+            if (!$(Test-Path "$(Join-Path $Path PSDepend)\nuget.exe")) {
+                Move-Item -Path $NugetPath -Destination "$(Join-Path $Path PSDepend)\nuget.exe" -Force
+            }
+        }
+        finally {
+            $ProgressPreference = $ExistingProgressPreference
+        }
+    }
+    catch {
+
+        Remove-Module MiniLab -ErrorAction SilentlyContinue
+        Write-Error $_
+        Write-Error "Installing the PSDepend Module failed! The MiniLab Module will not be loaded. Halting!"
+
+        $global:FunctionResult = "1"
+        return
+    }
 }
 
 try {
@@ -30,9 +60,11 @@ try {
     $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
 }
 catch {
-    Remove-Module WinSSH -ErrorAction SilentlyContinue
-    Write-Error $_
-    Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The WinSSH Module will not be loaded. Halting!"
+
+    Remove-Module MiniLab -ErrorAction SilentlyContinue
+    Write-Error 
+    Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The MiniLab Module will not be loaded. Halting!"
+
     $global:FunctionResult = "1"
     return
 }
@@ -3056,6 +3088,236 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 
 <#
     .SYNOPSIS
+        This function creates a new Enterprise Root Certificate Authority and new Enterprise Subordinate/Intermediate/Issuing
+        Certification Authority on a Domain. If you do not want to create the Root and Subordinate CAs on an existing
+        domain, this function is capable of creating a brand new domain and deploying the CAs to that new domain.
+
+    .DESCRIPTION
+        This function is an example of 'Service Deployment' function that can be found within the MiniLab Module. A
+        'Service Deployment' function is responsible for deploying as many servers as is necessary to get a particular
+        service working on a domain/network. This may involve a myriad of feature/role installations and configuration
+        setttings across multiple servers.
+
+    .NOTES
+
+    .PARAMETER CreateNewVMs
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, new Windows 2016 Standard Server Virtual Machines will be deployed
+        to the localhost. If Hyper-V is not installed, it will be installed (and you will need to restart the localhost
+        before proceeding).
+
+    .PARAMETER VMStorageDirectory
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the full path to a directory on a LOCAL drive that will contain all
+        new VM files (configuration, vhd(x), etc.)
+
+    .PARAMETER Windows2016VagrantBox
+        This parameter is OPTIONAL, but becomes MANDATORY if the -CreateNewVMs parameter is used.
+
+        This parameter takes a string that represents the name of a Vagrant Box that can be downloaded from
+        https://app.vagrantup.com/boxes/search. Default value is "jborean93/WindowsServer2016". Another good
+        Windows 2016 Server Vagrant Box is "StefanScherer/windows_2016".
+
+        You can alternatively specify a Windows 2012 R2 Standard Server Vagrant Box if desired.
+
+    .PARAMETER ExistingDomain
+        This parameter is OPTIONAL, however, either this parameter or the -NewDomain parameter are MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Root and Subordinate CAs will
+        join (if they aren't already).
+
+        Example: alpha.lab
+
+    .PARAMETER NewDomain
+        This parameter is OPTIONAL, however, either this parameter or the -ExistingDomain parameter are MANDATORY.
+
+        This parameter takes a string that represents the name of the domain that the Root and Subordinate CAs will
+        join (if they aren't already).
+        
+        Example: alpha.lab
+
+    .PARAMETER DomainAdminCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential. The Domain Admin Credentials will be used to join the Subordinate CA Server to the domain
+        as well as configre the new Subordinate CA. This means that the Domain Account provided to this parameter MUST be a member
+        of the following Security Groups in Active Directory:
+            - Domain Admins
+            - Domain Users
+            - Enterprise Admins
+            - Group Policy Creator Owners
+            - Schema Admins
+
+        If you are creating a New Domain, these credentials will be used to create a new Domain Account that is a member of the
+        aforementioned Security Groups.
+
+    .PARAMETER PSRemotingCredentials
+        This parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter should correspond to a User Account that has permission to
+        remote into ALL target Windows Servers. If your target servers are Vagrant Boxes (which is what will be deployed
+        if you use the -CreateNewVMs switch), then the value for this parameter should be created via:
+
+            $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+            $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+
+    .PARAMETER LocalAdministratorAccountCredentials
+        This parameter is OPTIONAL, however, is you are creating a New Domain, then this parameter is MANDATORY.
+
+        This parameter takes a PSCredential.
+
+        The credential provided to this parameter will be applied to the Local Built-In Administrator Account on the
+        target Windows Server. In other words, the pscredential provided to this parameter does NOT need to match
+        the current UserName/Password of the Local Administrator Account on the target Windows Server, because the
+        pscredential provided to this parameter will overwrite whatever the existing credentials are.
+
+    .PARAMETER DCIsRootCA
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, the  Root CA will be installed on the Primary Domain Controller. This is not
+        best practice, but if you have limited hardware resources, this could come in handy.
+
+    .PARAMETER IPofServerToBeDomainController
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Primary Domain Controller.
+
+    .PARAMETER IPOfServerToBeRootCA
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Root CA.
+    
+    .PARAMETER IPOfServerToBeSubCA
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
+        that will become the new Subordinate CA.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not check to make sure Hyper-V is installed on the localhost.
+
+    .EXAMPLE
+        # Create a New Domain With 3 Servers - Primary Domain Controller, Root CA, and Subordinate CA
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+    .EXAMPLE
+        # Create a New Domain With 2 Servers - Primary Domain Controller (which will also be the Root CA), and Subordinate CA
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> NewDomain                               = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> LocalAdministratorAccountCredentials    = $LocalAdminAccountCreds
+        >> SkipHyperVInstallCheck                  = $True
+        >> DCIsRootCA                              = $True
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+    .EXAMPLE
+        # Add Two-Tier PKI to your Existing Domain
+        # IMPORTANT NOTE: If you can't resolve the -ExistingDomain from the localhost, be sure to use the -IPOfServerToBeDomainController
+        # parameter with the IP Address of an EXISTING Domain Controller on the domain specified by -ExistingDomain
+
+        PS C:\Users\zeroadmin> $VagrantVMPassword = ConvertTo-SecureString 'vagrant' -AsPlainText -Force
+        PS C:\Users\zeroadmin> $VagrantVMAdminCreds = [pscredential]::new("vagrant",$VagrantVMPassword)
+        PS C:\Users\zeroadmin> $DomainAdminCreds = [pscredential]::new("alpha\alphaadmin",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: ************
+        PS C:\Users\zeroadmin> $LocalAdminAccountCreds = [pscredential]::new("Administrator",$(Read-Host 'Enter Passsword' -AsSecureString))
+        Enter Passsword: **************
+        PS C:\Users\zeroadmin> $CreateTwoTierPKISplatParams = @{
+        >> CreateNewVMs                            = $True
+        >> VMStorageDirectory                      = "H:\VirtualMachines"
+        >> ExistingDomain                          = "alpha.lab"
+        >> PSRemotingCredentials                   = $VagrantVMAdminCreds
+        >> DomainAdminCredentials                  = $DomainAdminCreds
+        >> }
+        PS C:\Users\zeroadmin> Create-TwoTierPKI @CreateTwoTierPKISplatParams
+
+
+#>
+function Create-TwoTierPKICFSSL {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [switch]$CreateNewVMs,
+
+        [Parameter(Mandatory=$False)]
+        [string]$VMStorageDirectory,
+
+        [Parameter(Mandatory=$False)]
+        [string]$Windows2016VagrantBox = "jborean93/WindowsServer2016", # Alternate - StefanScherer/windows_2016
+
+        [Parameter(Mandatory=$False)]
+        [ValidatePattern("^([a-z0-9]+(-[a-z0-9]+)*\.)+([a-z]){2,}$")]
+        [string]$NewDomain,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$DomainAdminCredentials, # If creating a New Domain, this will be a New Domain Account
+
+        [Parameter(Mandatory=$False)]
+        [pscredential]$LocalAdministratorAccountCredentials,
+
+        [Parameter(Mandatory=$False)]
+        [pscredential]$PSRemotingCredentials, # These credentials must grant access to ALL Servers
+
+        [Parameter(Mandatory=$False)]
+        [string]$ExistingDomain,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$DCIsRootCA,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeDomainController,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeRootCA,
+
+        [Parameter(Mandatory=$False)]
+        [string]$IPofServerToBeSubCA,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipHyperVInstallCheck
+    )
+
+    "placeholder"
+}
+
+
+<#
+    .SYNOPSIS
         This function downloads the specified Vagrant Virtual Machine from https://app.vagrantup.com
         and deploys it to the Hyper-V hypervisor on the Local Host. If Hyper-V is not installed on the
         Local Host, it will be installed.
@@ -3265,6 +3527,11 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    if (!$(Test-Path $VMDestinationDirectory)) {
+        Write-Error "The path '$VMDestinationDirectory' does not exist! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
     if ($($VMDestinationDirectory | Split-Path -Leaf) -eq $VMName) {
         $VMDestinationDirectory = $VMDestinationDirectory | Split-Path -Parent
     }
@@ -11953,8 +12220,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgooRqq1ptfhOQbg9eUi7Bawp
-# VNSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUMktD6YqWmu5JvNym1ZPZYJNv
+# b86gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12011,11 +12278,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOcHuACpHwcH+Uav
-# NbcAuT1tBzknMA0GCSqGSIb3DQEBAQUABIIBADkzSslEjmdE+LOkmrCdlPqkPWSx
-# GAsXdzer4vOMdS0gddvXLU50s/3tBLUIFkqdQGRF8T8CbXwOP3FCJZR9RXeeJWVs
-# 2MYNt582gETRf+U7cNNLOh3QcN40X96m/+J4P1LdIwPMwdse4Z7Unzp5K2UsqII6
-# XHPktl6Tl45ngEqowRs76xS7Dkc9hkKhR+9p7N/nv+sJnENmjUVzz6mEy3Kj4pTO
-# 0KnjVE+iWuH/yhbimBpIio9EACXzo620j3wWbE9yQ8pFT+JcC42xGrJfrphjKI/K
-# CJiKlh3jeZi9X0fvE5XVVUs6+FszP2KsSplT1gg5CvQp+Ovdx5E8inf3j2I=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFA7x3Yx0gstYECxk
+# dmt1sfo+KpYrMA0GCSqGSIb3DQEBAQUABIIBAJQdo+2dBfJueltPinkLrrST3DYS
+# 0dWX+2wcFFgcHJDdtPsigv+Ik6oEzRoIojhbrZIZ57lQQY8M/xwxmQ22vULMehXd
+# dXRegWKkgi3ek5yUmwfVQlAp5nOUzkhWKWKbf2VHlfevb8yJiN1MdHmCpJRj1ZI/
+# 0e4+1G2IrRUmJ/Tr15e62H4JYrv2CSU7ft32B6taqO5V2UJjj0YesJviFUBXe5bR
+# gF+hWJrXartBi7ovOlJ+xw3v0lgSTWzlqe+ERwr4w488Y1ku2uuy9CsnFaXdbfR5
+# 5SxN5kMxqN8L0lwRejMPb5f2eHS61OsHyB/6Kkze2RIoKN47cprJhYH7Uwo=
 # SIG # End signature block
