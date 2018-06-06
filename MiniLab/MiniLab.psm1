@@ -3813,21 +3813,23 @@ function Deploy-HyperVVagrantBoxManually {
         if (!$(Test-Path "$HOME\.ssh")) {
             New-Item -ItemType Directory -Path "$HOME\.ssh"
         }
-        if (!$(Test-Path "$HOME\.ssh\vagrant_unsecure_private_key")) {
-            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant" -OutFile "$HOME\.ssh\vagrant_unsecure_private_key"
+
+        $VagrantKeyFilename = "vagrant_unsecure_key"
+        if (!$(Test-Path "$HOME\.ssh\$VagrantKeyFilename")) {
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant" -OutFile "$HOME\.ssh\$VagrantKeyFilename"
         }
-        if (!$(Test-Path "$HOME\.ssh\vagrant_unsecure_public_key.pub")) {
-            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant.pub" -OutFile "$HOME\.ssh\vagrant_unsecure_public_key.pub"
+        if (!$(Test-Path "$HOME\.ssh\$VagrantKeyFilename.pub")) {
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant.pub" -OutFile "$HOME\.ssh\$VagrantKeyFilename.pub"
         }
 
-        if (!$(Test-Path "$HOME\.ssh\vagrant_unsecure_private_key")) {
+        if (!$(Test-Path "$HOME\.ssh\$VagrantKeyFilename")) {
             Write-Warning "There was a problem downloading the Unsecure Vagrant Private Key! You must use the Hyper-V Console with username/password vagrant/vagrant!"
         }
-        if (!$(Test-Path "$HOME\.ssh\vagrant_unsecure_public_key.pub")) {
+        if (!$(Test-Path "$HOME\.ssh\$VagrantKeyFilename.pub")) {
             Write-Warning "There was a problem downloading the Unsecure Vagrant Public Key! You must use the Hyper-V Console with username/password vagrant/vagrant!"
         }
         
-        Write-Host "To login to the Vagrant VM, use 'ssh -i `"$HOME\.ssh\vagrant_unsecure_private_key`" vagrant@$NewVMIP' OR use the Hyper-V Console GUI with username/password vagrant/vagrant"
+        Write-Host "To login to the Vagrant VM, use 'ssh -i `"$HOME\.ssh\$VagrantKeyFilename`" vagrant@$NewVMIP' OR use the Hyper-V Console GUI with username/password vagrant/vagrant"
     }
 
     $Output = @{
@@ -12230,8 +12232,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmHjuBgkw+5kPm40AYeSYPFKu
-# JG6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUE7ufanTn6yaz80Mg7h0NgXqI
+# /7Wgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12288,11 +12290,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOr6CrjXP60wSN5d
-# Z3Lh8UB05mC/MA0GCSqGSIb3DQEBAQUABIIBADdW8RC/o3FcczxIh5EpzYWmadl2
-# Z4iKH7nN+ND9NpUxDQ04jQf0TKDTs8NqH5L9yVPwOQOUT77lhZa2UcZODO61jPE8
-# Mi+rfojR2dDx3Kemoz49rsEqVnEq0Qyz19pByElqiYKdJRFTun9Rsc+b41Toq6DZ
-# fkvXhgJ82qZOCNZkHTrF84I0iThz+oH/EqmxzTJ6qsCbUYgTiU3wGU5jQ+hggxN3
-# 2e7DSXHY+ybcNZLV4jtlDJ2h4JQJ9JDG3XoSCE2Jwn5MEzvF517dECGqFkCvsZZo
-# uwbqbYr3an2YCc4hqtAqZSUrRF7NobsTdVC6lQWXFXPG/J7CxhRXrhqM8JM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGg7jLnFmEDiMvlI
+# 0j4Ku2fkTJWjMA0GCSqGSIb3DQEBAQUABIIBAIVfImzCshXBI7OQjj7vABq1kFn0
+# IBtf3EJoWgr9nP3sy1JNIRfMilqBzu3nKrcit5fN7J1a2ujGdH6h3MfpTPV2/4Uv
+# Er5FMqpx1kwhBaRY5bdzJZYRh2qOmYRMbq/s8bDFcLrfMY13EEI9uMQjp1UTnLf4
+# MBo0ujiHjgo+AEhgB8hW9yvZcuXqE6ojACgVtcQdiWnjrRrBFevbVXrhsEqFQmJx
+# d90bCOpEYaSUCQkU4x1xVuUEkTXgmwue+wzmrz/UemHNMFLAfjruAqbbgNixqWVv
+# tyMU1j0I2T3mBSFtr02zCkpVjl37eNnTqLmRgMMie/S4NEcLPhAJtmmJWxk=
 # SIG # End signature block

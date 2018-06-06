@@ -1,5 +1,9 @@
 # Change log
 
+## 0.8.6 (June 6, 2018)
+
+- Updated how Deploy-HyperVVagrantBoxManually function handles unsecure vagrant ssh keys
+
 ## 0.8.5 (June 6, 2018)
 
 - Updated build process and Pester tests
