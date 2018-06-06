@@ -1,5 +1,10 @@
 # Change log
 
+## 0.8.5 (June 6, 2018)
+
+- Updated build process and Pester tests
+- Updated README.md
+
 ## 0.8.4 (June 4, 2018)
 
 - Fixed -DecompressedBoxDirectory parameter check in Deploy-HyperVVagrantBoxManually
