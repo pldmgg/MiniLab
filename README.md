@@ -92,6 +92,17 @@ $CreateTwoTierPKISplatParams = @{
 Create-TwoTierPKI @CreateTwoTierPKISplatParams
 ```
 
+## Build
+
+Run Windows PowerShell 5.1 elevated (i.e. 'Run as Administrator') and...
+
+```powershell
+git clone https://github.com/pldmgg/MiniLab.git
+if (!$(Test-Path "$HOME\ModuleBuilds")) {$null = New-Item -ItemType Directory "$HOME\ModuleBuilds"}
+.\MiniLab\build.ps1 *> "$HOME\ModuleBuilds\MiniLab.log"
+
+```
+
 ## Notes
 
 * PSGallery: https://www.powershellgallery.com/packages/MiniLab

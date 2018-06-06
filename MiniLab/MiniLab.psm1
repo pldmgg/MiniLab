@@ -3,6 +3,7 @@
 # Get public and private function definition files.
 [array]$Public  = Get-ChildItem -Path "$PSScriptRoot\Public\*.ps1" -ErrorAction SilentlyContinue
 [array]$Private = Get-ChildItem -Path "$PSScriptRoot\Private\*.ps1" -ErrorAction SilentlyContinue
+$ThisModule = $(Get-Item $PSCommandPath).BaseName
 
 # Dot source the Private functions
 foreach ($import in $Private) {
@@ -14,60 +15,64 @@ foreach ($import in $Private) {
     }
 }
 
-if (!$(Get-Module -ListAvailable PSDepend)) {
-    try {
-        [string]$Path = $(Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules')
-        $ExistingProgressPreference = "$ProgressPreference"
-        $ProgressPreference = 'SilentlyContinue'
+# Install-PSDepend if necessary so that we can install any dependency Modules
+if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
+    if (![bool]$(Get-Module -ListAvailable PSDepend -ErrorAction SilentlyContinue)) {
         try {
+            [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
+            $ExistingProgressPreference = "$ProgressPreference"
+            $ProgressPreference = 'SilentlyContinue'
             # Bootstrap nuget if we don't have it
-            if(!$(Get-Command 'nuget.exe' -ErrorAction SilentlyContinue)) {
-                $NugetPath = Join-Path $ENV:USERPROFILE nuget.exe
-                if(-not (Test-Path $NugetPath)) {
-                    Invoke-WebRequest -uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $NugetPath
-                }
+            if ([bool]$(Get-ChildItem 'nuget.exe' -ErrorAction SilentlyContinue)) {
+                $NugetPath = $(Get-ChildItem nuget.exe).FullName
             }
             else {
-                $NugetPath = $(Get-Command 'nuget.exe').Path
+                $NugetPath = $(Get-Command 'nuget.exe' -ErrorAction SilentlyContinue).Path
             }
-        
+            
+            if (![bool]$NugetPath) {
+                $NugetPath = Join-Path $env:USERPROFILE nuget.exe
+                if (![bool]$(Test-Path $NugetPath)) {
+                    Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -UseBasicParsing -OutFile $NugetPath
+                }
+            }
+    
             # Bootstrap PSDepend, re-use nuget.exe for the module
-            if($path) { $null = mkdir $path -Force }
+            if (!$(Test-Path $UserModulePath)) { $null = New-Item -ItemType Directory $UserModulePath -Force }
             $NugetParams = 'install', 'PSDepend', '-Source', 'https://www.powershellgallery.com/api/v2/',
-                        '-ExcludeVersion', '-NonInteractive', '-OutputDirectory', $Path
+                        '-ExcludeVersion', '-NonInteractive', '-OutputDirectory', $UserModulePath
             & $NugetPath @NugetParams
-            if (!$(Test-Path "$(Join-Path $Path PSDepend)\nuget.exe")) {
-                Move-Item -Path $NugetPath -Destination "$(Join-Path $Path PSDepend)\nuget.exe" -Force
+            if (!$(Test-Path "$(Join-Path $UserModulePath PSDepend)\nuget.exe")) {
+                Move-Item -Path $NugetPath -Destination "$(Join-Path $UserModulePath PSDepend)\nuget.exe" -Force
             }
-        }
-        finally {
             $ProgressPreference = $ExistingProgressPreference
         }
+        catch {
+            Write-Error $_
+            Write-Error "Installing the PSDepend Module failed! The $ThisModule Module will not be loaded. Halting!"
+            $ProgressPreference = $ExistingProgressPreference
+            Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
+            $global:FunctionResult = "1"
+            return
+        }
     }
-    catch {
-
-        Remove-Module MiniLab -ErrorAction SilentlyContinue
-        Write-Error $_
-        Write-Error "Installing the PSDepend Module failed! The MiniLab Module will not be loaded. Halting!"
-
-        $global:FunctionResult = "1"
-        return
+    
+    if (![bool]$(Get-Module PSDepend -ErrorAction SilentlyContinue)) {
+        try {
+            Import-Module PSDepend
+            $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
+        }
+        catch {
+            Write-Error $_
+            Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The $ThisModule Module will not be loaded. Halting!"
+            Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
+            $global:FunctionResult = "1"
+            return
+        }
     }
 }
 
-try {
-    Import-Module PSDepend
-    $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
-}
-catch {
-
-    Remove-Module MiniLab -ErrorAction SilentlyContinue
-    Write-Error 
-    Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The MiniLab Module will not be loaded. Halting!"
-
-    $global:FunctionResult = "1"
-    return
-}
+# Public Functions
 
 
 
@@ -12225,8 +12230,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUOcLaxpjO5wWDpQVh6llgcr29
-# T+ugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmHjuBgkw+5kPm40AYeSYPFKu
+# JG6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12283,11 +12288,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJRGkRi1xhzgikcA
-# hCBSvPoATV4tMA0GCSqGSIb3DQEBAQUABIIBALmCs5IKRYci04HGirciHW+l2SrO
-# Wp0H1r0CUcPCShfxqFbYkG8qEObYXgNuHgF9nIm98n9N52G8OVGzjnmmHhutfCWJ
-# RjVZE/c4KUmAED4ZUDn3OXtdq3JOyrT29ZBtjtBzork6HFtWMT9ogUHd7Ge0NFf4
-# baSmNtmR39GbYgwfeoJowg2QEVjrRgkSgl/Sz05MqMIacAWKAOr2KQXMCXqfBBOt
-# DLI6Zf0Cl07b/vVf6LmHKzNMqSldY5MHuJYLpbRSo7vE3WvhstjW9e5dmsS3zucf
-# lTjmPtdm7pgNkzGcQMcGW9Rl2LDPx9BvbvPrIghoQ+VYDybI2+kHqGkFgMo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOr6CrjXP60wSN5d
+# Z3Lh8UB05mC/MA0GCSqGSIb3DQEBAQUABIIBADdW8RC/o3FcczxIh5EpzYWmadl2
+# Z4iKH7nN+ND9NpUxDQ04jQf0TKDTs8NqH5L9yVPwOQOUT77lhZa2UcZODO61jPE8
+# Mi+rfojR2dDx3Kemoz49rsEqVnEq0Qyz19pByElqiYKdJRFTun9Rsc+b41Toq6DZ
+# fkvXhgJ82qZOCNZkHTrF84I0iThz+oH/EqmxzTJ6qsCbUYgTiU3wGU5jQ+hggxN3
+# 2e7DSXHY+ybcNZLV4jtlDJ2h4JQJ9JDG3XoSCE2Jwn5MEzvF517dECGqFkCvsZZo
+# uwbqbYr3an2YCc4hqtAqZSUrRF7NobsTdVC6lQWXFXPG/J7CxhRXrhqM8JM=
 # SIG # End signature block
