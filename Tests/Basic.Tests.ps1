@@ -67,9 +67,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'ResolveHost' | Should Be $False
         $Commands -contains 'TestIsValidIPAddress' | Should Be $False
         $Commands -contains 'UnzipFile' | Should Be $False
-        $Commands -contains 'GetModuleDependencies' | Should Be $False
         $Commands -contains 'GetWinPSInCore' | Should Be $False
-        $Commands -contains 'LoadModuleDependencies' | Should Be $False
+        $Commands -contains 'InvokePSCompatibility' | Should Be $False
         
         $Commands -contains 'Create-Domain' | Should Be $True
         $Commands -contains 'Create-RootCA' | Should Be $True
@@ -103,17 +102,16 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         [bool]$Module.Invoke({Get-Item function:ResolveHost}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:TestIsValidIPAddress}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:UnzipFile}) | Should Be $True
-        [bool]$Module.Invoke({Get-Item function:GetModuleDependencies}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetWinPSInCore}) | Should Be $True
-        [bool]$Module.Invoke({Get-Item function:LoadModuleDependencies}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:InvokePSCompatibility}) | Should Be $True
     }
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU3wXwxAnf2R6ZI2FF2EQ5xIvI
-# zWWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPXaCd4ABKs82/SzEg7yKWvem
+# 7wagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -170,11 +168,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHRQczsJCet57d07
-# 7QQR2cRv2CZNMA0GCSqGSIb3DQEBAQUABIIBAANTJd6B3vNAma3gF5BzM4UekAu0
-# iFwU/mCpoS6MIjxwDUziALOoWuKwMAwNi7FaNXvylWceymRYgxhY59yPgX70l8Pp
-# 6HFyFuyV51e+NLpHFiqiW/gSP8nTLcu9lG33OK/WtdRROhbSNkdL4gBPGy3KoQGy
-# XuAt/B/i8emuFIVWzFdCX4AOZMHzwYFJvGMb6FXBRCaMcMRAVP/iEMlugFYyoZX3
-# Zibjna9dg5Q4qIAuFtc3TOCThRZ5Eldn7E4zQYGj2uVhaCDs4OBE3LQocta6iu6g
-# Th8tk9WERoQeqeRVOyvhz/VXrrTlFnjCQ2XRy+kfdnZo8Mq9EJ7n0HKW+pw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPEoJpNTJgKi6S29
+# UIC3sZh06gTWMA0GCSqGSIb3DQEBAQUABIIBAHnBRbMepvcwEI4lcISfTR0+V9Zk
+# JsbY3P7Ra0z0RcDEJxBKbvTXJ3BdSb1J5LC/e/4RNUjcq7oIyJ9wmomzSqeHCgD7
+# NGYjXeCJjGlKnTXS4f+D6B0o4M+2ncInxVovtT/JCCpyNn6rBXhB9dcikv+MXC3b
+# PtC0vwTxsQuQkoWmD+TtorrZbBqG4x1QJZpvcwmE9nfEbxzsbpVcGiiuwVvOzA+9
+# Z0hZpypiJShmz0YsW9YgiyW70xoMMRKReYAf5zuoqdc7GATJyGR8mSHNILqgwCZI
+# p2bM6vsgGhgd2LfQ+YnODMwEwMcgYVQIIbaa+W3ZeSa2B1Z/UWz5+Ypn+Ko=
 # SIG # End signature block

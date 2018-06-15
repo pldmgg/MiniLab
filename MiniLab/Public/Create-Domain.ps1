@@ -159,24 +159,9 @@ function Create-Domain {
         return
     }
 
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-        $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    }
-    else {
-        $NetworkInfoFromWinPS = GetWinPSInCore -ScriptBlock {
-            $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-            $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-
-            [pscustomobject]@{
-                NextHop     = $NextHop
-                PrimaryIP   = $PrimaryIP
-            }
-        }
-
-        $NextHop = $NetworkInfoFromWinPS.NextHop
-        $PrimaryIP = $NetworkInfoFromWinPS.PrimaryIP
-    }
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -705,8 +690,8 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUtf/nf91M4VWcO9ctvELoH3DQ
-# PSmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUqOnBvq03JiDm7o+6tmv3niyi
+# Rl6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -763,11 +748,11 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI9YQYgyzJT418JJ
-# ZCtF6fl9vkfHMA0GCSqGSIb3DQEBAQUABIIBAL1xQC+Pj6H/B20TAnCbRswYZPbn
-# 71ejSWHatoyRQsg5MrbyYI4wDUIXaE/PqYYFa7aXvPPc5+SSXvgig3MvHwdu0DDb
-# OZEoyKO6C+1+zWbYvcq4izVqxtAc59I6KuCh3qGYUbHXvRI8/JnSF3N9gQLVYvd7
-# Qlf6DbjTSSXbme/UyTd2ZyW3zV8/PLnZ+wUKAnPhLJ77tGnRqLj7o6lNodkevTFp
-# ROfYw15K0edWxmMMfhm+6l81Zx8BZF5z/HBzbEu0sArZdWH4lGpVw96TVxGf2jGN
-# VG8Hu5GPhqi+g9lb4HwKuVoHK0r5mwOHkTieDncBpEUNhiyVCv0K3/z1Krk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAe7dKYwxdU6IRhB
+# FNxW+AyDgF+WMA0GCSqGSIb3DQEBAQUABIIBAMSJW1hOK4Yk1lOsMBgj91HjGtAK
+# No8g9+v3oZsXvzJjSRdbJ5JNrLshDUKNWtz4YtYUA1YpJov+KUbUiBFUHHzlZ42T
+# 9n4GREGn6ZqQUwRbEOodwkHlnaBd9pbgmQPr4jrbvdZWljfnIO17Rf0QW1ekN/V/
+# 8UiUOG6S770btBXO9/RgZ35Z5K9+yjHNSprKJ7qMWIYi02JIJwJ0M48WMXi5wnd2
+# BI/bkvAycfl4/PtBjNqgjmGYWjujNtgg7Q0FJj9UK8Zv5uy7mDiSEnATFHnTBzWj
+# aVd4/T1OEEQp81FsYF+cmVNAAJ3R4ycRIfuu1PGHZxbaTo6Is832odHIvgs=
 # SIG # End signature block

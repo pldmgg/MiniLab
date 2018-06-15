@@ -15,99 +15,47 @@ foreach ($import in $Private) {
     }
 }
 
-# Install-PSDepend if necessary so that we can install any dependency Modules
 if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
-    if (![bool]$(Get-Module -ListAvailable PSDepend -ErrorAction SilentlyContinue)) {
-        try {
-            if ($PSVersionTable.PSEdition -eq "Desktop") {
-                [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
-            }
-            else {
-                [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'
-            }
-            
-            $ExistingProgressPreference = "$ProgressPreference"
-            $ProgressPreference = 'SilentlyContinue'
-            # Bootstrap nuget if we don't have it
-            if ([bool]$(Get-ChildItem 'nuget.exe' -ErrorAction SilentlyContinue)) {
-                $NugetPath = $(Get-ChildItem nuget.exe).FullName
-            }
-            else {
-                $NugetPath = $(Get-Command 'nuget.exe' -ErrorAction SilentlyContinue).Path
-            }
-            
-            if (![bool]$NugetPath) {
-                $NugetPath = Join-Path $env:USERPROFILE nuget.exe
-                if (![bool]$(Test-Path $NugetPath)) {
-                    Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -UseBasicParsing -OutFile $NugetPath
-                }
-            }
-    
-            # Bootstrap PSDepend, re-use nuget.exe for the module
-            if (!$(Test-Path $UserModulePath)) { $null = New-Item -ItemType Directory $UserModulePath -Force }
-            $NugetParams = 'install', 'PSDepend', '-Source', 'https://www.powershellgallery.com/api/v2/',
-                        '-ExcludeVersion', '-NonInteractive', '-OutputDirectory', $UserModulePath
-            & $NugetPath @NugetParams
-            if (!$(Test-Path "$(Join-Path $UserModulePath PSDepend)\nuget.exe")) {
-                Move-Item -Path $NugetPath -Destination "$(Join-Path $UserModulePath PSDepend)\nuget.exe" -Force
-            }
-            $ProgressPreference = $ExistingProgressPreference
-        }
-        catch {
-            Write-Error $_
-            Write-Error "Installing the PSDepend Module failed! The $ThisModule Module will not be loaded. Halting!"
-            $ProgressPreference = $ExistingProgressPreference
-            Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
-            $global:FunctionResult = "1"
-            return
-        }
+    $ModuleManifestData = Import-PowerShellDataFile "$PSScriptRoot\module.requirements.psd1"
+    $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
+}
+
+if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
+    $InvPSCompatSplatParams = @{
+
+        PathToPS1OrPSM1 = "$PSScriptRoot\MiniLab.psm1"
+
     }
-    
-    if (![bool]$(Get-Module PSDepend -ErrorAction SilentlyContinue)) {
-        try {
-            Import-Module PSDepend
-        }
-        catch {
-            Write-Error $_
-            Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
-            $global:FunctionResult = "1"
-            return
-        }
+    if ($ModulesToInstallAndImport) {
+        $InvPSCompatSplatParams.Add("ModuleDependenciesThatMayNotBeInstalled",$ModulesToInstallAndImport)
     }
 
-    # Before we Invoke-PSDepend on module.requirements.psd1, make sure that the Target directory
-    # for Modules fits with the version of PowerShell that we're using
-    if ($PSVersionTable.PSEdition -eq "Core") {
-        # Make sure the PowerShell Core User Scope Module Directory exists. If not, create it.
-        if (!$(Test-Path "$HOME\Documents\PowerShell\Modules")) {
-            $null = New-Item -ItemType Directory -Path "$HOME\Documents\PowerShell\Modules" -Force
-        }
-        $ModReqsContent = Get-Content "$PSScriptRoot\module.requirements.psd1"
-        $ModReqsLineToReplace = $($ModReqsContent | Select-String -Pattern "[\s]+Target[\s]=[\s]").Line
-        $UpdatedModReqsContent = $ModReqsContent -replace [regex]::Escape($ModReqsLineToReplace),"        Target = '$ENV:USERPROFILE\Documents\PowerShell\Modules'"
-        Set-Content -Path "$PSScriptRoot\module.requirements.psd1" -Value $UpdatedModReqsContent 
-    }
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        # Make sure the PowerShell Core User Scope Module Directory exists. If not, create it.
-        if (!$(Test-Path "$HOME\Documents\WindowsPowerShell\Modules")) {
-            $null = New-Item -ItemType Directory -Path "$HOME\Documents\WindowsPowerShell\Modules" -Force
-        }
-        $ModReqsContent = Get-Content "$PSScriptRoot\module.requirements.psd1"
-        $ModReqsLineToReplace = $($ModReqsContent | Select-String -Pattern "[\s]+Target[\s]=[\s]").Line
-        $UpdatedModReqsContent = $ModReqsContent -replace [regex]::Escape($ModReqsLineToReplace),"        Target = '$ENV:USERPROFILE\Documents\WindowsPowerShell\Modules'"
-        Set-Content -Path "$PSScriptRoot\module.requirements.psd1" -Value $UpdatedModReqsContent 
-    }
+    $LoadModuleDependencyResult = InvokePSCompatibility @InvPSCompatSplatParams
+}
 
-    # Install Dependencies if they're not already
-    try {
-        $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
-    }
-    catch {
-        Write-Error $_
-        Write-Error "Problem with the PSDepend Module Installing/Importing Module Dependencies! The $ThisModule Module will not be loaded. Halting!"
-        Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
-        $global:FunctionResult = "1"
-        return
+if ($PSVersionTable.PSEdition -eq "Desktop") {
+    foreach ($ModuleName in $ModulesToInstallAndImport) {
+        if (![bool]$(Get-Module -ListAvailable $ModuleName -ErrorAction SilentlyContinue)) {
+            try {
+                Install-Module $ModuleName -Scope Global -ErrorAction Stop
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        if (![bool]$(Get-Module $ModuleName -ErrorAction SilentlyContinue)) {
+            try {
+                Import-Module $ModuleName -ErrorAction Stop
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        
     }
 }
 
@@ -278,6 +226,7 @@ function Create-Domain {
 
     $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
     $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -962,6 +911,7 @@ function Create-RootCA {
 
     $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
     $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -3676,6 +3626,7 @@ function Deploy-HyperVVagrantBoxManually {
     $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
     $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
     $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+    
 
     if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
         if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
@@ -3870,12 +3821,12 @@ function Deploy-HyperVVagrantBoxManually {
     }
 
     # Wait for up to 30 minutes for the new VM to report its IP Address
-    $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+    $NewVMIP = $(Get-VMNetworkAdapter -VMName $NewVMName).IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
     $Counter = 0
     while (!$NewVMIP -and $Counter -le 30) {
         Write-Host "Waiting for VM $NewVMName to report its IP Address..."
         Start-Sleep -Seconds 60
-        $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+        $NewVMIP = $(Get-VMNetworkAdapter -VMName $NewVMName).IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
         $Counter++
     }
     if (!$NewVMIP) {
@@ -8473,8 +8424,8 @@ function Manage-HyperVVM {
             Mandatory=$False,
             ParameterSetName='Create'
         )]
-        [ValidateSet("Heartbeat","Shutdown","TimeSynch","GuestServiceInterface","KeyValueExchange","VSS")]
-        [string[]]$PreferredIntegrationServices = @("Heartbeat","Shutdown","TimeSynch","GuestServiceInterface","KeyValueExchange"),
+        [ValidateSet("Heartbeat","Shutdown","Time Synchronization","Guest Service Interface","Key-Value Pair Exchange","VSS")]
+        [string[]]$PreferredIntegrationServices = @("Heartbeat","Shutdown","Time Synchronization","Guest Service Interface","Key-Value Pair Exchange"),
 
         [Parameter(Mandatory=$False)]
         [string]$VhdPathOverride,
@@ -8578,6 +8529,7 @@ function Manage-HyperVVM {
 
     Write-Output "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
 
+    <#
     # Explicitly import the Modules we need for this function
     try {
         Import-Module Microsoft.PowerShell.Utility
@@ -8611,6 +8563,7 @@ function Manage-HyperVVM {
     }
 
     Write-Host "Modules loaded at $(Get-Date -Format "HH:mm:ss.fff")"
+    #>
 
     # Hard coded for now
     $global:VhdSize = 60*1024*1024*1024  # 60GB
@@ -8737,7 +8690,7 @@ function Manage-HyperVVM {
         else {
             Write-Output "Creating VM $VmName..."
             $vm = Hyper-V\New-VM -Name $VmName -Generation $VMGen -NoVHD
-            $vm | Hyper-V\Set-VM -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Production
+            $null = Hyper-V\Set-VM -Name $VmName -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Production
         }
 
         <#
@@ -8752,8 +8705,8 @@ function Manage-HyperVVM {
         }
 
         Write-Output "Setting CPUs to $CPUs and Memory to $Memory MB"
-        $Memory = ([Math]::min($Memory, ($vm | Hyper-V\Get-VMMemory).MaximumPerNumaNode))
-        $vm | Hyper-V\Set-VM -MemoryStartupBytes ($Memory*1024*1024) -ProcessorCount $CPUs -StaticMemory
+        $Memory = ([Math]::min($Memory, (Hyper-V\Get-VMMemory -VMName $VMName).MaximumPerNumaNode))
+        Hyper-V\Set-VM -Name $VMName -MemoryStartupBytes ($Memory*1024*1024) -ProcessorCount $CPUs -StaticMemory
 
         if (!$NoVhd) {
             $VmVhdFile = Get-Vhd-Root
@@ -8843,28 +8796,29 @@ function Manage-HyperVVM {
                 }
 
                 Write-Output "Attach VHD $VmVhdFile"
-                $vm | Hyper-V\Add-VMHardDiskDrive -Path $VmVhdFile
+                $null = Hyper-V\Add-VMHardDiskDrive -VMName $VMName -Path $VmVhdFile
             }
         }
 
-        $vmNetAdapter = $vm | Hyper-V\Get-VMNetworkAdapter
+        $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -VMName $VMName
         if (!$vmNetAdapter) {
             Write-Output "Attach Net Adapter"
-            $vmNetAdapter = $vm | Hyper-V\Add-VMNetworkAdapter -SwitchName $SwitchName -Passthru
+            $vmNetAdapter = Hyper-V\Add-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName -Passthru
         }
 
         Write-Output "Connect Switch $SwitchName"
-        $vmNetAdapter | Hyper-V\Connect-VMNetworkAdapter -VMSwitch $(Hyper-V\Get-VMSwitch -ComputerName localhost -SwitchName $SwitchName)
+        Hyper-V\Connect-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName
 
         if ($IsoFile) {
             if ($vm.DVDDrives.Path -ne $IsoFile) {
                 if ($vm.DVDDrives) {
                     Write-Output "Remove existing DVDs"
-                    Hyper-V\Remove-VMDvdDrive $vm.DVDDrives -ea SilentlyContinue
+                    $ExistingDvDDriveInfo = Get-VMDvdDrive -VMName $VMName
+                    Hyper-V\Remove-VMDvdDrive -VMName 'CentOS7Test2' -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
                 }
 
                 Write-Output "Attach DVD $IsoFile"
-                $vm | Hyper-V\Add-VMDvdDrive -Path $IsoFile
+                Hyper-V\Add-VMDvdDrive -VMName $VMName -Path $IsoFile
             }
         }
 
@@ -8876,27 +8830,27 @@ function Manage-HyperVVM {
         [System.Collections.ArrayList]$intSvc = @()
         foreach ($integrationService in $PreferredIntegrationServices) {
             switch ($integrationService) {
-                'Heartbeat'             { $null = $intSvc.Add("Microsoft:$($vm.Id)\84EAAE65-2F2E-45F5-9BB5-0E857DC8EB47") }
-                'Shutdown'              { $null = $intSvc.Add("Microsoft:$($vm.Id)\9F8233AC-BE49-4C79-8EE3-E7E1985B2077") }
-                'TimeSynch'             { $null = $intSvc.Add("Microsoft:$($vm.Id)\2497F4DE-E9FA-4204-80E4-4B75C46419C0") }
-                'GuestServiceInterface' { $null = $intSvc.Add("Microsoft:$($vm.Id)\6C09BB55-D683-4DA0-8931-C9BF705F6480") }
-                'KeyValueExchange'      { $null = $intSvc.Add("Microsoft:$($vm.Id)\2A34B1C2-FD73-4043-8A5B-DD2159BC743F") }
-                'VSS'                   { $null = $intSvc.Add("Microsoft:$($vm.Id)\5CED1297-4598-4915-A5FC-AD21BB4D02A4") }
+                'Heartbeat'                 { $null = $intSvc.Add("Microsoft:$($vm.Id)\84EAAE65-2F2E-45F5-9BB5-0E857DC8EB47") }
+                'Shutdown'                  { $null = $intSvc.Add("Microsoft:$($vm.Id)\9F8233AC-BE49-4C79-8EE3-E7E1985B2077") }
+                'Time Synchronization'      { $null = $intSvc.Add("Microsoft:$($vm.Id)\2497F4DE-E9FA-4204-80E4-4B75C46419C0") }
+                'Guest Service Interface'   { $null = $intSvc.Add("Microsoft:$($vm.Id)\6C09BB55-D683-4DA0-8931-C9BF705F6480") }
+                'Key-Value Pair Exchange'   { $null = $intSvc.Add("Microsoft:$($vm.Id)\2A34B1C2-FD73-4043-8A5B-DD2159BC743F") }
+                'VSS'                       { $null = $intSvc.Add("Microsoft:$($vm.Id)\5CED1297-4598-4915-A5FC-AD21BB4D02A4") }
             }
         }
         
-        $vm | Hyper-V\Get-VMIntegrationService | ForEach-Object {
-            if ($intSvc -contains $_.Id) {
-                Hyper-V\Enable-VMIntegrationService $_
+        Hyper-V\Get-VMIntegrationService -VMName $VMName | foreach {
+            if ($PreferredIntegrationServices -contains $_.Name) {
+                Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Enabled $($_.Name)"
             }
             else {
-                Hyper-V\Disable-VMIntegrationService $_
+                Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Disabled $($_.Name)"
             }
         }
         #$vm | Hyper-V\Disable-VMConsoleSupport
-        $vm | Hyper-V\Enable-VMConsoleSupport
+        Hyper-V\Enable-VMConsoleSupport -VMName $VMName
 
         Write-Output "VM created."
     }
@@ -8947,17 +8901,17 @@ function Manage-HyperVVM {
                 return
             }
 
-            $shutdownService = $vm | Hyper-V\Get-VMIntegrationService -Name Shutdown -ea SilentlyContinue
+            $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $vm.Name -Name Shutdown -ea SilentlyContinue
             if ($shutdownService -and $shutdownService.PrimaryOperationalStatus -eq 'Ok') {
                 Write-Output "Shutdown VM $VmName..."
-                $vm | Hyper-V\Stop-VM -Confirm:$false -Force -ea SilentlyContinue
+                Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -Force -ea SilentlyContinue
                 if ($vm.State -eq 'Off') {
                     return
                 }
             }
 
             Write-Output "Turn Off VM $VmName..."
-            $vm | Hyper-V\Stop-VM -Confirm:$false -TurnOff -Force -ea SilentlyContinue
+            Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -TurnOff -Force -ea SilentlyContinue
         }
 
         Write-Output "Stopping VM $VmName..."
@@ -12306,8 +12260,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUXuGlN3mxXkGSQbkHerA/Z32g
-# Fd6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUFuoowkzqrGWx/UVx65pWFECE
+# tlSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12364,11 +12318,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLXDIf8rvZHZTZd3
-# ZUY1b4Fq0fc3MA0GCSqGSIb3DQEBAQUABIIBAJGcIgQNnlVNGu2E2ZhZyN26f2Zn
-# TmpEbaNyGa14QQ4aS9SIF9f1lSjiVjGy/icoG11sQCN1EZ3+g1wAGx5RmvKs31B9
-# VN1xeKpq61leDK0c2DpaDcKr/QQ4JqBV2cwhY7xiqD24axlz7/73yFXJXnDb9tFi
-# dV/zWw4R7OHnQMHQzujUB3lIouuj935J6S+/6glXnCN6twi+5UB4NIUKaHNxBEb5
-# 53JGIoppuJHi8QFrIinf9ATEVdbbAFBO6aAdb8aN65GMNS9bba0keWRAd1DYe7Lx
-# 3klb3YF0KI5dmVWqm9/7XCzCs1ZJvn4gIUstP9qwwtxK3Z/aBu6zO42Uc5Y=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFINpRl0IYBuymv1p
+# DpSKj66fdyBiMA0GCSqGSIb3DQEBAQUABIIBALbqflSwu8Qvo3k4HDM+gHTFnbTs
+# Omik4Jayq49HTQIij3911lzm2PhYjRx1vtnnhLnwJ63+HQCnNaTnmGnO8AEfrgh2
+# s6AT2/5SDBHm2hy1kT2SS3NeCrtr2wfBxHWmHUtTaG3jXWVRMslaYfUBcKTed3x4
+# T/q58Rofyg01Eg3LUgzu9QMNn/ICjyAUUngTi7PEZ8uNAgXCXlEwAvU5hnhMv3D3
+# /Bdr7tCDTxF3HqvXZVTeWoG5sZBl36HMwKsUVPgeLyZ6MQ0MAVBHqL7VY/gR08MQ
+# KN6RI73e8HCApsJQCsdFtCVIn05Nh+Uzpi3g+YmrTSpvnIv00zX5zac58YA=
 # SIG # End signature block

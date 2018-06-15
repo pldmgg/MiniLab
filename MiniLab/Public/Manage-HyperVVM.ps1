@@ -100,8 +100,8 @@ function Manage-HyperVVM {
             Mandatory=$False,
             ParameterSetName='Create'
         )]
-        [ValidateSet("Heartbeat","Shutdown","TimeSynch","GuestServiceInterface","KeyValueExchange","VSS")]
-        [string[]]$PreferredIntegrationServices = @("Heartbeat","Shutdown","TimeSynch","GuestServiceInterface","KeyValueExchange"),
+        [ValidateSet("Heartbeat","Shutdown","Time Synchronization","Guest Service Interface","Key-Value Pair Exchange","VSS")]
+        [string[]]$PreferredIntegrationServices = @("Heartbeat","Shutdown","Time Synchronization","Guest Service Interface","Key-Value Pair Exchange"),
 
         [Parameter(Mandatory=$False)]
         [string]$VhdPathOverride,
@@ -205,6 +205,7 @@ function Manage-HyperVVM {
 
     Write-Output "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
 
+    <#
     # Explicitly import the Modules we need for this function
     try {
         Import-Module Microsoft.PowerShell.Utility
@@ -238,6 +239,7 @@ function Manage-HyperVVM {
     }
 
     Write-Host "Modules loaded at $(Get-Date -Format "HH:mm:ss.fff")"
+    #>
 
     # Hard coded for now
     $global:VhdSize = 60*1024*1024*1024  # 60GB
@@ -364,7 +366,7 @@ function Manage-HyperVVM {
         else {
             Write-Output "Creating VM $VmName..."
             $vm = Hyper-V\New-VM -Name $VmName -Generation $VMGen -NoVHD
-            $vm | Hyper-V\Set-VM -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Production
+            $null = Hyper-V\Set-VM -Name $VmName -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Production
         }
 
         <#
@@ -379,8 +381,8 @@ function Manage-HyperVVM {
         }
 
         Write-Output "Setting CPUs to $CPUs and Memory to $Memory MB"
-        $Memory = ([Math]::min($Memory, ($vm | Hyper-V\Get-VMMemory).MaximumPerNumaNode))
-        $vm | Hyper-V\Set-VM -MemoryStartupBytes ($Memory*1024*1024) -ProcessorCount $CPUs -StaticMemory
+        $Memory = ([Math]::min($Memory, (Hyper-V\Get-VMMemory -VMName $VMName).MaximumPerNumaNode))
+        Hyper-V\Set-VM -Name $VMName -MemoryStartupBytes ($Memory*1024*1024) -ProcessorCount $CPUs -StaticMemory
 
         if (!$NoVhd) {
             $VmVhdFile = Get-Vhd-Root
@@ -470,28 +472,29 @@ function Manage-HyperVVM {
                 }
 
                 Write-Output "Attach VHD $VmVhdFile"
-                $vm | Hyper-V\Add-VMHardDiskDrive -Path $VmVhdFile
+                $null = Hyper-V\Add-VMHardDiskDrive -VMName $VMName -Path $VmVhdFile
             }
         }
 
-        $vmNetAdapter = $vm | Hyper-V\Get-VMNetworkAdapter
+        $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -VMName $VMName
         if (!$vmNetAdapter) {
             Write-Output "Attach Net Adapter"
-            $vmNetAdapter = $vm | Hyper-V\Add-VMNetworkAdapter -SwitchName $SwitchName -Passthru
+            $vmNetAdapter = Hyper-V\Add-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName -Passthru
         }
 
         Write-Output "Connect Switch $SwitchName"
-        $vmNetAdapter | Hyper-V\Connect-VMNetworkAdapter -VMSwitch $(Hyper-V\Get-VMSwitch -ComputerName localhost -SwitchName $SwitchName)
+        Hyper-V\Connect-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName
 
         if ($IsoFile) {
             if ($vm.DVDDrives.Path -ne $IsoFile) {
                 if ($vm.DVDDrives) {
                     Write-Output "Remove existing DVDs"
-                    Hyper-V\Remove-VMDvdDrive $vm.DVDDrives -ea SilentlyContinue
+                    $ExistingDvDDriveInfo = Get-VMDvdDrive -VMName $VMName
+                    Hyper-V\Remove-VMDvdDrive -VMName 'CentOS7Test2' -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
                 }
 
                 Write-Output "Attach DVD $IsoFile"
-                $vm | Hyper-V\Add-VMDvdDrive -Path $IsoFile
+                Hyper-V\Add-VMDvdDrive -VMName $VMName -Path $IsoFile
             }
         }
 
@@ -503,27 +506,27 @@ function Manage-HyperVVM {
         [System.Collections.ArrayList]$intSvc = @()
         foreach ($integrationService in $PreferredIntegrationServices) {
             switch ($integrationService) {
-                'Heartbeat'             { $null = $intSvc.Add("Microsoft:$($vm.Id)\84EAAE65-2F2E-45F5-9BB5-0E857DC8EB47") }
-                'Shutdown'              { $null = $intSvc.Add("Microsoft:$($vm.Id)\9F8233AC-BE49-4C79-8EE3-E7E1985B2077") }
-                'TimeSynch'             { $null = $intSvc.Add("Microsoft:$($vm.Id)\2497F4DE-E9FA-4204-80E4-4B75C46419C0") }
-                'GuestServiceInterface' { $null = $intSvc.Add("Microsoft:$($vm.Id)\6C09BB55-D683-4DA0-8931-C9BF705F6480") }
-                'KeyValueExchange'      { $null = $intSvc.Add("Microsoft:$($vm.Id)\2A34B1C2-FD73-4043-8A5B-DD2159BC743F") }
-                'VSS'                   { $null = $intSvc.Add("Microsoft:$($vm.Id)\5CED1297-4598-4915-A5FC-AD21BB4D02A4") }
+                'Heartbeat'                 { $null = $intSvc.Add("Microsoft:$($vm.Id)\84EAAE65-2F2E-45F5-9BB5-0E857DC8EB47") }
+                'Shutdown'                  { $null = $intSvc.Add("Microsoft:$($vm.Id)\9F8233AC-BE49-4C79-8EE3-E7E1985B2077") }
+                'Time Synchronization'      { $null = $intSvc.Add("Microsoft:$($vm.Id)\2497F4DE-E9FA-4204-80E4-4B75C46419C0") }
+                'Guest Service Interface'   { $null = $intSvc.Add("Microsoft:$($vm.Id)\6C09BB55-D683-4DA0-8931-C9BF705F6480") }
+                'Key-Value Pair Exchange'   { $null = $intSvc.Add("Microsoft:$($vm.Id)\2A34B1C2-FD73-4043-8A5B-DD2159BC743F") }
+                'VSS'                       { $null = $intSvc.Add("Microsoft:$($vm.Id)\5CED1297-4598-4915-A5FC-AD21BB4D02A4") }
             }
         }
         
-        $vm | Hyper-V\Get-VMIntegrationService | ForEach-Object {
-            if ($intSvc -contains $_.Id) {
-                Hyper-V\Enable-VMIntegrationService $_
+        Hyper-V\Get-VMIntegrationService -VMName $VMName | foreach {
+            if ($PreferredIntegrationServices -contains $_.Name) {
+                Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Enabled $($_.Name)"
             }
             else {
-                Hyper-V\Disable-VMIntegrationService $_
+                Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Disabled $($_.Name)"
             }
         }
         #$vm | Hyper-V\Disable-VMConsoleSupport
-        $vm | Hyper-V\Enable-VMConsoleSupport
+        Hyper-V\Enable-VMConsoleSupport -VMName $VMName
 
         Write-Output "VM created."
     }
@@ -574,17 +577,17 @@ function Manage-HyperVVM {
                 return
             }
 
-            $shutdownService = $vm | Hyper-V\Get-VMIntegrationService -Name Shutdown -ea SilentlyContinue
+            $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $vm.Name -Name Shutdown -ea SilentlyContinue
             if ($shutdownService -and $shutdownService.PrimaryOperationalStatus -eq 'Ok') {
                 Write-Output "Shutdown VM $VmName..."
-                $vm | Hyper-V\Stop-VM -Confirm:$false -Force -ea SilentlyContinue
+                Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -Force -ea SilentlyContinue
                 if ($vm.State -eq 'Off') {
                     return
                 }
             }
 
             Write-Output "Turn Off VM $VmName..."
-            $vm | Hyper-V\Stop-VM -Confirm:$false -TurnOff -Force -ea SilentlyContinue
+            Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -TurnOff -Force -ea SilentlyContinue
         }
 
         Write-Output "Stopping VM $VmName..."
@@ -648,8 +651,8 @@ function Manage-HyperVVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUg/5y3Llb67rky/kWViErXdn6
-# 9Nagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUz0hiOjE++2k3lVrvGz/7w8Jk
+# v6igggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -706,11 +709,11 @@ function Manage-HyperVVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNeaHJG2d97Upi/S
-# mseuX4USRqjoMA0GCSqGSIb3DQEBAQUABIIBACA4q9qt3X0mQjz2qkf7RWeXP6B8
-# kbtXXuP/ZJBEsqOCgpDcw41q51ONdTHiOiZzh0IHiuvLB9qx/Wk+kIcIun2OLWuA
-# TV+vGsegPfSJwP0qHJ7fajG/DSD90LVwPe59wDq4iJ/A+KXZJfzNvVyECnwLtxDG
-# suDRXj24PBzu4Usgq9bf2b01ZgHdSCnZRTIunkLEYNhDI5V5GNiAq9zb+uUgocqI
-# QJDOFpAtffVzOwNaV2N6mvafHvlMczJqgvfWKrs6h4pTcsi6NvHmJYR3ScSs1c5s
-# gXRyCEH3Rcm+r8QqLU3F4J6pRuOTHil8PXCk/YZRyUKG4ag88TJ2efqzGHE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPOTs5vsUw6xxDwG
+# idwknZlLCGemMA0GCSqGSIb3DQEBAQUABIIBAJEhMZic1etW1GmkvIHRpLZ2jITv
+# SonXRr2xVp/a45hfOpiW2CSU4lf901zJTC/wy4UKofqW0aCXk+D7uuUv3DKjIFJH
+# YO3khnctr7eTbakVZM/h0gJGlkHuL+T3hIic5w5TVbFh3Ee/uxhgxddinTmStJJA
+# 1e2ftTsA3bAH2/AWNgGcsbjlDvFhi22D6+pdA4wWUw7oOxQgGmcahKeR2cl2Xsfy
+# FSQAZn/ohn6sua3nH6YwqLX/Bl8NXE4wbxWhEXHfMenX1pPLtdMA0xH4xV4GQcaz
+# aQY8//BfpCqhAYRI+W0EDnfgAyf1l9BsOj9qo6ebAKPIUtZjMjbrEkSKLAM=
 # SIG # End signature block

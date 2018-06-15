@@ -154,24 +154,9 @@ function Create-RootCA {
         return
     }
 
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-        $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    }
-    else {
-        $NetworkInfoFromWinPS = GetWinPSInCore -ScriptBlock {
-            $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-            $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-
-            [pscustomobject]@{
-                NextHop     = $NextHop
-                PrimaryIP   = $PrimaryIP
-            }
-        }
-
-        $NextHop = $NetworkInfoFromWinPS.NextHop
-        $PrimaryIP = $NetworkInfoFromWinPS.PrimaryIP
-    }
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -684,8 +669,8 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5qZ3GSKmLGa08MCUBra5goU1
-# C62gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUkr9UOw7QL41V70LHk4RlvoyF
+# GOugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -742,11 +727,11 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFB3dBeMtJoXlnMKt
-# oQ0CJcMDoHv1MA0GCSqGSIb3DQEBAQUABIIBAI+ywozP0SUcZ5Q13z5kUzUtWI8i
-# bGZTmqceOnD59Z15Y+c//IUZ7YEykEGl24cxZVdG7BLdezibto72+PRhKOoLQ9rn
-# LoyZ4ODMua5ELKmedU5szbTWCxPX3WnZ3lmAjreg67rgmHOlZc9w7Lv3pUNDUoT6
-# Cewe1WiZ9dUPeT1dBY1pariIeksXrsbWvcbnSg1HzOtnQRg8XL4u+cXwqtsClJ+t
-# PtUq12nBQjjHjHYmMwe779yVUU/S7wapKv0EhmMgbiox+71+T2N9e9pPKE17m+5Y
-# 7cqTFqYKV6d4ZvbN5UZ/qbM57i+b8JGGt7nMJvarmNXF3Gtr9EVN7tp9B7o=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI/UZ1J/lPL5Davq
+# pRKBAIl3DKnaMA0GCSqGSIb3DQEBAQUABIIBAFm1ui2Xmu8xTZEKDyzMu689hnPL
+# CKIvH4b+8hM5RyEQdQvb2hKoKdS/+iaYM/hqvVmpdblAoFxMPDnC2iPnN9DyS3KI
+# l9WoysK+fIijSGVWMUhI4E7qZTtf/t3QpiLOuYSH9Obn97iQzsh0yOZpOCCIGYgk
+# jOaSg9wChPc65qEggnbgI1AOCE0Zs6JBw9rMVu1nx+KX7cusokfr8V0HxoupXHNu
+# PDF53mCtH+A9TS1/KIi2SARj4MtlIjxF4CrKkgUio5dVoWYfOGrbVbgrAembHDDY
+# ShzrRIIAicOJVK6BpctuAOWX4AbTJ2K+xVSezLoyKEqlTgS06iC1Aj1/a8c=
 # SIG # End signature block

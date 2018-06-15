@@ -11,52 +11,6 @@ function InstallFeatureDism {
         [string]$ParentFunction
     )
 
-    #region >> Prep
-
-    $ModuleDependencies = GetModuleDependencies -NameOfLoadedFunction $MyInvocation.MyCommand.Name
-    if ($ModuleDependencies.WinPSModuleDependencies.Count -gt 0 -or
-    $ModuleDependencies.PSCoreModuleDependencies.Count -gt 0) {
-        try {
-            $LoadModuleDependenciesResult = LoadModuleDependencies -ModuleDependencies $ModuleDependencies
-            if (!$LoadModuleDependenciesResult) {throw "Problem with the LoadModuleDependencies function! Halting!"}
-        }
-        catch {
-            Write-Error $_
-            $global:FunctionResult = "1"
-            return
-        }
-    }
-
-    # Import the Dism Module
-    <#
-    if (![bool]$(Get-Module Dism)) {
-        try {
-            Import-Module Dism
-        }
-        catch {
-            # Using full path to Dism Module Manifest because sometimes there are issues with just 'Import-Module Dism'
-            $DismModuleManifestPaths = $(Get-Module -ListAvailable -Name Dism).Path
-
-            foreach ($MMPath in $DismModuleManifestPaths) {
-                try {
-                    Import-Module $MMPath -ErrorAction Stop
-                    break
-                }
-                catch {
-                    Write-Verbose "Unable to import $MMPath..."
-                }
-            }
-        }
-    }
-    if ($(Get-Module).Name -notcontains "Dism") {
-        Write-Error "Problem importing the Dism PowerShell Module! Unable to proceed with Hyper-V install! Halting!"
-        $global:FunctionResult = "1"
-        return
-    }
-    #>
-
-    #endregion >> Prep
-
     # Check to see if the feature is already installed
     $FeatureCheck = Get-WindowsOptionalFeature -FeatureName $Feature -Online
     if ($FeatureCheck.State -ne "Enabled") {
@@ -97,8 +51,8 @@ function InstallFeatureDism {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUNqHWGdR+PDu8Mo7gRABV5WRL
-# +tegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUMEsj9rX0JeJ7/dSiD+066Vc/
+# kBSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -155,11 +109,11 @@ function InstallFeatureDism {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFH3a7jjDtGC/reLP
-# /1obkurFORmmMA0GCSqGSIb3DQEBAQUABIIBAEgfAAo/eyeSC9Bewfe173oQtf8z
-# ZoNr7ejQhUJ7QDoMGVmf7n7rZVn4PhJIqYtRguYZGmkkE4E7XiI9xK2WX3ZM63IX
-# xaN0z3YENGf8SNm5Dg2p1E8vN7rta5HTN53w7VTU5iAXbAVGNjCepeyyZ9NpnyRs
-# 9u4CKZUHKaYxwsm7jQNwGQqqIP0HI5NW98KoYW5xEMSGwUHlw+W/jQiYSDynQ4RO
-# JKOp2dpwwWzscpjZtBWsH4Nh5RIkHIjpcNrbwTEwITd4IIAZ+gVEhKBPwGhjKd7A
-# aiNTDEOLGZwBTT5RAsZzqe9LAgxO5m4H8iqlPjMTKC+/wowksfkiVrtplZk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHpEuSLkwRzLGMLQ
+# Y68HBWBolwi6MA0GCSqGSIb3DQEBAQUABIIBAHlshtgHEuC73O+9b+ckSGgi0tYT
+# GrI9tLr1c8oLi+XTC1zNoeGr5xU0eCSL8xd37FzI0oY4At6eASjxk5Adqtkd6vCv
+# 8ccm9FhXk3RXWweUslvXjdnE0V/wZM1kxyBz3h6gLXg76ZNF8sGBjzcguuqc6eA6
+# Yrn7uCFA+1roigMa2RtyB7AQ9GGY/x4LxlSeHUb98FULs60CYp0tu9O87eqN7bxW
+# N1CBQzJGa7xvdnvf1+YsvYCaOJEkDhZ+42Ii344uyThDZFL91AkvPWKvC7Yv2Ygt
+# B5pXBZ4faez6+Tr3jyp+SeWgMNKavZkYbddF+q1cBTFegFqeJJsBXF40PmI=
 # SIG # End signature block

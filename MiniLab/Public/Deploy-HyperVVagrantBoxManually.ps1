@@ -310,32 +310,11 @@ function Deploy-HyperVVagrantBoxManually {
     }
 
     # Set some other variables that we will need
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-        $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-        $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-        $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
-    }
-    else {
-        $NetworkInfoFromWinPS = GetWinPSInCore -ScriptBlock {
-            $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-            $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-            $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-            $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
-
-            [pscustomobject]@{
-                NextHop     = $NextHop
-                PrimaryIP   = $PrimaryIP
-                NicInfo     = $NicInfo
-                NicAdapter  = $NicAdapter
-            }
-        }
-
-        $NextHop = $NetworkInfoFromWinPS.NextHop
-        $PrimaryIP = $NetworkInfoFromWinPS.PrimaryIP
-        $NicInfo = $NetworkInfoFromWinPS.NicInfo
-        $NicAdapter = $NetworkInfoFromWinPS.NicAdapter
-    }
+    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
+    $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+    
 
     if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
         if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
@@ -530,12 +509,12 @@ function Deploy-HyperVVagrantBoxManually {
     }
 
     # Wait for up to 30 minutes for the new VM to report its IP Address
-    $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+    $NewVMIP = $(Get-VMNetworkAdapter -VMName $NewVMName).IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
     $Counter = 0
     while (!$NewVMIP -and $Counter -le 30) {
         Write-Host "Waiting for VM $NewVMName to report its IP Address..."
         Start-Sleep -Seconds 60
-        $NewVMIP = $(Get-VM -Name $NewVMName).NetworkAdapters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+        $NewVMIP = $(Get-VMNetworkAdapter -VMName $NewVMName).IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
         $Counter++
     }
     if (!$NewVMIP) {
@@ -586,8 +565,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUpWJ9E1KfgfJUMOSKX5/EzIgz
-# 5Z6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU3d9rWpLFXzM/WFE3iO76pumm
+# L8agggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -644,11 +623,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDOCIKXETbQyFynK
-# oKlNgaRq6hMwMA0GCSqGSIb3DQEBAQUABIIBADAIX/sJAB5r5kLK0lCx2i5AZ3RD
-# JdlDUlEUlvn99bmRT24XQA/7eyBKorxUPuzFKkcMRVFEH/JWTR086+CeJpUAJ6q1
-# kAdZhmUEjqCA1sm9xjyGPFuoRksGalKRCDzh+eu+faysEzsMF34LNtzZ7Jxs77/C
-# O48V34+i5drbTiCe31BEFednn5kOkQq7vhmn6HhOgsfxszugIvdlLirtWWTzEtj9
-# YkWNUWwVyb9bjk+j0Maf7NXY4CLbXcFOP29WdEENbGoFFEDuK8d5E4CDe0E47M8j
-# re6IiKkWR9iRUUK6GyuhiOGWAynkEJrheE2Fvv/AiAMd5+UInL6Dk+8Btic=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIAM6Y/Yx+ZJ2J5Y
+# VcmR6ugWrriYMA0GCSqGSIb3DQEBAQUABIIBAFRvJT3I/+PIRTTkLqJEwdgqmNSI
+# gvrZwmdmDUTTIPyZas2mPBxpbHq09GgMlKmkd+lUN6jnUSwjS4jM3XHDMghmeWqe
+# T/MCS2g/Bm3IKIYE/uKd+w0XHIv4NWBhZfEBWZH+foHVx2cTcQcvcf0smZU1v+kc
+# 3wJCgc9LX0HKWKgbpZ41yp8ehsvWEA6Ihytmv847eOc2nahVSGKZdwRs1Ovv600E
+# ulrhXjfUl7gp2hDRaAhyrLQ7NglHcdwluSP2iD4XAewqCN5xnO5QrGg+D06emsHG
+# DCL3c2dYNx9T6KonePqau5b7D7yJq1Zb2i0j3C3zY26XH1kzpCSqj59B3Os=
 # SIG # End signature block
