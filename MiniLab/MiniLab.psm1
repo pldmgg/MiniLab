@@ -19,7 +19,13 @@ foreach ($import in $Private) {
 if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     if (![bool]$(Get-Module -ListAvailable PSDepend -ErrorAction SilentlyContinue)) {
         try {
-            [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
+            if ($PSVersionTable.PSEdition -eq "Desktop") {
+                [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
+            }
+            else {
+                [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'
+            }
+            
             $ExistingProgressPreference = "$ProgressPreference"
             $ProgressPreference = 'SilentlyContinue'
             # Bootstrap nuget if we don't have it
@@ -60,15 +66,48 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     if (![bool]$(Get-Module PSDepend -ErrorAction SilentlyContinue)) {
         try {
             Import-Module PSDepend
-            $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
         }
         catch {
             Write-Error $_
-            Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The $ThisModule Module will not be loaded. Halting!"
             Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
             $global:FunctionResult = "1"
             return
         }
+    }
+
+    # Before we Invoke-PSDepend on module.requirements.psd1, make sure that the Target directory
+    # for Modules fits with the version of PowerShell that we're using
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        # Make sure the PowerShell Core User Scope Module Directory exists. If not, create it.
+        if (!$(Test-Path "$HOME\Documents\PowerShell\Modules")) {
+            $null = New-Item -ItemType Directory -Path "$HOME\Documents\PowerShell\Modules" -Force
+        }
+        $ModReqsContent = Get-Content "$PSScriptRoot\module.requirements.psd1"
+        $ModReqsLineToReplace = $($ModReqsContent | Select-String -Pattern "[\s]+Target[\s]=[\s]").Line
+        $UpdatedModReqsContent = $ModReqsContent -replace [regex]::Escape($ModReqsLineToReplace),"        Target = '$ENV:USERPROFILE\Documents\PowerShell\Modules'"
+        Set-Content -Path "$PSScriptRoot\module.requirements.psd1" -Value $UpdatedModReqsContent 
+    }
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        # Make sure the PowerShell Core User Scope Module Directory exists. If not, create it.
+        if (!$(Test-Path "$HOME\Documents\WindowsPowerShell\Modules")) {
+            $null = New-Item -ItemType Directory -Path "$HOME\Documents\WindowsPowerShell\Modules" -Force
+        }
+        $ModReqsContent = Get-Content "$PSScriptRoot\module.requirements.psd1"
+        $ModReqsLineToReplace = $($ModReqsContent | Select-String -Pattern "[\s]+Target[\s]=[\s]").Line
+        $UpdatedModReqsContent = $ModReqsContent -replace [regex]::Escape($ModReqsLineToReplace),"        Target = '$ENV:USERPROFILE\Documents\WindowsPowerShell\Modules'"
+        Set-Content -Path "$PSScriptRoot\module.requirements.psd1" -Value $UpdatedModReqsContent 
+    }
+
+    # Install Dependencies if they're not already
+    try {
+        $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
+    }
+    catch {
+        Write-Error $_
+        Write-Error "Problem with the PSDepend Module Installing/Importing Module Dependencies! The $ThisModule Module will not be loaded. Halting!"
+        Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
+        $global:FunctionResult = "1"
+        return
     }
 }
 
@@ -3541,6 +3580,22 @@ function Deploy-HyperVVagrantBoxManually {
         $VMDestinationDirectory = $VMDestinationDirectory | Split-Path -Parent
     }
 
+    # Make sure $VMDestinationDirectory is a local hard drive
+    if ([bool]$(Get-Item $VMDestinationDirectory).LinkType) {
+        $DestDirDriveLetter = $(Get-Item $VMDestinationDirectory).Target[0].Substring(0,1)
+    }
+    else {
+        $DestDirDriveLetter = $VMDestinationDirectory.Substring(0,1)
+    }
+    $DownloadDirDriveInfo = [System.IO.DriveInfo]::GetDrives() | Where-Object {
+        $_.Name -eq $($DestDirDriveLetter + ':\') -and $_.DriveType -eq "Fixed"
+    }
+    if (!$DownloadDirDriveInfo) {
+        Write-Error "The '$($DestDirDriveLetter + ':\')' drive is NOT a local hard drive! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
     if (!$TemporaryDownloadDirectory) {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
     }
@@ -3562,6 +3617,24 @@ function Deploy-HyperVVagrantBoxManually {
         }
         if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
             Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
+            Install-Module WindowsCompatibility
+        }
+        if (![bool]$(Get-Module WindowsCompatibility)) {
+            Import-Module WindowsCompatibility
+        }
+
+        try {
+            Import-WinModule Hyper-V
+        }
+        catch {
+            Write-Error "Problem importing the Hyper-V Module via WindowsCompatibility Module! Halting!"
             $global:FunctionResult = "1"
             return
         }
@@ -7647,7 +7720,7 @@ function Get-VagrantBoxManualDownload {
         # Find the latest version of the .box you want that also has the provider you want
         $BoxInfoUrl = "https://app.vagrantup.com/" + $($VagrantBox -split '/')[0] + "/boxes/" + $($VagrantBox -split '/')[1]
         $VagrantBoxVersionPrep = Invoke-WebRequest -Uri $BoxInfoUrl
-        $VersionsInOrderOfRelease = $($VagrantBoxVersionPrep.Links | Where-Object {$_.href -match "versions"}).innerText -replace 'v',''
+        $VersionsInOrderOfRelease = $($VagrantBoxVersionPrep.Links | Where-Object {$_.href -match "versions"}).href | foreach {$($_ -split "/")[-1]}
         $VagrantBoxLatestVersion = $VersionsInOrderOfRelease[0]
 
         foreach ($version in $VersionsInOrderOfRelease) {
@@ -7695,12 +7768,13 @@ function Get-VagrantBoxManualDownload {
             else {
                 $DownloadDirLogicalDriveLetter = $DownloadDirectory.Substring(0,1)
             }
-            $DownloadDirDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$DownloadDirLogicalDriveLetter`:'"
             
-            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -gt $BoxSizeInMB) {
+            $DownloadDirDriveInfo = [System.IO.DriveInfo]::GetDrives() | Where-Object {$_.Name -eq $($DownloadDirLogicalDriveLetter + ':\')}
+            
+            if ($([Math]::Round($DownloadDirDriveInfo.AvailableFreeSpace / 1MB)-2000) -gt $BoxSizeInMB) {
                 $OutFileName = $($VagrantBox -replace '/','-') + "_" + $BoxVersion + ".box"
             }
-            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -lt $BoxSizeInMB) {
+            if ($([Math]::Round($DownloadDirDriveInfo.AvailableFreeSpace / 1MB)-2000) -lt $BoxSizeInMB) {
                 Write-Error "Not enough space on $DownloadDirLogicalDriveLetter`:\ Drive to download the compressed .box file and subsequently expand it! Halting!"
                 $global:FunctionResult = "1"
                 return
@@ -12232,8 +12306,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUE7ufanTn6yaz80Mg7h0NgXqI
-# /7Wgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUXuGlN3mxXkGSQbkHerA/Z32g
+# Fd6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12290,11 +12364,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGg7jLnFmEDiMvlI
-# 0j4Ku2fkTJWjMA0GCSqGSIb3DQEBAQUABIIBAIVfImzCshXBI7OQjj7vABq1kFn0
-# IBtf3EJoWgr9nP3sy1JNIRfMilqBzu3nKrcit5fN7J1a2ujGdH6h3MfpTPV2/4Uv
-# Er5FMqpx1kwhBaRY5bdzJZYRh2qOmYRMbq/s8bDFcLrfMY13EEI9uMQjp1UTnLf4
-# MBo0ujiHjgo+AEhgB8hW9yvZcuXqE6ojACgVtcQdiWnjrRrBFevbVXrhsEqFQmJx
-# d90bCOpEYaSUCQkU4x1xVuUEkTXgmwue+wzmrz/UemHNMFLAfjruAqbbgNixqWVv
-# tyMU1j0I2T3mBSFtr02zCkpVjl37eNnTqLmRgMMie/S4NEcLPhAJtmmJWxk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLXDIf8rvZHZTZd3
+# ZUY1b4Fq0fc3MA0GCSqGSIb3DQEBAQUABIIBAJGcIgQNnlVNGu2E2ZhZyN26f2Zn
+# TmpEbaNyGa14QQ4aS9SIF9f1lSjiVjGy/icoG11sQCN1EZ3+g1wAGx5RmvKs31B9
+# VN1xeKpq61leDK0c2DpaDcKr/QQ4JqBV2cwhY7xiqD24axlz7/73yFXJXnDb9tFi
+# dV/zWw4R7OHnQMHQzujUB3lIouuj935J6S+/6glXnCN6twi+5UB4NIUKaHNxBEb5
+# 53JGIoppuJHi8QFrIinf9ATEVdbbAFBO6aAdb8aN65GMNS9bba0keWRAd1DYe7Lx
+# 3klb3YF0KI5dmVWqm9/7XCzCs1ZJvn4gIUstP9qwwtxK3Z/aBu6zO42Uc5Y=
 # SIG # End signature block

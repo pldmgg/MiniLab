@@ -67,6 +67,9 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'ResolveHost' | Should Be $False
         $Commands -contains 'TestIsValidIPAddress' | Should Be $False
         $Commands -contains 'UnzipFile' | Should Be $False
+        $Commands -contains 'GetModuleDependencies' | Should Be $False
+        $Commands -contains 'GetWinPSInCore' | Should Be $False
+        $Commands -contains 'LoadModuleDependencies' | Should Be $False
         
         $Commands -contains 'Create-Domain' | Should Be $True
         $Commands -contains 'Create-RootCA' | Should Be $True
@@ -100,6 +103,9 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         [bool]$Module.Invoke({Get-Item function:ResolveHost}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:TestIsValidIPAddress}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:UnzipFile}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:GetModuleDependencies}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:GetWinPSInCore}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:LoadModuleDependencies}) | Should Be $True
     }
 }
 

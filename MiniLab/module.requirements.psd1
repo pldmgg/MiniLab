@@ -1,17 +1,17 @@
 @{
     # Some defaults for all dependencies
     PSDependOptions = @{
-        Target = '$ENV:USERPROFILE\Documents\WindowsPowerShell\Modules'
+        Target = 'C:\Users\pddomain\Documents\PowerShell\Modules'
         AddToPath = $True
     }
 
     # Grab some modules without depending on PowerShellGet
     'ProgramManagement' = @{
-        DependencyType  = 'PSGalleryNuget'
+        DependencyType  = 'PSGalleryModule'
         Version         = 'Latest'
     }
     'NTFSSecurity' = @{
-        DependencyType  = 'PSGalleryNuget'
+        DependencyType  = 'PSGalleryModule'
         Version         = 'Latest'
     }
 }

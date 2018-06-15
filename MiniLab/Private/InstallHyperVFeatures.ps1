@@ -7,11 +7,24 @@ function InstallHyperVFeatures {
         [Parameter(Mandatory=$False)]
         [string]$ParentFunction
     )
-
+    
     # Import the Dism Module
-    if ($(Get-Module).Name -notcontains "Dism") {
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
+            Install-Module WindowsCompatibility
+        }
+        if (![bool]$(Get-Module WindowsCompatibility)) {
+            Import-Module WindowsCompatibility
+        }
+    }
+    if (![bool]$(Get-Module Dism)) {
         try {
-            Import-Module Dism
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                Import-WinModule Dism
+            }
+            else {
+                Import-Module Dism
+            }
         }
         catch {
             # Using full path to Dism Module Manifest because sometimes there are issues with just 'Import-Module Dism'
@@ -79,8 +92,8 @@ function InstallHyperVFeatures {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUVkyKacYtbCxieASAQSwVNJYT
-# URegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU6FIF8bT2q0k7SwNyjJb42gL4
+# x3mgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -137,11 +150,11 @@ function InstallHyperVFeatures {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLpp3VjHxYYpd8ja
-# fReAJjXdUjfoMA0GCSqGSIb3DQEBAQUABIIBACNmydlHdvx/m9Eeexg8u1HO8sty
-# biWj3r/weZUjDCwyo++pCbLkV0qczM6NUCJ7oZfCnJpOWdAUwm/f7YoS84FnIGUT
-# guCWU2qKM+gAfnfCEi4CyXsaVoDXZ+RAL4VXYdFR6X4Ejmh3O58wK8e54jXPj6W+
-# u9yt+JWGoS6B71TW6kZPoXmkJIe4RSghc0Q55Pcvt3VFV9ubfCB3UncMyZCS+7Ha
-# 1S2iu4rkdh8HJElPCtSSfy0dJOo57zKj5ajwr3VO49uGLvzY1od7eUotN12M0YAo
-# CWa6aU0Sr3n0xvmC0UqXGdQHtkt6QE0GCIFOpUI31Qfmvo6bhkP4ONgX5pI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFcPwZe4VolmMLEj
+# xUBgfimerxInMA0GCSqGSIb3DQEBAQUABIIBAHu0XfoimRS54JuEOLz+39lHbjtK
+# GE5tAE7U+sH/0UNvd0KAZOFz+TwpuJNp2QSO+RMy8u+aO4+92ZlXMmAeOfzECOwT
+# lzrNPhgGbLYbm1JILa4fqqtpiVAVQ1DSkc+pL2D5h1LO/KfeU+pw9TXk+1xjJBw2
+# px7E6h09ZXWHlF1zXBHQ4c6H6Q2B5lWbNZzf17fEP9u5kncMZanugOEOazBJlflY
+# kO2j1cLUsgC8trBi2h1gBJW3u6cOQK0MR6himWRJHPiuH9WchSs2jnzJS2fOUOdo
+# qlx6j8Bn20AOhqK5Xp9pHmfWAPOgAf5dqW1zIHi7HbNzgQDkMktjk7yq7bE=
 # SIG # End signature block

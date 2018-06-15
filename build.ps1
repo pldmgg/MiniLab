@@ -217,7 +217,7 @@ if ($Cert) {
         $_.Name -notmatch $($HelperFilesToSignNameRegex -join '|') -and
         $_.Name -notmatch $RemoveSignatureFilePathRegex
     }
-    $null = $FilesToSign.Add($(Get-Item $env:BHModulePath\Install-PSDepend.ps1))
+    #$null = $FilesToSign.Add($(Get-Item $env:BHModulePath\Install-PSDepend.ps1))
 
     Remove-Signature -FilePath $FilesToSign.FullName
 
@@ -316,8 +316,8 @@ exit ( [int]( -not $psake.build_success ) )
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUcetju6FF++57OvLB/OWT4Eqx
-# wm6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU3iuyNg2xJnPXn1JDOpkYws0H
+# t3Sgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -374,11 +374,11 @@ exit ( [int]( -not $psake.build_success ) )
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGPDBQ/b/ChhZaW0
-# m57fYJJKdaz0MA0GCSqGSIb3DQEBAQUABIIBABFpR3qMIRwZwrUJCEcMziYTgaSi
-# Y95W4FO47sw/C+wDUZQgDiMlahqEKI87OstDi2fUnvrruuf2YmEa+ejpebHFVo5B
-# k67tM3hcHa3fvdu9rFv6ZX9Dlcv66dgUSRXem1cUH0tDgK3XcgOSuiFvLQULiovB
-# Do1AcQmxV9IImd0wosAeUqHTKlK6AuSSoe2tIrszX4MZmMD2+/Qly/YuowPoD81R
-# M9n4GD3zIc5Q+FBse59kma5rnyVtuQUD64TQ0LeakBZAqMikgGO/+wQoASkSTYMa
-# BngHhO+i4FApdBC3cJQuYesYRTgXhK3OkL4RPsPAAxeNM1sekMsrtMXnG2Y=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFfy0uxsIygxcpTF
+# l6LD1ztT1Y7CMA0GCSqGSIb3DQEBAQUABIIBALepDjZVa65WvLnY2695unNrm8XJ
+# wz41j+GPG57TD+eK3oNqIYKtt0dqXoTlBNiROV6R7Khlu33taVXbXY264G1HrZQ1
+# fELSU1xUyKiXnYc+nQQ/Tf+KiRj5k6zJ0JPNgZu0oQ8Ur0jeuE4JQWwtihiTb7Wk
+# TS3UpdN4S80rUVMB/vdNYAPX6twa5yS66LRgts+GdfEXd0mk6/MOxqRuGughspbS
+# BQ07aI2JzMCg+++LAhSwDWMkiNh5Sk15QqB4bzXjieflKxqbfVz6bXROqDmgTXqx
+# VWdxmsZIxg8dKj9KwyCyHk9q5Z7/fySh28NuKYufnbeU4+CagHOhz4nsIfA=
 # SIG # End signature block

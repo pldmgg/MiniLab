@@ -96,7 +96,7 @@ function Get-VagrantBoxManualDownload {
         # Find the latest version of the .box you want that also has the provider you want
         $BoxInfoUrl = "https://app.vagrantup.com/" + $($VagrantBox -split '/')[0] + "/boxes/" + $($VagrantBox -split '/')[1]
         $VagrantBoxVersionPrep = Invoke-WebRequest -Uri $BoxInfoUrl
-        $VersionsInOrderOfRelease = $($VagrantBoxVersionPrep.Links | Where-Object {$_.href -match "versions"}).innerText -replace 'v',''
+        $VersionsInOrderOfRelease = $($VagrantBoxVersionPrep.Links | Where-Object {$_.href -match "versions"}).href | foreach {$($_ -split "/")[-1]}
         $VagrantBoxLatestVersion = $VersionsInOrderOfRelease[0]
 
         foreach ($version in $VersionsInOrderOfRelease) {
@@ -144,12 +144,13 @@ function Get-VagrantBoxManualDownload {
             else {
                 $DownloadDirLogicalDriveLetter = $DownloadDirectory.Substring(0,1)
             }
-            $DownloadDirDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$DownloadDirLogicalDriveLetter`:'"
             
-            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -gt $BoxSizeInMB) {
+            $DownloadDirDriveInfo = [System.IO.DriveInfo]::GetDrives() | Where-Object {$_.Name -eq $($DownloadDirLogicalDriveLetter + ':\')}
+            
+            if ($([Math]::Round($DownloadDirDriveInfo.AvailableFreeSpace / 1MB)-2000) -gt $BoxSizeInMB) {
                 $OutFileName = $($VagrantBox -replace '/','-') + "_" + $BoxVersion + ".box"
             }
-            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -lt $BoxSizeInMB) {
+            if ($([Math]::Round($DownloadDirDriveInfo.AvailableFreeSpace / 1MB)-2000) -lt $BoxSizeInMB) {
                 Write-Error "Not enough space on $DownloadDirLogicalDriveLetter`:\ Drive to download the compressed .box file and subsequently expand it! Halting!"
                 $global:FunctionResult = "1"
                 return
@@ -185,8 +186,8 @@ function Get-VagrantBoxManualDownload {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUm0fk5Y3RthK7dA05PSfsjEEI
-# Fn+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPVXmeYKno9qUIaG/lkFQ3rXA
+# sdCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -243,11 +244,11 @@ function Get-VagrantBoxManualDownload {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGkkWFxOkEcNkQ7H
-# PFB+7I9DqpQ2MA0GCSqGSIb3DQEBAQUABIIBAGc22pzUUTYtCfK1S6ehQmYUyZJl
-# ePpnd6gijWQAeVDn0s8ecKf2VaEbWLeS4QTjoO+Idipeo8k6NpF8DSUPmCtCZfmg
-# On3YsSmCjfOFkSiMViV7wtY6GXITrPjUy4XZnizhl372JDk3NUMPVPINGXIQmDri
-# K1OPaE3Em3BFmRHQK/AWWxDpE4vPgMirEUtkgSP+jKINi2WCx5pb3SCRVmUpFJnz
-# V8dx4bX++O8jTqGkH5f9YW7kL9T8GnxOxJY6qEhkT7M6Z+OU1QCUXmTpsgFHAGlQ
-# RP98nC3JpVFoVazF78KPjBotv59U56BkLWaUi0bGTJrMrjqlLLAlWLTKyrY=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFON18VO9kMsihBHu
+# TtweXkonKND0MA0GCSqGSIb3DQEBAQUABIIBADpkEgCiakHiPmhMnlYaaJ2Idunv
+# NCDeGHw9rwBYN46QpHbn9uwP5mw7o47MkDpX9zBeQ6HDeHLCllwyRWkP2n7ZHSSi
+# aazCkOVnkdUxNmrpb18qfpz6VfQSjA2NDxBIv27eSsOqqb/lHnpZDRd2KMFvpf3J
+# 4WC8j95C4P8WbFT3u7ZMQfp0U0Y0pvz905QD7vtvWOTp7lDtFUU3onu3d6yuZzNL
+# 33QrkMRwUrIERBJSHz7tIiRbcW9rLAsKULwLjtiAQcd5viIc4Pv+huqnAoxdSVuv
+# ayRzd2h+n7n8ozzpGQ8viiRvE4rgbOS7G2XaChtliDEyouWYZSKBfTCKuYQ=
 # SIG # End signature block

@@ -74,7 +74,8 @@ FunctionsToExport = 'Create-Domain','Create-RootCA','Create-SubordinateCA','Crea
                     'Generate-Certificate','Get-DSCEncryptionCert',
                     'Get-VagrantBoxManualDownload','Invoke-Parallel',
                     'Manage-HyperVVM','New-DomainController','New-RootCA',
-                    'New-SelfSignedCertificateEx','New-SubordinateCA'
+                    'New-SelfSignedCertificateEx','New-SubordinateCA',
+                    'New-OutOfProcRunspace','Invoke-Shim'
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 CmdletsToExport = '*'

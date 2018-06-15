@@ -11,8 +11,25 @@ function InstallFeatureDism {
         [string]$ParentFunction
     )
 
+    #region >> Prep
+
+    $ModuleDependencies = GetModuleDependencies -NameOfLoadedFunction $MyInvocation.MyCommand.Name
+    if ($ModuleDependencies.WinPSModuleDependencies.Count -gt 0 -or
+    $ModuleDependencies.PSCoreModuleDependencies.Count -gt 0) {
+        try {
+            $LoadModuleDependenciesResult = LoadModuleDependencies -ModuleDependencies $ModuleDependencies
+            if (!$LoadModuleDependenciesResult) {throw "Problem with the LoadModuleDependencies function! Halting!"}
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
     # Import the Dism Module
-    if ($(Get-Module).Name -notcontains "Dism") {
+    <#
+    if (![bool]$(Get-Module Dism)) {
         try {
             Import-Module Dism
         }
@@ -36,6 +53,9 @@ function InstallFeatureDism {
         $global:FunctionResult = "1"
         return
     }
+    #>
+
+    #endregion >> Prep
 
     # Check to see if the feature is already installed
     $FeatureCheck = Get-WindowsOptionalFeature -FeatureName $Feature -Online
@@ -77,8 +97,8 @@ function InstallFeatureDism {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUJ7Tdypn1ai/nBgjEKW/HD8XY
-# j0agggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUNqHWGdR+PDu8Mo7gRABV5WRL
+# +tegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -135,11 +155,11 @@ function InstallFeatureDism {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDmf8gdcrNJLLRnh
-# Wg2nlT3dZhp5MA0GCSqGSIb3DQEBAQUABIIBAJkHti2aSKo+d2C5d5UVvcv6EAmL
-# RIj7iGD7YecHK5NpaV2rei3Gq+KIsyyV2KZYAs5+vYAFK5v0JiOUQoeT64jiolID
-# pZbhpRrN62L1/M6kbYeL2iM0s6FTZey+d7eLpSHhJYmFC2aumt8eDPvemLwp2Vp1
-# kr+yZ9+0iDLuoav2ifmabhYne725R/lO/idFkQbjKMIImX9QGd/sz4EfT6gBVZTY
-# 6v3oolLbQzO2XWHLGe+g0zqqR3kbx9XQFbmVCdbwQ/6AX2pYRa9aHi8R3FmMV+vh
-# CC9V1RIKdRAoDMGlxZbFB7nQH3l6Q2kgMVTEl2Ir9wfPJmcz2hrRy7d+N7U=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFH3a7jjDtGC/reLP
+# /1obkurFORmmMA0GCSqGSIb3DQEBAQUABIIBAEgfAAo/eyeSC9Bewfe173oQtf8z
+# ZoNr7ejQhUJ7QDoMGVmf7n7rZVn4PhJIqYtRguYZGmkkE4E7XiI9xK2WX3ZM63IX
+# xaN0z3YENGf8SNm5Dg2p1E8vN7rta5HTN53w7VTU5iAXbAVGNjCepeyyZ9NpnyRs
+# 9u4CKZUHKaYxwsm7jQNwGQqqIP0HI5NW98KoYW5xEMSGwUHlw+W/jQiYSDynQ4RO
+# JKOp2dpwwWzscpjZtBWsH4Nh5RIkHIjpcNrbwTEwITd4IIAZ+gVEhKBPwGhjKd7A
+# aiNTDEOLGZwBTT5RAsZzqe9LAgxO5m4H8iqlPjMTKC+/wowksfkiVrtplZk=
 # SIG # End signature block

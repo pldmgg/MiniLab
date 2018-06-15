@@ -218,6 +218,22 @@ function Deploy-HyperVVagrantBoxManually {
         $VMDestinationDirectory = $VMDestinationDirectory | Split-Path -Parent
     }
 
+    # Make sure $VMDestinationDirectory is a local hard drive
+    if ([bool]$(Get-Item $VMDestinationDirectory).LinkType) {
+        $DestDirDriveLetter = $(Get-Item $VMDestinationDirectory).Target[0].Substring(0,1)
+    }
+    else {
+        $DestDirDriveLetter = $VMDestinationDirectory.Substring(0,1)
+    }
+    $DownloadDirDriveInfo = [System.IO.DriveInfo]::GetDrives() | Where-Object {
+        $_.Name -eq $($DestDirDriveLetter + ':\') -and $_.DriveType -eq "Fixed"
+    }
+    if (!$DownloadDirDriveInfo) {
+        Write-Error "The '$($DestDirDriveLetter + ':\')' drive is NOT a local hard drive! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
     if (!$TemporaryDownloadDirectory) {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
     }
@@ -239,6 +255,24 @@ function Deploy-HyperVVagrantBoxManually {
         }
         if ($(Get-ChildItem -Path $DecompressedBoxDirectory -File).Name -notcontains "VagrantFile") {
             Write-Error "The directory '$DecompressedBoxDirectory' does not a contain a file called 'VagrantFile'! Is it a valid decompressed .box file directory? Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
+            Install-Module WindowsCompatibility
+        }
+        if (![bool]$(Get-Module WindowsCompatibility)) {
+            Import-Module WindowsCompatibility
+        }
+
+        try {
+            Import-WinModule Hyper-V
+        }
+        catch {
+            Write-Error "Problem importing the Hyper-V Module via WindowsCompatibility Module! Halting!"
             $global:FunctionResult = "1"
             return
         }
@@ -276,10 +310,32 @@ function Deploy-HyperVVagrantBoxManually {
     }
 
     # Set some other variables that we will need
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-    $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+        $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+        $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
+        $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+    }
+    else {
+        $NetworkInfoFromWinPS = GetWinPSInCore -ScriptBlock {
+            $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
+            $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+            $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
+            $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+
+            [pscustomobject]@{
+                NextHop     = $NextHop
+                PrimaryIP   = $PrimaryIP
+                NicInfo     = $NicInfo
+                NicAdapter  = $NicAdapter
+            }
+        }
+
+        $NextHop = $NetworkInfoFromWinPS.NextHop
+        $PrimaryIP = $NetworkInfoFromWinPS.PrimaryIP
+        $NicInfo = $NetworkInfoFromWinPS.NicInfo
+        $NicAdapter = $NetworkInfoFromWinPS.NicAdapter
+    }
 
     if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
         if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
@@ -530,8 +586,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUk5P55okRD6ciaf+l3w7byCb7
-# 4i2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUpWJ9E1KfgfJUMOSKX5/EzIgz
+# 5Z6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -588,11 +644,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFpqXMJFqR1IyB1V
-# 7aPbPhIexqYWMA0GCSqGSIb3DQEBAQUABIIBAMDwiKGKRk+BsDcmrv6XCLWsbKZM
-# BD3LD4zFMSDdxY4E/h+KuV1trMi7n09C5noZzlLMhbvlvhaJqyuH7TGzCUUPiAZV
-# gm6TORz24QlxerLVPTZk0XyK7T37ccWzCgaKzU9Tc38XRfTrTwyZ1xcZ9tqD9sP6
-# L4b+8E2WgRswISA3ZVi5S36WCuz+9u0CXUC50ISOaMtld5WAjjmCrVCHOh/77OT2
-# LF04MgRJW7Bpb+KYcqK7u7hVYq/mHehEWWwgFngIUBWGWPqSCdTMtvbJlGE5QxRx
-# YjQ6VN/2MsJ7L2n4Au+iAWDeLVrFk+BuuWngYotcV5LypYzN7Q+5O1rF6/8=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDOCIKXETbQyFynK
+# oKlNgaRq6hMwMA0GCSqGSIb3DQEBAQUABIIBADAIX/sJAB5r5kLK0lCx2i5AZ3RD
+# JdlDUlEUlvn99bmRT24XQA/7eyBKorxUPuzFKkcMRVFEH/JWTR086+CeJpUAJ6q1
+# kAdZhmUEjqCA1sm9xjyGPFuoRksGalKRCDzh+eu+faysEzsMF34LNtzZ7Jxs77/C
+# O48V34+i5drbTiCe31BEFednn5kOkQq7vhmn6HhOgsfxszugIvdlLirtWWTzEtj9
+# YkWNUWwVyb9bjk+j0Maf7NXY4CLbXcFOP29WdEENbGoFFEDuK8d5E4CDe0E47M8j
+# re6IiKkWR9iRUUK6GyuhiOGWAynkEJrheE2Fvv/AiAMd5+UInL6Dk+8Btic=
 # SIG # End signature block

@@ -85,7 +85,13 @@ foreach ($import in $Private) {
 if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     if (![bool]$(Get-Module -ListAvailable PSDepend -ErrorAction SilentlyContinue)) {
         try {
-            [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
+            if ($PSVersionTable.PSEdition -eq "Desktop") {
+                [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
+            }
+            else {
+                [string]$UserModulePath = Join-Path $([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Modules'
+            }
+            
             $ExistingProgressPreference = "$ProgressPreference"
             $ProgressPreference = 'SilentlyContinue'
             # Bootstrap nuget if we don't have it
@@ -126,21 +132,69 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     if (![bool]$(Get-Module PSDepend -ErrorAction SilentlyContinue)) {
         try {
             Import-Module PSDepend
-            $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
         }
         catch {
             Write-Error $_
-            Write-Error "Problem with PSDepend Installing/Importing Module Dependencies! The $ThisModule Module will not be loaded. Halting!"
             Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
             $global:FunctionResult = "1"
             return
         }
+    }
+
+    # Before we Invoke-PSDepend on module.requirements.psd1, make sure that the Target directory
+    # for Modules fits with the version of PowerShell that we're using
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        # Make sure the PowerShell Core User Scope Module Directory exists. If not, create it.
+        if (!$(Test-Path "$HOME\Documents\PowerShell\Modules")) {
+            $null = New-Item -ItemType Directory -Path "$HOME\Documents\PowerShell\Modules" -Force
+        }
+        $ModReqsContent = Get-Content "$PSScriptRoot\module.requirements.psd1"
+        $ModReqsLineToReplace = $($ModReqsContent | Select-String -Pattern "[\s]+Target[\s]=[\s]").Line
+        $UpdatedModReqsContent = $ModReqsContent -replace [regex]::Escape($ModReqsLineToReplace),"        Target = '$ENV:USERPROFILE\Documents\PowerShell\Modules'"
+        Set-Content -Path "$PSScriptRoot\module.requirements.psd1" -Value $UpdatedModReqsContent 
+    }
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        # Make sure the PowerShell Core User Scope Module Directory exists. If not, create it.
+        if (!$(Test-Path "$HOME\Documents\WindowsPowerShell\Modules")) {
+            $null = New-Item -ItemType Directory -Path "$HOME\Documents\WindowsPowerShell\Modules" -Force
+        }
+        $ModReqsContent = Get-Content "$PSScriptRoot\module.requirements.psd1"
+        $ModReqsLineToReplace = $($ModReqsContent | Select-String -Pattern "[\s]+Target[\s]=[\s]").Line
+        $UpdatedModReqsContent = $ModReqsContent -replace [regex]::Escape($ModReqsLineToReplace),"        Target = '$ENV:USERPROFILE\Documents\WindowsPowerShell\Modules'"
+        Set-Content -Path "$PSScriptRoot\module.requirements.psd1" -Value $UpdatedModReqsContent 
+    }
+
+    # Install Dependencies if they're not already
+    try {
+        $null = Invoke-PSDepend -Path "$PSScriptRoot\module.requirements.psd1" -Install -Import -Force
+    }
+    catch {
+        Write-Error $_
+        Write-Error "Problem with the PSDepend Module Installing/Importing Module Dependencies! The $ThisModule Module will not be loaded. Halting!"
+        Write-Warning "Please unload the $ThisModule Module via:`nRemove-Module $ThisModule"
+        $global:FunctionResult = "1"
+        return
     }
 }
 
 # Public Functions
 
 '@
+
+    ###### BEGIN Unique Additions to this Module ######
+    # Add PowerShim Module
+    <#
+    $PowerShimFileContent = Get-Content "$env:BHModulePath\powershim.psm1"
+    $SigBlockLineNumber = $PowerShimFileContent.IndexOf('# SIG # Begin signature block')
+    $ContentSansSigBlock = $($($PowerShimFileContent[0..$($SigBlockLineNumber-1)]) -join "`n").Trim() -split "`n"
+    $UniqueCode = $ContentSansSigBlock -join "`n"
+
+    if ($UniqueCode) {
+        $BoilerPlateFunctionSourcing = $BoilerPlateFunctionSourcing + $UniqueCode
+    }
+    #>
+    ###### END Unique Additions to this Module ######
+
     Set-Content -Path "$env:BHModulePath\$env:BHProjectName.psm1" -Value $BoilerPlateFunctionSourcing
 
     [System.Collections.ArrayList]$FunctionTextToAdd = @()
@@ -162,7 +216,7 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
             if (!$SetAuthenticodeResult -or $SetAuthenticodeResult.Status -eq "HashMisMatch") {throw}
         }
         catch {
-            Write-Error "Failed to sign '$ModuleName.psm1' with Code Signing Certificate! Invoke-Pester will not be able to load '$ModuleName.psm1'! Halting!"
+            Write-Error "Failed to sign '$env:BHProjectName.psm1' with Code Signing Certificate! Invoke-Pester will not be able to load '$env:BHProjectName.psm1'! Halting!"
             $global:FunctionResult = "1"
             return
         }
@@ -245,8 +299,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUw0UP/eUHFyOqI6gNQR1FfnKp
-# YCagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUu7BEK24NJtr9YBsrkY/snunS
+# YfWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -303,11 +357,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKhYQUy58SW073C4
-# vidj4jqiFM2jMA0GCSqGSIb3DQEBAQUABIIBACGNDxy4NK29I+W4N6LKwh4k55Va
-# 5EKQIBkr6Oc4M3X2Qc+ZYOMp+LxSYw3vhaYVHJdXwlumlxGZvfPmha+W8Ax1AtzL
-# JiR4QL/EE5VuQWPgi94bI9gYuOCFaaZUxpbE/p1ZeS7RPu9p4dCTV26k1TPawXO0
-# kA0x+6X6TMNsTOGSoEVkHprU2QYN1n7clQy6ykAPCZV0P2ne90XmCWQahRiBKKlN
-# f0fKTUfp7AeXsSDidKsHINu2SsGGhY4qdDbtWUx/XQRbmWEkHsW2kknQvagI+fM3
-# 5raadQVkt4L5oR3ImOI8+lsRAZqa6JyQecJnxJGDleh2NXcbOrNLhUqBqko=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIEx86THn2PyyEJ/
+# 83W0sOaKo0ZeMA0GCSqGSIb3DQEBAQUABIIBALpxI/HS45QQoHfi9XsBvdOuA7/b
+# pUuqdWMWbiioL3WSwjjgXAKIFWSnV7nhSjOiMiWABon805AwkBQribBdl7uIhsPW
+# IPQD1wS3AUwFlK1Drl1XlXwUcXyYUee9/6hPr9GICw/A31mY0WbesRHE7m3r2EMQ
+# 0TL3UEYPa2g7q6u9VMMx5woDa+7SadHaLkOnGiSVk33NMH2u6QkDFyVY8eS753jV
+# p30m9UwXeUu07tAltNIAvJMbb0svMHg4O5Gk5wk7AAR41nwXISAzXJHmKXECj5Uc
+# 35Qb4gKn1kEAmVpQ7d0BV0xyFF2CXYkOg9XVRCp1zt0x8r6tjdwhQMKrdVU=
 # SIG # End signature block
