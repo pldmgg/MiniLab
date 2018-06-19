@@ -268,27 +268,36 @@ function New-RunSpace {
                 }
             }
         }
-        $SetModulesPrep = foreach ($ModObj in $Modules) {
-            $ModuleManifestFullPath = $(Get-ChildItem -Path $ModObj.ModuleBase -Recurse -File | Where-Object {
-                $_.Name -eq "$($ModObj.Name).psd1"
-            }).FullName
 
-            $ModStringArray = @(
-                "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
-                '    try {'
-                "        Import-Module '$($ModObj.Name)' -NoClobber -ErrorAction Stop"
-                '    }'
-                '    catch {'
-                '        try {'
-                "            Import-Module '$ModuleManifestFullPath' -NoClobber -ErrorAction Stop"
-                '        }'
-                '        catch {'
-                "            Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
-                '        }'
-                '    }'
-                '}'
-            )
-            $ModStringArray -join "`n"
+        $ModulesNotToForward = @('MiniLab')
+
+        $SetModulesPrep = foreach ($ModObj in $Modules) {
+            if ($ModulesNotToForward -notcontains $ModObj.Name) {
+                $ModuleManifestFullPath = $(Get-ChildItem -Path $ModObj.ModuleBase -Recurse -File | Where-Object {
+                    $_.Name -eq "$($ModObj.Name).psd1"
+                }).FullName
+
+                $ModStringArray = @(
+                    '$tempfile = [IO.Path]::Combine([IO.Path]::GetTempPath(), [IO.Path]::GetRandomFileName())'
+                    "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
+                    '    try {'
+                    "        Import-Module '$($ModObj.Name)' -NoClobber -ErrorAction Stop 2>`$tempfile"
+                    '    }'
+                    '    catch {'
+                    '        try {'
+                    "            Import-Module '$ModuleManifestFullPath' -NoClobber -ErrorAction Stop 2>`$tempfile"
+                    '        }'
+                    '        catch {'
+                    "            Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
+                    '        }'
+                    '    }'
+                    '}'
+                    'if (Test-Path $tempfile) {'
+                    '    Remove-Item $tempfile -Force'
+                    '}'
+                )
+                $ModStringArray -join "`n"
+            }
         }
         $SetModulesString = $SetModulesPrep -join "`n"
 
@@ -478,8 +487,8 @@ function New-RunSpace {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUf42Vb6UxnSY3gXwpi6DQm3xt
-# tDqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmLHtcZJFilgOtNA1rPD58Zme
+# Y8igggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -536,11 +545,11 @@ function New-RunSpace {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFK7yMJa5Pj8ohP8w
-# tSON1nEnkVEmMA0GCSqGSIb3DQEBAQUABIIBAKU/0Id+cKPsxb9HmB15u6ik3PZK
-# jAnmJQ2LsKhMBCduKPr6McWha+IMaa13W2bko0WTi+p5GFgIRp/Dv/S32VVC1S1S
-# PFYacan35PMbHyT1is2pgM5VbGNXJJ48T9U+72Fhb6U03rUSMefWtZgwvTeN1Fnc
-# VKcKOzDLtjUs7DRWSS3Wjw18opQNO/NXtPwcT5LP2pj9cLmTznHsfEjt1qdYMvXC
-# 8K+krU3DfJrzpfL2nliq0XY2PU74gs0VYjKqIv6xrLNlUUdOt1v5FbeYT0PmLr3I
-# g4Fng+pBN1Ky8YFGIQwwhkciJUsYAeWGqFdyVDEJrTvzgB76u9joV/wABQ0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFARzD4Jry0bxomwm
+# oeV4QvM/J6Y/MA0GCSqGSIb3DQEBAQUABIIBAIpIugKnWbiSV+ONRfLtukJK5iYY
+# M9fu2kJLSCnxc7NzBDEj+pFedotdTBmNuGFIs+zcpBeBpsrKz0i5nUBGMDvl5LvY
+# oWhtK3RMbJc8pWX/VdzjIAWx7GqkoKUv5xbXWtZmX5vzyag4PvnWuWQMUB1up/qX
+# 02SQUfXipDKZ/V4eKY+RTuYVv8ekzXXfqcOolWuyQO3UmjtMKH9cIpQ1+8LCsRhF
+# kLENQ04m0feOzCdFOkknWaghNUIUj8UmCWXCI5g85d/BYTGXqaO7RYcJ/RCap2xV
+# p2zlMDL7YOoayEVqrzSNVPIWnkHw2oZSUOXafbM/T9IVjRaJmVn0fvy3gt0=
 # SIG # End signature block

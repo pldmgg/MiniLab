@@ -28,16 +28,50 @@ function GetWinPSInCore {
         $VariablesNotToForward = @()
 
         $Variables = Get-Variable
-        foreach ($VarObj in $Variables) {
-            if ($VariablesNotToForward -notcontains $VarObj.Name) {
-                try {
-                    $GenericRunspace.SessionStateProxy.SetVariable($VarObj.Name,$VarObj.Value)
-                }
-                catch {
-                    Write-Verbose "Skipping `$$($VarObj.Name)..."
+        if ($PSBoundParameters['VariablesToForward'] -and $VariablesToForward -notcontains '*') {
+            $Variables = foreach ($VarObj in $Variables) {
+                if ($VariablesToForward -contains $VarObj.Name) {
+                    $VarObj
                 }
             }
         }
+        $SetVarsPrep = foreach ($VarObj in $Variables) {
+            if ($VariablesNotToForward -notcontains $VarObj.Name) {
+                try {
+                    $VarValueAsJSON = $VarObj.Value | ConvertTo-Json -Compress
+                }
+                catch {
+                    #Write-Warning "Unable to pass the variable '$($VarObj.Name)'..."
+                }
+
+                if ($VarValueAsJSON) {
+                    if ([char[]]$VarObj.Name -contains '(' -or [char[]]$VarObj.Name -contains ' ') {
+                        $VarStringArr = @(
+                            'try {'
+                            $('    ${' + $VarObj.Name + '}' + ' = ' + 'ConvertFrom-Json ' + "@'`n$VarValueAsJSON`n'@")
+                            '}'
+                            'catch {'
+                            "    Write-Verbose 'Unable to forward variable $($VarObj.Name)'"
+                            '}'
+                        )
+                    }
+                    else {
+                        $VarStringArr = @(
+                            'try {'
+                            $('    $' + $VarObj.Name + ' = ' + 'ConvertFrom-Json ' + "@'`n$VarValueAsJSON`n'@")
+                            '}'
+                            'catch {'
+                            "    Write-Verbose 'Unable to forward variable $($VarObj.Name)'"
+                            '}'
+                        )
+                    }
+                    $VarStringArr -join "`n"
+                }
+            }
+        }
+        $SetVarsString = $SetVarsPrep -join "`n"
+
+        $null = $SetEnvStringArray.Add($SetVarsString)
 
         # Set Environment Variables
         $EnvVariables = Get-ChildItem Env:\
@@ -84,27 +118,36 @@ function GetWinPSInCore {
                 }
             }
         }
-        $SetModulesPrep = foreach ($ModObj in $Modules) {
-            $ModuleManifestFullPath = $(Get-ChildItem -Path $ModObj.ModuleBase -Recurse -File | Where-Object {
-                $_.Name -eq "$($ModObj.Name).psd1"
-            }).FullName
 
-            $ModStringArray = @(
-                "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
-                '    try {'
-                "        Import-Module '$($ModObj.Name)' -ErrorAction Stop"
-                '    }'
-                '    catch {'
-                '        try {'
-                "            Import-Module '$ModuleManifestFullPath' -ErrorAction Stop"
-                '        }'
-                '        catch {'
-                "            Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
-                '        }'
-                '    }'
-                '}'
-            )
-            $ModStringArray -join "`n"
+        $ModulesNotToForward = @('MiniLab')
+
+        $SetModulesPrep = foreach ($ModObj in $Modules) {
+            if ($ModulesNotToForward -notcontains $ModObj.Name) {
+                $ModuleManifestFullPath = $(Get-ChildItem -Path $ModObj.ModuleBase -Recurse -File | Where-Object {
+                    $_.Name -eq "$($ModObj.Name).psd1"
+                }).FullName
+
+                $ModStringArray = @(
+                    '$tempfile = [IO.Path]::Combine([IO.Path]::GetTempPath(), [IO.Path]::GetRandomFileName())'
+                    "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
+                    '    try {'
+                    "        Import-Module '$($ModObj.Name)' -ErrorAction Stop -WarningAction SilentlyContinue 2>`$tempfile"
+                    '    }'
+                    '    catch {'
+                    '        try {'
+                    "            Import-Module '$ModuleManifestFullPath' -ErrorAction Stop -WarningAction SilentlyContinue 2>`$tempfile"
+                    '        }'
+                    '        catch {'
+                    "            Write-Verbose 'Unable to Import-Module $($ModObj.Name)'"
+                    '        }'
+                    '    }'
+                    '}'
+                    'if (Test-Path $tempfile) {'
+                    '    Remove-Item $tempfile -Force'
+                    '}'
+                )
+                $ModStringArray -join "`n"
+            }
         }
         $SetModulesString = $SetModulesPrep -join "`n"
 
@@ -206,30 +249,30 @@ function GetWinPSInCore {
     }
     else {
         # Check to see if there's a PSSession open from the WindowsCompatibility Module
+        <#
         if (!$global:WinPSSession) {
             $CurrentUser = $($(whoami) -split '\\')[-1]
             if ([bool]$(Get-PSSession -Name "win-$CurrentUser" -ErrorAction SilentlyContinue)) {
                 $global:WinPSSession = Get-PSSession -Name "win-$CurrentUser"
             }
         }
+        #>
 
-        # If no WindowsCompatibility PSSession was found, we'll make our own...
-        if (!$global:WinPSSession) {
-            $NewPSSessionSplatParams = @{
-                ConfigurationName   = 'Microsoft.PowerShell'
-                Name                = 'WinPSSession'
-                EnableNetworkAccess = $True
-            }
-            $global:WinPSSession = New-PSSession @NewPSSessionSplatParams
-            
-            if (!$global:WinPSSession) {
-                Write-Error "There was a problem creating the New-PSSession named 'WinPSSession'! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-            else {
-                Write-Host "A new PSSession called 'WinPSSession' has been created along with a Global Variable referencing it called `$global:WinPSSession." -ForegroundColor Green
-            }
+        $WinPSSessionName = NewUniqueString -PossibleNewUniqueString "WinPSSession" -ArrayOfStrings $(Get-PSSession).Name
+        $NewPSSessionSplatParams = @{
+            ConfigurationName   = 'Microsoft.PowerShell'
+            Name                = $WinPSSessionName
+            EnableNetworkAccess = $True
+        }
+        $WinPSSession = New-PSSession @NewPSSessionSplatParams
+        
+        if (!$WinPSSession) {
+            Write-Error "There was a problem creating the New-PSSession named 'WinPSSession'! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        else {
+            Write-Host "A new PSSession called 'WinPSSession' has been created along with a Global Variable referencing it called `$global:WinPSSession." -ForegroundColor Green
         }
         Invoke-Command -Session $global:WinPSSession -ScriptBlock $FinalSB -HideComputerName
     }
@@ -240,13 +283,15 @@ function GetWinPSInCore {
             #Remove-Item $SetEnvStringArrayPath -Force
         }
     }
+
+    $WinPSSession | Remove-PSSession
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUC3pw7yKTLZGviggZgBeM1Emh
-# KqSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUNfhoLv4wbNRjSUM5Nd8xmESe
+# 0mOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -303,11 +348,11 @@ function GetWinPSInCore {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFn00Ui9Zs7JcAUq
-# g4xRyfKqb/IDMA0GCSqGSIb3DQEBAQUABIIBAJ0lVmuzAy4+/UdarjV0nbRn7X+r
-# emQt8HbioY+ixcX8TuDhrwjg/BtwWJmZPwgI6s3e5lrr9AhzOpmx/Z7E8MXMZDNt
-# RWqWkfRFuUadrIjVV+xOBwisfG5zxIQgr8LORtUgr2nvRKNPxokQBo6DjH7b0gfJ
-# 36fuVG0wWjquRXoVsCj9+xiuyW+wQLelv8W9VzPLIFDkRFevanKU8Yf9tH13xdBX
-# m8GY69LC2oLKmQMLIWhHh86AeNwaljLi+BYPYaXy7YsiB+4xHCZl8XP+qaYkztJC
-# LLr+ZJ5uVXnxW18p5S097huxWrxn1dwfS5eIlppvpS6vqaMGtQXgd+ZiIzw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJ1cZb745okrvhe9
+# xMzUSoaEFAFWMA0GCSqGSIb3DQEBAQUABIIBALIEkh/LwJ+o1tQtT2OM0dMjdge8
+# ihmREpPIHCLplFftnM9a1EpfZBp/8TtTWzsyUpinys4W9GTdbFFPfOpAWtpOplFc
+# 2qkGoVCD2LCfIPK0CfW9XC/xK2hHBVtuQfVKxDyaZDcfXUWRwUZdJFND1vkYUMxb
+# MHz4EGOlT/MP9fJeHj5JMBVXS6FFzqVZFhQnwawS0lWVfKIA5Q19wEADQ/kKbK0u
+# RB0SZFfq1xjdXxaKFAL6RGUwohmWy/IcJkksJn14K5Jil9c277N8jqDdYrWyl4ex
+# oro4Gddr/KUgm0zT+uxoZRVg32h1IiN6wrXwvmQEcvX5e9cS1KU7ezRn92c=
 # SIG # End signature block

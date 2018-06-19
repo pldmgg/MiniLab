@@ -179,7 +179,18 @@ function New-DomainController {
     [System.Collections.ArrayList]$FailedDSCResourceInstall = @()
     foreach ($DSCResource in $NeededDSCResources) {
         try {
-            $null = Install-Module $DSCResource -ErrorAction Stop
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                # Make sure the PSSession Type Accelerator exists
+                $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+                if ($TypeAccelerators.Name -notcontains "PSSession") {
+                    [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+                }
+
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {Install-Module $using:DSCResource}
+            }
+            else {
+                $null = Install-Module $DSCResource -ErrorAction Stop
+            }
         }
         catch {
             Write-Error $_
@@ -192,14 +203,36 @@ function New-DomainController {
         $global:FunctionResult = "1"
         return
     }
-    $DSCModulesToTransfer = foreach ($DSCResource in $NeededDSCResources) {
-        $Module = Get-Module -ListAvailable $DSCResource
-        "$($($Module.ModuleBase -split $DSCResource)[0])\$DSCResource"
+
+    [System.Collections.ArrayList]$DSCModulesToTransfer = @()
+    [System.Collections.ArrayList]$Modules = @()
+    foreach ($DSCResource in $NeededDSCResources) {
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            # Make sure the PSSession Type Accelerator exists
+            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+            if ($TypeAccelerators.Name -notcontains "PSSession") {
+                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+            }
+
+            $Module = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $(Get-Module -ListAvailable $using:DSCResource | Where-Object {
+                    $_.ModuleBase -match "\\WindowsPowerShell\\"
+                } | Sort-Object -Property Version)[-1]
+            }
+        }
+        else {
+            $Module = $(Get-Module -ListAvailable $DSCResource | Where-Object {
+                $_.ModuleBase -match "\\WindowsPowerShell\\"
+            } | Sort-Object -Property Version)[-1]
+        }
+        
+        $null = $DSCModulesToTransfer.Add($Module.ModuleBase)
+        $null = $Modules.Add($Module)
     }
 
-    $PSDSCVersion = $(Get-Module -ListAvailable -Name PSDesiredStateConfiguration).Version[-1].ToString()
-    $xActiveDirectoryVersion = $(Get-Module -ListAvailable -Name xActiveDirectory).Version[-1].ToString()
-    $xPSDSCVersion = $(Get-Module -ListAvailable -Name xPSDesiredStateConfiguration).Version[-1].ToString()
+    $PSDSCVersion = $($Modules | Where-Object {$_.Name -eq "PSDesiredStateConfiguration"}).Version.ToString()
+    $xActiveDirectoryVersion = $($Modules | Where-Object {$_.Name -eq "xActiveDirectory"}).Version.ToString()
+    $xPSDSCVersion = $($Modules | Where-Object {$_.Name -eq "xPSDesiredStateConfiguration"}).Version.ToString()
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
     try {
@@ -751,8 +784,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUeSdRde8yirPYQyELMNs2OFQH
-# ufugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUP7rxSPDa1YE4tE65In7nZLLo
+# LQmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -809,11 +842,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFE/QPB4LFm2c7DNU
-# jgzSyup8cmcSMA0GCSqGSIb3DQEBAQUABIIBALiQfiF92RDckiDVNFUrhJE1eJ4M
-# aHZiHY7ayD4Rxdyur/oPAQfWrR3cVNK8xtn7PnNjB/6zU7eV69hBGAnp3Gq9SD+N
-# mPDfKxlwnylBoq7VZvYkYfPBmt3fzopG+zZJ+vOgaL5w4dI3jhoom+711RLKLtOo
-# 0w1U6g/rM9V/mkEkgIFeVQxPJ6GflvPY2ZBPXTTNJ8LdoQqrL7D9cEG8KOhLvMqo
-# FbOQWWP9v2pZNDUZ1nNNbIrWVPYR1vUXdxwNV+UosG5OkVGeA0BfLmiTHB35z/Xn
-# RAbLkXPdyOPtcVozSvjhCGBjoMw2Hux1RkZs4dWbEfVBjrTjo1fiMqLfEDg=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBVM5NOrGcFiqi3m
+# IeXw1QTHiL+HMA0GCSqGSIb3DQEBAQUABIIBAH8jj6ISo5YNuz0Kf5OFv4JsyOVD
+# r+NDwQAbr2X+pAJjqbRfP6Uoini/5ws/j/AZx0UOJwJ72AkcfHKafwDsCHoZZiyB
+# tQFtRUYGUUJV8mY3zbXnXlV1kpulkz4aDn7e3cilfFvMUR5PhQ4AWt8SO0+oCV3G
+# oX2jxcaYS5O3grGyukwrbRwnc3+dNAKZRgOq01CEzD7Eq9PHtIxhFK+MKutf5/qk
+# mGWabhUJuwxa5hIk2icXp3xYAbsFWtyMtDxJufVhIasMrM43NEZFmmYLtYjO3bKA
+# 7HIwAXxtTmBiPu3YiqNwamnCOYUi3iYmnBeOxvzqhkNsNMqkf54IQtc5HOw=
 # SIG # End signature block

@@ -25,6 +25,7 @@ if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win3
 
         PathToPS1OrPSM1 = "$PSScriptRoot\MiniLab.psm1"
 
+        ErrorAction     = "SilentlyContinue"
     }
     if ($ModulesToInstallAndImport) {
         $InvPSCompatSplatParams.Add("ModuleDependenciesThatMayNotBeInstalled",$ModulesToInstallAndImport)
@@ -3780,20 +3781,34 @@ function Deploy-HyperVVagrantBoxManually {
         Push-Location $DownloadedVMDir
 
         if ($PSVersionTable.PSEdition -eq "Core") {
-            GetWinPSInCore -ScriptBlock {
-                $FunctionsForSBUse | foreach {Invoke-Expression $_}
-
-                while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
-                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-                    Start-Sleep -Seconds 5
-                }
+            Write-Host "Checking file lock of .box file..."
+            
+            # Make sure the PSSession Type Accelerator exists
+            Write-Host "Getting Type Accelerators..."
+            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+            Write-Host "Done getting Type Accelerators."
+            if ($TypeAccelerators.Name -notcontains "PSSession") {
+                Write-Host "Adding PSSession Type Accelerator..."
+                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
             }
-            <#
-            while ([bool]$(Invoke-WinCommand -ScriptBlock {GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue})) {
+
+            $Module = Get-Module MiniLab
+            # NOTE: The below $FunctionsForSBUse is loaded when the MiniLab Module is imported
+            Write-Host "Getting FunctionsForSBUse..."
+            $ThisModuleFunctions = $script:FunctionsForSBUse
+            Write-Host "`$ThisModuleFunctions.Count is $($ThisModuleFunctions.Count)"
+            Write-Host "BoxFilePath is $BoxFilePath"
+            Write-Host "Check to see if `$ThisModuleFunctions contains GetFileLockProcess: $([bool]$($ThisModuleFunctions -match '^function GetFileLockProcess'))"
+
+            $FileLockBool = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $args | foreach {Invoke-Expression $_}
+                [bool]$(GetFileLockProcess -FilePath $using:BoxFilePath -ErrorAction SilentlyContinue)
+            } -ArgumentList $ThisModuleFunctions
+            
+            while ($FileLockBool) {
                 Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
                 Start-Sleep -Seconds 5
             }
-            #>
         }
         else {
             while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
@@ -3803,7 +3818,36 @@ function Deploy-HyperVVagrantBoxManually {
         }
 
         try {
-            $null = & $TarCmd -xzvf $BoxFilePath 2>&1
+            Write-Host "Extracting .box file..."
+            
+            $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $ProcessInfo.WorkingDirectory = $DownloadedVMDir
+            $ProcessInfo.FileName = $TarCmd
+            $ProcessInfo.RedirectStandardError = $true
+            $ProcessInfo.RedirectStandardOutput = $true
+            $ProcessInfo.UseShellExecute = $false
+            $ProcessInfo.Arguments = "-xzvf $BoxFilePath"
+            $Process = New-Object System.Diagnostics.Process
+            $Process.StartInfo = $ProcessInfo
+            $Process.Start() | Out-Null
+            # Below $FinishedInAlottedTime returns boolean true/false
+            # 1800000 ms is 30 minutes
+            $FinishedInAlottedTime = $Process.WaitForExit(1800000)
+            if (!$FinishedInAlottedTime) {
+                $Process.Kill()
+            }
+            $stdout = $Process.StandardOutput.ReadToEnd()
+            $stderr = $Process.StandardError.ReadToEnd()
+            $AllOutput = $stdout + $stderr
+
+            if ($stderr) {
+                if ($stderr -match "failed") {
+                    throw $stderr
+                }
+                else {
+                    Write-Warning $stderr
+                }
+            }
         }
         catch {
             Write-Error $_
@@ -8686,7 +8730,18 @@ function New-DomainController {
     [System.Collections.ArrayList]$FailedDSCResourceInstall = @()
     foreach ($DSCResource in $NeededDSCResources) {
         try {
-            $null = Install-Module $DSCResource -ErrorAction Stop
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                # Make sure the PSSession Type Accelerator exists
+                $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+                if ($TypeAccelerators.Name -notcontains "PSSession") {
+                    [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+                }
+
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {Install-Module $using:DSCResource}
+            }
+            else {
+                $null = Install-Module $DSCResource -ErrorAction Stop
+            }
         }
         catch {
             Write-Error $_
@@ -8699,14 +8754,36 @@ function New-DomainController {
         $global:FunctionResult = "1"
         return
     }
-    $DSCModulesToTransfer = foreach ($DSCResource in $NeededDSCResources) {
-        $Module = Get-Module -ListAvailable $DSCResource
-        "$($($Module.ModuleBase -split $DSCResource)[0])\$DSCResource"
+
+    [System.Collections.ArrayList]$DSCModulesToTransfer = @()
+    [System.Collections.ArrayList]$Modules = @()
+    foreach ($DSCResource in $NeededDSCResources) {
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            # Make sure the PSSession Type Accelerator exists
+            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+            if ($TypeAccelerators.Name -notcontains "PSSession") {
+                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+            }
+
+            $Module = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                Get-Module -ListAvailable $using:DSCResource | Where-Object {
+                    $_.ModuleBase -match "\\WindowsPowerShell\\"
+                } | Sort-Object -Property Version
+            }
+        }
+        else {
+            $Module = Get-Module -ListAvailable $DSCResource | Where-Object {
+                $_.ModuleBase -match "\\WindowsPowerShell\\"
+            } | Sort-Object -Property Version
+        }
+        
+        $null = $DSCModulesToTransfer.Add($Module.ModuleBase)
+        $null = $Modules.Add($Module)
     }
 
-    $PSDSCVersion = $(Get-Module -ListAvailable -Name PSDesiredStateConfiguration).Version[-1].ToString()
-    $xActiveDirectoryVersion = $(Get-Module -ListAvailable -Name xActiveDirectory).Version[-1].ToString()
-    $xPSDSCVersion = $(Get-Module -ListAvailable -Name xPSDesiredStateConfiguration).Version[-1].ToString()
+    $PSDSCVersion = $($Modules | Where-Object {$_.Name -eq "PSDesiredStateConfiguration"}).Version.ToString()
+    $xActiveDirectoryVersion = $($Modules | Where-Object {$_.Name -eq "xActiveDirectory"}).Version.ToString()
+    $xPSDSCVersion = $($Modules | Where-Object {$_.Name -eq "xPSDesiredStateConfiguration"}).Version.ToString()
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
     try {
@@ -10378,27 +10455,36 @@ function New-RunSpace {
                 }
             }
         }
-        $SetModulesPrep = foreach ($ModObj in $Modules) {
-            $ModuleManifestFullPath = $(Get-ChildItem -Path $ModObj.ModuleBase -Recurse -File | Where-Object {
-                $_.Name -eq "$($ModObj.Name).psd1"
-            }).FullName
 
-            $ModStringArray = @(
-                "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
-                '    try {'
-                "        Import-Module '$($ModObj.Name)' -NoClobber -ErrorAction Stop"
-                '    }'
-                '    catch {'
-                '        try {'
-                "            Import-Module '$ModuleManifestFullPath' -NoClobber -ErrorAction Stop"
-                '        }'
-                '        catch {'
-                "            Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
-                '        }'
-                '    }'
-                '}'
-            )
-            $ModStringArray -join "`n"
+        $ModulesNotToForward = @('MiniLab')
+
+        $SetModulesPrep = foreach ($ModObj in $Modules) {
+            if ($ModulesNotToForward -notcontains $ModObj.Name) {
+                $ModuleManifestFullPath = $(Get-ChildItem -Path $ModObj.ModuleBase -Recurse -File | Where-Object {
+                    $_.Name -eq "$($ModObj.Name).psd1"
+                }).FullName
+
+                $ModStringArray = @(
+                    '$tempfile = [IO.Path]::Combine([IO.Path]::GetTempPath(), [IO.Path]::GetRandomFileName())'
+                    "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
+                    '    try {'
+                    "        Import-Module '$($ModObj.Name)' -NoClobber -ErrorAction Stop 2>`$tempfile"
+                    '    }'
+                    '    catch {'
+                    '        try {'
+                    "            Import-Module '$ModuleManifestFullPath' -NoClobber -ErrorAction Stop 2>`$tempfile"
+                    '        }'
+                    '        catch {'
+                    "            Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
+                    '        }'
+                    '    }'
+                    '}'
+                    'if (Test-Path $tempfile) {'
+                    '    Remove-Item $tempfile -Force'
+                    '}'
+                )
+                $ModStringArray -join "`n"
+            }
         }
         $SetModulesString = $SetModulesPrep -join "`n"
 
@@ -12317,8 +12403,8 @@ $FunctionsForSBUse = @(
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUX1zQc+uaVnMcdCH2HhRE0AZ6
-# NSKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSQGXzuSuoeHLgkkoNz1cKoW7
+# Xn2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12375,11 +12461,11 @@ $FunctionsForSBUse = @(
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDEJHiNkqdwAF0m7
-# xs2Y6/TdsKsLMA0GCSqGSIb3DQEBAQUABIIBAGY0siIYFMgbPlkqjUciZzDGy34V
-# PamvVTWb466HPEu5jgt+IIal7YbfiBUUS2/0KsoD5hIdVjmHP9XZgBhxusi2RXv6
-# oXsNszVAI0FIlunRPSO+11s3hwJxuAf2s7HM3f8y5XdYHMn4ZhNC7PXUkvM5YY3p
-# SI7KOE12oFkN5MaV7r9GHhh07QiJOuJCfQfCe2KJp8pW372MQNVyrVmPFZy4kf3q
-# fbg3aef7L3wbnU9FfRSZc7mAZtlfgn0foeP+RQb9LuQ0ax8rK4whyv5PGjXHiURu
-# U/Dqw+A6DhQXN2YaL+rNfzZQf9tG0iLX0Te/MV/LVHQAHowo96a+tOOxreM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBB8kdbNjU87+q4x
+# Q8XHnq4Ie2EXMA0GCSqGSIb3DQEBAQUABIIBAAe7nZW+NVCQJCBDOHwUgVsVrKAL
+# Lt9ih1kfEmFvR1u00rebNbTV795ZwLzjQ3BjMFBw9EFMYp7rYP8zfodznX1/uitW
+# Xu1zR/B3MU7yAxXjmc/+UzHOt4rwATJxfUvOWXSIiHvNbEa676breqiwjkVPNXJx
+# iBC606XhGsJfxE0+0hUSugFKlVvXUPQfc9lFjnroc5N5Z1TyoJPEc+aiu/TmoD4l
+# bwkdUvIs4hOerkJhCFNwEuD7DvfbMA8WEXNIoE+jXubZO2NKhPU1j16PfQGdRuF/
+# hQ4E3BxG4ogYHmnICTLIx6zneRNEjR/iWjVHWvN6/Od9aSAJ+1ZpfwSdwdQ=
 # SIG # End signature block

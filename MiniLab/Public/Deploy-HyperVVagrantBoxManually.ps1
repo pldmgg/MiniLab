@@ -409,21 +409,27 @@ function Deploy-HyperVVagrantBoxManually {
         # Extract the .box File
         Push-Location $DownloadedVMDir
 
+        Write-Host "Checking file lock of .box file..."
         if ($PSVersionTable.PSEdition -eq "Core") {
-            GetWinPSInCore -ScriptBlock {
-                $FunctionsForSBUse | foreach {Invoke-Expression $_}
-
-                while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
-                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-                    Start-Sleep -Seconds 5
-                }
+            # Make sure the PSSession Type Accelerator exists
+            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+            if ($TypeAccelerators.Name -notcontains "PSSession") {
+                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
             }
-            <#
-            while ([bool]$(Invoke-WinCommand -ScriptBlock {GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue})) {
+
+            $Module = Get-Module MiniLab
+            # NOTE: The below $FunctionsForSBUse is loaded when the MiniLab Module is imported
+            $ThisModuleFunctions = $script:FunctionsForSBUse
+
+            $FileLockBool = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $args | foreach {Invoke-Expression $_}
+                [bool]$(GetFileLockProcess -FilePath $using:BoxFilePath -ErrorAction SilentlyContinue)
+            } -ArgumentList $ThisModuleFunctions
+            
+            while ($FileLockBool) {
                 Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
                 Start-Sleep -Seconds 5
             }
-            #>
         }
         else {
             while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
@@ -433,7 +439,36 @@ function Deploy-HyperVVagrantBoxManually {
         }
 
         try {
-            $null = & $TarCmd -xzvf $BoxFilePath 2>&1
+            Write-Host "Extracting .box file..."
+            
+            $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $ProcessInfo.WorkingDirectory = $DownloadedVMDir
+            $ProcessInfo.FileName = $TarCmd
+            $ProcessInfo.RedirectStandardError = $true
+            $ProcessInfo.RedirectStandardOutput = $true
+            $ProcessInfo.UseShellExecute = $false
+            $ProcessInfo.Arguments = "-xzvf $BoxFilePath"
+            $Process = New-Object System.Diagnostics.Process
+            $Process.StartInfo = $ProcessInfo
+            $Process.Start() | Out-Null
+            # Below $FinishedInAlottedTime returns boolean true/false
+            # 1800000 ms is 30 minutes
+            $FinishedInAlottedTime = $Process.WaitForExit(1800000)
+            if (!$FinishedInAlottedTime) {
+                $Process.Kill()
+            }
+            $stdout = $Process.StandardOutput.ReadToEnd()
+            $stderr = $Process.StandardError.ReadToEnd()
+            $AllOutput = $stdout + $stderr
+
+            if ($stderr) {
+                if ($stderr -match "failed") {
+                    throw $stderr
+                }
+                else {
+                    Write-Warning $stderr
+                }
+            }
         }
         catch {
             Write-Error $_
@@ -602,8 +637,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSfdf3U7VueAwE4AXbt9cQBjs
-# 46Wgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU4zLTgdvu4w3OKEgKHgMg40Om
+# KGigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -660,11 +695,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFICGMIukJQfd2fV4
-# 0zFOJ8pT+wpSMA0GCSqGSIb3DQEBAQUABIIBAIsJe63r4geD4blfSbEdiOLFQshM
-# VnfS2LsL1TxnRqFrhbCs24WrDnXplmLvkgLIeTUxrevAXRO5BafimujOsOfqfEJr
-# 1bH48+kgXye7djtHWGBox1fQ5jvftUoyelQ3zM0dVJvUT5Un9ZrmDhw0NaSj2+iZ
-# LHQFZy3PqhjlQlJEpvre3WRmy3f/+zO+psHRgJqIS1t3k7Zj0xRg7KsfGZZYChOV
-# j/HSJlFyRn1ZS2MSlkH3Bf5I1CXo4GlYKGtybvQf6gzwG1m1dodhglOVL8E2Qfat
-# 1BoQKQKWnF/KZAhO+eJsooT/mL6ZQHFYZ3azP4+K9GeEIAF03dtwcPkOURk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBHNz+TWCt1ePkLI
+# y4MpTqBVDsDcMA0GCSqGSIb3DQEBAQUABIIBAJrVTBcE77+kCGApwh9OXw52Vwoo
+# Gc8963Wu29jqIYVPJ+2RdhEootDqh2mveo9V3kIU7mj5izcYgjH8IxWA8y08i96f
+# VIg9EvbO9aYF5P10tOuUE41N5Iv+IVf9YF1eqCzG8BP0zGD+4Go24A7tz5ofcV7X
+# ROewpkq974moZeS2L4UZeQwK87zBn+Mzn+c9yGJ0IMf9a52EmkS6Yyb5GM5D6mQt
+# XhfxjqO7iXjNQ5sNumCHkNEn8c7kRFxi5zC8FAZdfXddAVhr5+yat90kMQ3/4WK9
+# MvoJiFZ8GjqDmLIXoIRIXIYR1/NpjpOfpCgRWw69e7OQPcvpJI9GdFRDqsk=
 # SIG # End signature block

@@ -208,6 +208,7 @@ function InvokePSCompatibility {
                 foreach ($WinPSModuleObject in $ModuleDependencies.WinPSModuleDependencies) {
                     if ($ModulesSuccessfullyLoaded.ModuleName -notcontains $WinPSModuleObject.ModuleName) {
                         try {
+                            Write-Host "Importing Module $($WinPSModuleObject.ModuleName)..."
                             Import-WinModule $WinPSModuleObject.ModuleName -ErrorAction Stop
                             $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
                         }
@@ -219,6 +220,7 @@ function InvokePSCompatibility {
                             }
 
                             try {
+                                Write-Host "Importing Module $ModuleManifestPath..."
                                 Import-WinModule $ModuleManifestPath -ErrorAction Stop
                                 $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
                             }
@@ -232,6 +234,7 @@ function InvokePSCompatibility {
                 foreach ($PSCoreModuleObject in $ModuleDependencies.PSCoreModuleDependencies) {
                     if ($ModulesSuccessfullyLoaded.ModuleName -notcontains $PSCoreModuleObject.ModuleName) {
                         try {
+                            Write-Host "Importing Module $($PSCoreModuleObject.ModuleName)..."
                             Import-Module $PSCoreModuleObject.ModuleName -ErrorAction Stop
                             $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
                         }
@@ -243,6 +246,7 @@ function InvokePSCompatibility {
                             }
 
                             try {
+                                Write-Host "Importing Module $ModuleManifestPath..."
                                 Import-Module $ModuleManifestPath -ErrorAction Stop
                                 $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
                             }
@@ -257,6 +261,7 @@ function InvokePSCompatibility {
             if ($PSVersionTable.PSEdition -ne "Core") {
                 foreach ($WinPSModuleObject in $ModuleDependencies.WinPSModuleDependencies) {
                     try {
+                        Write-Host "Importing Module $($WinPSModuleObject.ModuleName)..."
                         Import-Module $WinPSModuleObject.ModuleName -Scope Global -ErrorAction Stop
                         $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
                     }
@@ -268,6 +273,7 @@ function InvokePSCompatibility {
                         }
 
                         try {
+                            Write-Host "Importing Module $ModuleManifestPath..."
                             Import-Module $ModuleManifestPath -Scope Global -ErrorAction Stop
                             $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
                         }
@@ -279,6 +285,7 @@ function InvokePSCompatibility {
 
                 foreach ($PSCoreModuleObject in $ModuleDependencies.PSCoreModuleDependencies) {
                     try {
+                        Write-Host "Importing Module $($PSCoreModuleObject.ModuleName)..."
                         Import-Module $PSCoreModuleObject.ModuleName -ErrorAction Stop
                         $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
                     }
@@ -290,6 +297,7 @@ function InvokePSCompatibility {
                         }
 
                         try {
+                            Write-Host "Importing Module $ModuleManifestPath..."
                             Import-Module $ModuleManifestPath -ErrorAction Stop
                             $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
                         }
@@ -391,8 +399,8 @@ function InvokePSCompatibility {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU78/f+Qvzh366d2b/+CL9c+9G
-# YLGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUaWtV4pqakhMkF5EIoO2SkEzx
+# jJ+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -449,11 +457,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFF/C0PdJSs5ikeU1
-# qBh/CGufgU/dMA0GCSqGSIb3DQEBAQUABIIBABLLoPu+niZz/ac86V8umtX+FkR3
-# G8qfC7c1LeDRsZ8T3j5N41lL+VyHM+t3KcmbvYPG0LyIMRMEh1iFtQ0W4QzuwnN3
-# XL2Giwp4cJdP9GsWz0tclM95tBtlDVreJHyRxb/ORdeLJACZLg968g7uXBP6dDvw
-# CkXhu1zpnEzmoAmM9iJMgU7JLurw5pTxJYWYUj+5Q190sDOz+Ma0btK3WLosEP+z
-# 3oBe86kArRXUx60E5/7trrxIevaRJzcAiLYIZsFurRYZaamx3uxSxHGHcd97+gru
-# IxYYOxyZnRBLBtCVDYryp96M6bcIEsz8M0TswJEic9ljbJMLwQUqn5oOFOU=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHflrKrsYzjjHwBK
+# +sF0V1WOXJcDMA0GCSqGSIb3DQEBAQUABIIBACRQ4ZJ826dB4duh7QrvTdoPlebZ
+# 8k4Xmu5gsEppngu6kF5oWSrp4VdHe71eYFv/9EdFOCOwY6Z6QHoR8OyziasUDcMP
+# GkVcrDqSXPbGQ8SSvRxnv7BTSkvWw7JUkyJVbPjLWnQ6FuK3KGWzFi3Ci2XeN5Xx
+# gyfbW/9pAP7RVDzWP15NxGfow35TgIvTmpvinUSCYohE6vKRwwy2iHiH77dEYpSx
+# iZDkNhsDJ1K2iC0FNe9ulknoal321goF6zX3kHPdo2TEnDQzge5qvdkGMiyn9lBX
+# dH3oepJ2rWobm42fg44zOmGETOQX2WLuZV+4/cK56YJx5OLwnylKO0k39tI=
 # SIG # End signature block
