@@ -279,32 +279,6 @@ function Create-Domain {
     }
     #>
 
-    $FunctionsForSBUse = @(
-        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text
-        ${Function:GetElevation}.Ast.Extent.Text
-        ${Function:GetFileLockProcess}.Ast.Extent.Text
-        ${Function:GetNativePath}.Ast.Extent.Text
-        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-        ${Function:InstallFeatureDism}.Ast.Extent.Text
-        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-        ${Function:NewUniqueString}.Ast.Extent.Text
-        ${Function:PauseForWarning}.Ast.Extent.Text
-        ${Function:ResolveHost}.Ast.Extent.Text
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-        ${Function:UnzipFile}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-        ${Function:Generate-Certificate}.Ast.Extent.Text
-        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-        ${Function:Manage-HyperVVM}.Ast.Extent.Text
-        ${Function:New-DomainController}.Ast.Extent.Text
-        ${Function:New-RootCA}.Ast.Extent.Text
-        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-        ${Function:New-SubordinateCA}.Ast.Extent.Text
-    )
-
     $FinalDomainName = $NewDomain
     $DomainShortName = $($FinalDomainName -split '\.')[0]
 
@@ -413,55 +387,62 @@ function Create-Domain {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        $NewVMDeploySBAsString = @"
-[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
-
-`$env:Path = '$env:Path'
-
-# Load the functions we packed up
-`$args | foreach { Invoke-Expression `$_ }
-
-`$DeployBoxSplatParams = @{
-    VagrantBox                  = '$Windows2016VagrantBox'
-    CPUs                        = 2
-    Memory                      = 4096
-    VagrantProvider             = "hyperv"
-    VMName                      = '$DomainShortName' + "DC1"
-    VMDestinationDirectory      = '$VMStorageDirectory'
-    SkipHyperVInstallCheck      = `$True
-    CopyDecompressedDirectory   = `$True
-}
-
-if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
-    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
-    }
-}
-if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
-    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
-    }
-}
-
-`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
-`$DeployBoxResult
-"@
-        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+        $NewVMDeploySBAsString = @(
+            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
+            ''
+            "`$env:Path = '$env:Path'"
+            ''
+            '# Load the functions we packed up'
+            '$args | foreach { Invoke-Expression $_ }'
+            ''
+            '$DeployBoxSplatParams = @{'
+            "    VagrantBox                  = '$Windows2016VagrantBox'"
+            '    CPUs                        = 2'
+            '    Memory                      = 4096'
+            '    VagrantProvider             = "hyperv"'
+            "    VMName                      = '$DomainShortName' + 'DC1'"
+            "    VMDestinationDirectory      = '$VMStorageDirectory'"
+            '    SkipHyperVInstallCheck      = $True'
+            '    CopyDecompressedDirectory   = $True'
+            '}'
+            ''
+            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
+            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
+            '    }'
+            '}'
+            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
+            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
+            '    }'
+            '}'
+            ''
+            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
+            '$DeployBoxResult'
+        )
+        
+        try {
+            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
+        }
+        catch {
+            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
 
         if (!$IPofServerToBeDomainController) {
             $DomainShortName = $($NewDomain -split "\.")[0]
             Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
 
-            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $(Get-Job).Name
+            $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $RunspaceNames
 
             $NewDCVMDeployJobSplatParams = @{
-                Name            = $NewDCVMDeployJobName
+                RunspaceName    = $NewDCVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                Wait            = $True
             }
-            $NewDCVMDeployJobInfo = Start-Job @NewDCVMDeployJobSplatParams
-        
-            $NewDCVMDeployResult = Wait-Job -Job $NewDCVMDeployJobInfo | Receive-Job
+            $NewDCVMDeployResult = New-Runspace @NewDCVMDeployJobSplatParams
 
             while (![bool]$(Get-VM -Name "$DomainShortName`DC1" -ErrorAction SilentlyContinue)) {
                 Write-Host "Waiting for $DomainShortName`DC1 VM to be deployed..."
@@ -504,7 +485,13 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
     catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+        # In the below, 0 is 'Public'
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
 
         try {
             $null = Enable-PSRemoting -Force
@@ -630,10 +617,10 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         $RenameComputerSB = [scriptblock]::Create($RenameComputerSBAsString)
 
         $InvCmdRenameComputerSplatParams = @{
-            ComputerName    = $args[0]
-            Credential      = $args[1]
+            ComputerName    = $IPofServerToBeDomainController
+            Credential      = $PSRemotingCredentials
             ScriptBlock     = $RenameComputerSB
-            ArgumentList    = $args[2],$args[1]
+            ArgumentList    = $DesiredHostNameDC,$PSRemotingCredentials
             ErrorAction     = "Stop"
         }
 
@@ -653,24 +640,18 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
     if ($RemoteHostNameDC -ne $DesiredHostNameDC) {
         Write-Host "Renaming '$IPofServerToBeDomainController' from '$RemoteHostNameDC' to '$DesiredHostNameDC'..."
         
-        $RenameDCJobName = NewUniqueString -PossibleNewUniqueString "RenameDC" -ArrayOfStrings $(Get-Job).Name
+        $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+        $RenameDCJobName = NewUniqueString -PossibleNewUniqueString "RenameDC" -ArrayOfStrings $RunspaceNames
 
-        $RenameDCArgList = @(
-            $IPofServerToBeDomainController
-            $PSRemotingCredentials
-            $DesiredHostNameDC
-        )
         $RenameDCJobSplatParams = @{
-            Name            = $RenameDCJobName
+            RunspaceName    = $RenameDCJobName
             Scriptblock     = $RenameComputerJobSB
-            ArgumentList    = $RenameDCArgList
+            Wait            = $True
         }
-        $RenameDCJobInfo = Start-Job @RenameDCJobSplatParams
+        $RenameDCJobInfo = New-Runspace @RenameDCJobSplatParams
     }
 
     if ($RenameDCJobInfo) {
-        $RenameDCResult = Wait-Job -Job $RenameDCJobInfo | Receive-Job
-
         Write-Host "Sleeping for 5 minutes to give '$IPofServerToBeDomainController' time to reboot after name change..."
         Start-Sleep -Seconds 300
     
@@ -725,16 +706,24 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 
     #region >> Make the Domain Controller
 
-    Write-Host "Creating the New Domain Controller..."
-    $NewDomainControllerSplatParams = @{
-        DesiredHostName                         = $DesiredHostNameDC
-        NewDomainName                           = $NewDomain
-        NewDomainAdminCredentials               = $DomainAdminCredentials
-        ServerIP                                = $IPofServerToBeDomainController
-        PSRemotingLocalAdminCredentials         = $PSRemotingCredentials
-        LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
+    try {
+        Write-Host "Creating the New Domain Controller..."
+        $NewDomainControllerSplatParams = @{
+            DesiredHostName                         = $DesiredHostNameDC
+            NewDomainName                           = $NewDomain
+            NewDomainAdminCredentials               = $DomainAdminCredentials
+            ServerIP                                = $IPofServerToBeDomainController
+            PSRemotingLocalAdminCredentials         = $PSRemotingCredentials
+            LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
+            ErrorAction                             = "Stop"
+        }
+        $NewDomainControllerResults = New-DomainController @NewDomainControllerSplatParams
     }
-    $NewDomainControllerResults = New-DomainController @NewDomainControllerSplatParams
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
 
     if (![bool]$($NewDomainControllerResults -match "DC Installation Success")) {
         Write-Error "Unable to determine if creation of the New Domain Controller '$DesiredHostNameDC' at '$IPofServerToBeDomainController' was successfule! Halting!"
@@ -1099,40 +1088,48 @@ function Create-RootCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        $NewVMDeploySBAsString = @"
-[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+        $NewVMDeploySBAsString = @(
+            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
+            ''
+            "`$env:Path = '$env:Path'"
+            ''
+            '# Load the functions we packed up'
+            '$args | foreach { Invoke-Expression $_ }'
+            ''
+            '$DeployBoxSplatParams = @{'
+            "    VagrantBox                  = '$Windows2016VagrantBox'"
+            '    CPUs                        = 2'
+            '    Memory                      = 4096'
+            '    VagrantProvider             = "hyperv"'
+            "    VMName                      = '$DomainShortName' + 'RootCA'"
+            "    VMDestinationDirectory      = '$VMStorageDirectory'"
+            '    SkipHyperVInstallCheck      = $True'
+            '    CopyDecompressedDirectory   = $True'
+            '}'
+            ''
+            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
+            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
+            '    }'
+            '}'
+            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
+            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
+            '    }'
+            '}'
+            ''
+            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
+            '$DeployBoxResult'
+        )
 
-`$env:Path = '$env:Path'
-
-# Load the functions we packed up
-`$args | foreach { Invoke-Expression `$_ }
-
-`$DeployBoxSplatParams = @{
-    VagrantBox                  = '$Windows2016VagrantBox'
-    CPUs                        = 2
-    Memory                      = 4096
-    VagrantProvider             = "hyperv"
-    VMName                      = '$DomainShortName' + "RootCA"
-    VMDestinationDirectory      = '$VMStorageDirectory'
-    SkipHyperVInstallCheck      = `$True
-    CopyDecompressedDirectory   = `$True
-}
-
-if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
-    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
-    }
-}
-if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
-    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
-    }
-}
-
-`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
-`$DeployBoxResult
-"@
-        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+        try {
+            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
+        }
+        catch {
+            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
 
         if (!$IPofServerToBeRootCA) {
             $DomainShortName = $($ExistingDomain -split "\.")[0]
@@ -1191,7 +1188,12 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
     catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
 
         try {
             $null = Enable-PSRemoting -Force
@@ -1272,46 +1274,53 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
     # Check if DC and RootCA should be the same server. If not, then need to join RootCA to Domain.
     if ($IPofDomainController -ne $IPofServerToBeRootCA) {
         $JoinDomainJobSB = {
-            $JoinDomainSBAsString = @'
-# Synchronize time with time servers
-$null = W32tm /resync /rediscover /nowait
-
-# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)
-$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
-$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
-$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
-$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
-$UpdatedDNSServerList.Insert(0,$args[0])
-$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
-
-$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList
-[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder
-$UpdatedDNSSuffixList.Insert(0,$args[2])
-Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList
-
-# Try resolving the Domain for 30 minutes
-$Counter = 0
-while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {
-    Write-Host "Waiting for DNS to resolve Domain Controller..."
-    Start-Sleep -Seconds 15
-    $Counter++
-}
-if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {
-    Write-Error "Unable to resolve Domain $($args[2])! Halting!"
-    $global:FunctionResult = "1"
-    return
-}
-
-# Join Domain
-Rename-Computer -NewName $args[1]
-Start-Sleep -Seconds 10
-Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart
-'@
+            $JoinDomainSBAsString = @(
+                '# Synchronize time with time servers'
+                '$null = W32tm /resync /rediscover /nowait'
+                ''
+                '# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)'
+                '$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop'
+                '$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress'
+                '$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP'
+                '$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex'
+                '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4'
+                '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
+                '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
+                '$UpdatedDNSServerList.Insert(0,$args[0])'
+                '$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList'
+                ''
+                '$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList'
+                '[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder'
+                '$UpdatedDNSSuffixList.Insert(0,$args[2])'
+                'Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList'
+                ''
+                '# Try resolving the Domain for 30 minutes'
+                '$Counter = 0'
+                'while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {'
+                '    Write-Host "Waiting for DNS to resolve Domain Controller..."'
+                '    Start-Sleep -Seconds 15'
+                '    $Counter++'
+                '}'
+                'if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {'
+                '    Write-Error "Unable to resolve Domain $($args[2])! Halting!"'
+                '    $global:FunctionResult = "1"'
+                '    return'
+                '}'
+                ''
+                '# Join Domain'
+                'Rename-Computer -NewName $args[1]'
+                'Start-Sleep -Seconds 10'
+                'Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart'
+            )
             
-            $JoinDomainSB = [scriptblock]::Create($JoinDomainSBAsString)
+            try {
+                $JoinDomainSB = [scriptblock]::Create($($JoinDomainSBAsString -join "`n"))
+            }
+            catch {
+                Write-Error "Problem creating `$JoinDomainSB! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
     
             $InvCmdJoinDomainSplatParams = @{
                 ComputerName    = $args[0]
@@ -1785,40 +1794,48 @@ function Create-SubordinateCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        $NewVMDeploySBAsString = @"
-[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+        $NewVMDeploySBAsString = @(
+            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
+            ''
+            "`$env:Path = '$env:Path'"
+            ''
+            '# Load the functions we packed up'
+            '$args | foreach { Invoke-Expression $_ }'
+            ''
+            '$DeployBoxSplatParams = @{'
+            "    VagrantBox                  = '$Windows2016VagrantBox'"
+            '    CPUs                        = 2'
+            '    Memory                      = 4096'
+            '    VagrantProvider             = "hyperv"'
+            "    VMName                      = '$DomainShortName' + 'SubCA'"
+            "    VMDestinationDirectory      = '$VMStorageDirectory'"
+            '    SkipHyperVInstallCheck      = $True'
+            '    CopyDecompressedDirectory   = $True'
+            '}'
+            ''
+            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
+            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
+            '    }'
+            '}'
+            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
+            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
+            '    }'
+            '}'
+            ''
+            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
+            '$DeployBoxResult'
+        )
 
-`$env:Path = '$env:Path'
-
-# Load the functions we packed up
-`$args | foreach { Invoke-Expression `$_ }
-
-`$DeployBoxSplatParams = @{
-    VagrantBox                  = '$Windows2016VagrantBox'
-    CPUs                        = 2
-    Memory                      = 4096
-    VagrantProvider             = "hyperv"
-    VMName                      = '$DomainShortName' + "SubCA"
-    VMDestinationDirectory      = '$VMStorageDirectory'
-    SkipHyperVInstallCheck      = `$True
-    CopyDecompressedDirectory   = `$True
-}
-
-if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
-    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
-    }
-}
-if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
-    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
-    }
-}
-
-`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
-`$DeployBoxResult
-"@
-        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+        try {
+            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
+        }
+        catch {
+            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
 
         if (!$IPofServerToBeSubCA) {
             $DomainShortName = $($ExistingDomain -split "\.")[0]
@@ -1877,7 +1894,12 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
     catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
 
         try {
             $null = Enable-PSRemoting -Force
@@ -1956,46 +1978,53 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
     #region >> Join the Servers to Domain And Rename If Necessary
 
     $JoinDomainJobSB = {
-        $JoinDomainSBAsString = @'
-# Synchronize time with time servers
-$null = W32tm /resync /rediscover /nowait
-
-# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)
-$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
-$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
-$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
-$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
-$UpdatedDNSServerList.Insert(0,$args[0])
-$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
-
-$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList
-[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder
-$UpdatedDNSSuffixList.Insert(0,$args[2])
-Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList
-
-# Try resolving the Domain for 30 minutes
-$Counter = 0
-while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {
-Write-Host "Waiting for DNS to resolve Domain Controller..."
-Start-Sleep -Seconds 15
-$Counter++
-}
-if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {
-Write-Error "Unable to resolve Domain $($args[2])! Halting!"
-$global:FunctionResult = "1"
-return
-}
-
-# Join Domain
-Rename-Computer -NewName $args[1]
-Start-Sleep -Seconds 10
-Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart
-'@
+        $JoinDomainSBAsString = @(
+            '# Synchronize time with time servers'
+            '$null = W32tm /resync /rediscover /nowait'
+            ''
+            '# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)'
+            '$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop'
+            '$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress'
+            '$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP'
+            '$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex'
+            '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4'
+            '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
+            '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
+            '$UpdatedDNSServerList.Insert(0,$args[0])'
+            '$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList'
+            ''
+            '$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList'
+            '[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder'
+            '$UpdatedDNSSuffixList.Insert(0,$args[2])'
+            'Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList'
+            ''
+            '# Try resolving the Domain for 30 minutes'
+            '$Counter = 0'
+            'while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {'
+            '    Write-Host "Waiting for DNS to resolve Domain Controller..."'
+            '    Start-Sleep -Seconds 15'
+            '    $Counter++'
+            '}'
+            'if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {'
+            '    Write-Error "Unable to resolve Domain $($args[2])! Halting!"'
+            '    $global:FunctionResult = "1"'
+            '    return'
+            '}'
+            ''
+            '# Join Domain'
+            'Rename-Computer -NewName $args[1]'
+            'Start-Sleep -Seconds 10'
+            'Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart'
+        )
         
-        $JoinDomainSB = [scriptblock]::Create($JoinDomainSBAsString)
+        try {
+            $JoinDomainSB = [scriptblock]::Create($($JoinDomainSBAsString -join "`n"))
+        }
+        catch {
+            Write-Error "Problem creating `$JoinDomainSB! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
 
         $InvCmdJoinDomainSplatParams = @{
             ComputerName    = $args[0]
@@ -2474,14 +2503,20 @@ function Create-TwoTierPKI {
         ${Function:GetFileLockProcess}.Ast.Extent.Text
         ${Function:GetNativePath}.Ast.Extent.Text
         ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+        ${Function:GetWinPSInCore}.Ast.Extent.Text
         ${Function:InstallFeatureDism}.Ast.Extent.Text
         ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+        ${Function:InvokePSCompatibility}.Ast.Extent.Text
         ${Function:NewUniqueString}.Ast.Extent.Text
         ${Function:PauseForWarning}.Ast.Extent.Text
         ${Function:ResolveHost}.Ast.Extent.Text
         ${Function:TestIsValidIPAddress}.Ast.Extent.Text
         ${Function:UnzipFile}.Ast.Extent.Text
+        ${Function:Create-Domain}.Ast.Extent.Text
+        ${Function:Create-RootCA}.Ast.Extent.Text
+        ${Function:Create-SubordinateCA}.Ast.Extent.Text
         ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+        ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
         ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
         ${Function:Generate-Certificate}.Ast.Extent.Text
         ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
@@ -2489,11 +2524,9 @@ function Create-TwoTierPKI {
         ${Function:Manage-HyperVVM}.Ast.Extent.Text
         ${Function:New-DomainController}.Ast.Extent.Text
         ${Function:New-RootCA}.Ast.Extent.Text
+        ${Function:New-Runspace}.Ast.Extent.Text
         ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
         ${Function:New-SubordinateCA}.Ast.Extent.Text
-        ${Function:Create-Domain}.Ast.Extent.Text
-        ${Function:Create-RootCA}.Ast.Extent.Text
-        ${Function:Create-SubordinateCA}.Ast.Extent.Text
     )
 
     $CreateDCSplatParams = @{
@@ -2651,10 +2684,30 @@ function Create-TwoTierPKI {
 
             # Extract the .box File
             Push-Location "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
-            while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
-                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-                Start-Sleep -Seconds 5
+
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                GetWinPSInCore -ScriptBlock {
+                    $FunctionsForSBUse | foreach {Invoke-Expression $_}
+
+                    while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                        Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                        Start-Sleep -Seconds 5
+                    }
+                }
+                <#
+                while ([bool]$(Invoke-WinCommand -ScriptBlock {GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue})) {
+                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                    Start-Sleep -Seconds 5
+                }
+                #>
             }
+            else {
+                while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                    Start-Sleep -Seconds 5
+                }
+            }
+            
             try {
                 $null = & $TarCmd -xzvf $BoxFilePath 2>&1
             }
@@ -2858,7 +2911,12 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
             $null = Enable-PSRemoting -Force -ErrorAction Stop
         }
         catch {
-            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+            $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+            if ($NICsWPublicProfile.Count -gt 0) {
+                foreach ($Nic in $NICsWPublicProfile) {
+                    Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                }
+            }
 
             try {
                 $null = Enable-PSRemoting -Force
@@ -3571,22 +3629,40 @@ function Deploy-HyperVVagrantBoxManually {
             return
         }
     }
-
-    if ($PSVersionTable.PSEdition -eq "Core") {
-        if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
-            Install-Module WindowsCompatibility
-        }
-        if (![bool]$(Get-Module WindowsCompatibility)) {
-            Import-Module WindowsCompatibility
-        }
-
+    
+    if (![bool]$(Get-Module Hyper-V)) {
         try {
-            Import-WinModule Hyper-V
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                Import-WinModule Hyper-V -ErrorAction Stop
+            }
+            else {
+                Import-Module Hyper-V -ErrorAction Stop
+            }
         }
         catch {
-            Write-Error "Problem importing the Hyper-V Module via WindowsCompatibility Module! Halting!"
-            $global:FunctionResult = "1"
-            return
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                $HyperVModuleManifestPaths = Invoke-WinCommand -ScriptBlock {$(Get-Module -ListAvailable -Name Hyper-V).Path}
+            }
+            else {
+                # Using full path to Dism Module Manifest because sometimes there are issues with just 'Import-Module Dism'
+                $HyperVModuleManifestPaths = $(Get-Module -ListAvailable -Name Hyper-V).Path
+            }
+
+            foreach ($MMPath in $HyperVModuleManifestPaths) {
+                try {
+                    if ($PSVersionTable.PSEdition -eq "Core") {
+                        Import-WinModule $MMPath -ErrorAction Stop
+                        break
+                    }
+                    else {
+                        Import-Module $MMPath -ErrorAction Stop
+                        break
+                    }
+                }
+                catch {
+                    Write-Verbose "Unable to import $MMPath..."
+                }
+            }
         }
     }
 
@@ -3626,7 +3702,6 @@ function Deploy-HyperVVagrantBoxManually {
     $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
     $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
     $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
-    
 
     if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
         if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
@@ -3703,10 +3778,30 @@ function Deploy-HyperVVagrantBoxManually {
         
         # Extract the .box File
         Push-Location $DownloadedVMDir
-        while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
-            Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-            Start-Sleep -Seconds 5
+
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            GetWinPSInCore -ScriptBlock {
+                $FunctionsForSBUse | foreach {Invoke-Expression $_}
+
+                while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                    Start-Sleep -Seconds 5
+                }
+            }
+            <#
+            while ([bool]$(Invoke-WinCommand -ScriptBlock {GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue})) {
+                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                Start-Sleep -Seconds 5
+            }
+            #>
         }
+        else {
+            while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                Start-Sleep -Seconds 5
+            }
+        }
+
         try {
             $null = & $TarCmd -xzvf $BoxFilePath 2>&1
         }
@@ -7761,569 +7856,6 @@ function Get-VagrantBoxManualDownload {
 
 <#
     .SYNOPSIS
-        Function to control parallel processing using runspaces
-
-    .DESCRIPTION
-        Function to control parallel processing using runspaces
-
-            Note that each runspace will not have access to variables and commands loaded in your session or in other runspaces by default.
-            This behaviour can be changed with parameters.
-
-    .PARAMETER ScriptFile
-        File to run against all input objects.  Must include parameter to take in the input object, or use $args.  Optionally, include parameter to take in parameter.  Example: C:\script.ps1
-
-    .PARAMETER ScriptBlock
-        Scriptblock to run against all computers.
-
-        You may use $Using:<Variable> language in PowerShell 3 and later.
-
-            The parameter block is added for you, allowing behaviour similar to foreach-object:
-                Refer to the input object as $_.
-                Refer to the parameter parameter as $parameter
-
-    .PARAMETER InputObject
-        Run script against these specified objects.
-
-    .PARAMETER Parameter
-        This object is passed to every script block.  You can use it to pass information to the script block; for example, the path to a logging folder
-
-            Reference this object as $parameter if using the scriptblock parameterset.
-
-    .PARAMETER ImportVariables
-        If specified, get user session variables and add them to the initial session state
-
-    .PARAMETER ImportFunctions
-        If specified, get loaded functions, add them to the initial session state
-
-    .PARAMETER ImportModules
-        If specified, get loaded modules and pssnapins, add them to the initial session state
-
-    .PARAMETER Throttle
-        Maximum number of threads to run at a single time.
-
-    .PARAMETER SleepTimer
-        Milliseconds to sleep after checking for completed runspaces and in a few other spots.  I would not recommend dropping below 200 or increasing above 500
-
-    .PARAMETER RunspaceTimeout
-        Maximum time in seconds a single thread can run.  If execution of your code takes longer than this, it is disposed.  Default: 0 (seconds)
-
-        WARNING:  Using this parameter requires that maxQueue be set to throttle (it will be by default) for accurate timing.  Details here:
-        http://gallery.technet.microsoft.com/Run-Parallel-Parallel-377fd430
-
-    .PARAMETER NoCloseOnTimeout
-        Do not dispose of timed out tasks or attempt to close the runspace if threads have timed out. This will prevent the script from hanging in certain situations where threads become non-responsive, at the expense of leaking memory within the PowerShell host.
-
-    .PARAMETER MaxQueue
-        Maximum number of powershell instances to add to runspace pool.  If this is higher than $throttle, $timeout will be inaccurate
-
-        If this is equal or less than throttle, there will be a performance impact
-
-        The default value is $throttle times 3, if $runspaceTimeout is not specified
-        The default value is $throttle, if $runspaceTimeout is specified
-
-    .PARAMETER LogFile
-        Path to a file where we can log results, including run time for each thread, whether it completes, completes with errors, or times out.
-
-    .PARAMETER AppendLog
-        Append to existing log
-
-    .PARAMETER Quiet
-        Disable progress bar
-
-    .EXAMPLE
-        Each example uses Test-ForPacs.ps1 which includes the following code:
-            param($computer)
-
-            if(test-connection $computer -count 1 -quiet -BufferSize 16){
-                $object = [pscustomobject] @{
-                    Computer=$computer;
-                    Available=1;
-                    Kodak=$(
-                        if((test-path "\\$computer\c$\users\public\desktop\Kodak Direct View Pacs.url") -or (test-path "\\$computer\c$\documents and settings\all users\desktop\Kodak Direct View Pacs.url") ){"1"}else{"0"}
-                    )
-                }
-            }
-            else{
-                $object = [pscustomobject] @{
-                    Computer=$computer;
-                    Available=0;
-                    Kodak="NA"
-                }
-            }
-
-            $object
-
-    .EXAMPLE
-        Invoke-Parallel -scriptfile C:\public\Test-ForPacs.ps1 -inputobject $(get-content C:\pcs.txt) -runspaceTimeout 10 -throttle 10
-
-            Pulls list of PCs from C:\pcs.txt,
-            Runs Test-ForPacs against each
-            If any query takes longer than 10 seconds, it is disposed
-            Only run 10 threads at a time
-
-    .EXAMPLE
-        Invoke-Parallel -scriptfile C:\public\Test-ForPacs.ps1 -inputobject c-is-ts-91, c-is-ts-95
-
-            Runs against c-is-ts-91, c-is-ts-95 (-computername)
-            Runs Test-ForPacs against each
-
-    .EXAMPLE
-        $stuff = [pscustomobject] @{
-            ContentFile = "windows\system32\drivers\etc\hosts"
-            Logfile = "C:\temp\log.txt"
-        }
-
-        $computers | Invoke-Parallel -parameter $stuff {
-            $contentFile = join-path "\\$_\c$" $parameter.contentfile
-            Get-Content $contentFile |
-                set-content $parameter.logfile
-        }
-
-        This example uses the parameter argument.  This parameter is a single object.  To pass multiple items into the script block, we create a custom object (using a PowerShell v3 language) with properties we want to pass in.
-
-        Inside the script block, $parameter is used to reference this parameter object.  This example sets a content file, gets content from that file, and sets it to a predefined log file.
-
-    .EXAMPLE
-        $test = 5
-        1..2 | Invoke-Parallel -ImportVariables {$_ * $test}
-
-        Add variables from the current session to the session state.  Without -ImportVariables $Test would not be accessible
-
-    .EXAMPLE
-        $test = 5
-        1..2 | Invoke-Parallel {$_ * $Using:test}
-
-        Reference a variable from the current session with the $Using:<Variable> syntax.  Requires PowerShell 3 or later. Note that -ImportVariables parameter is no longer necessary.
-
-    .FUNCTIONALITY
-        PowerShell Language
-
-    .NOTES
-        Credit to Boe Prox for the base runspace code and $Using implementation
-            http://learn-powershell.net/2012/05/10/speedy-network-information-query-using-powershell/
-            http://gallery.technet.microsoft.com/scriptcenter/Speedy-Network-Information-5b1406fb#content
-            https://github.com/proxb/PoshRSJob/
-
-        Credit to T Bryce Yehl for the Quiet and NoCloseOnTimeout implementations
-
-        Credit to Sergei Vorobev for the many ideas and contributions that have improved functionality, reliability, and ease of use
-
-    .LINK
-        https://github.com/RamblingCookieMonster/Invoke-Parallel
-#>
-function Invoke-Parallel {
-    [cmdletbinding(DefaultParameterSetName='ScriptBlock')]
-    Param (
-        [Parameter(Mandatory=$false,position=0,ParameterSetName='ScriptBlock')]
-        [System.Management.Automation.ScriptBlock]$ScriptBlock,
-
-        [Parameter(Mandatory=$false,ParameterSetName='ScriptFile')]
-        [ValidateScript({Test-Path $_ -pathtype leaf})]
-        $ScriptFile,
-
-        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [Alias('CN','__Server','IPAddress','Server','ComputerName')]
-        [PSObject]$InputObject,
-
-        [PSObject]$Parameter,
-
-        [switch]$ImportVariables,
-        [switch]$ImportModules,
-        [switch]$ImportFunctions,
-
-        [int]$Throttle = 20,
-        [int]$SleepTimer = 200,
-        [int]$RunspaceTimeout = 0,
-        [switch]$NoCloseOnTimeout = $false,
-        [int]$MaxQueue,
-
-        [validatescript({Test-Path (Split-Path $_ -parent)})]
-        [switch] $AppendLog = $false,
-        [string]$LogFile,
-
-        [switch] $Quiet = $false
-    )
-    begin {
-        #No max queue specified?  Estimate one.
-        #We use the script scope to resolve an odd PowerShell 2 issue where MaxQueue isn't seen later in the function
-        if( -not $PSBoundParameters.ContainsKey('MaxQueue') ) {
-            if($RunspaceTimeout -ne 0){ $script:MaxQueue = $Throttle }
-            else{ $script:MaxQueue = $Throttle * 3 }
-        }
-        else {
-            $script:MaxQueue = $MaxQueue
-        }
-        $ProgressId = Get-Random
-        Write-Verbose "Throttle: '$throttle' SleepTimer '$sleepTimer' runSpaceTimeout '$runspaceTimeout' maxQueue '$maxQueue' logFile '$logFile'"
-
-        #If they want to import variables or modules, create a clean runspace, get loaded items, use those to exclude items
-        if ($ImportVariables -or $ImportModules -or $ImportFunctions) {
-            $StandardUserEnv = [powershell]::Create().addscript({
-
-                #Get modules, snapins, functions in this clean runspace
-                $Modules = Get-Module | Select-Object -ExpandProperty Name
-                $Snapins = Get-PSSnapin | Select-Object -ExpandProperty Name
-                $Functions = Get-ChildItem function:\ | Select-Object -ExpandProperty Name
-
-                #Get variables in this clean runspace
-                #Called last to get vars like $? into session
-                $Variables = Get-Variable | Select-Object -ExpandProperty Name
-
-                #Return a hashtable where we can access each.
-                @{
-                    Variables   = $Variables
-                    Modules     = $Modules
-                    Snapins     = $Snapins
-                    Functions   = $Functions
-                }
-            }).invoke()[0]
-
-            if ($ImportVariables) {
-                #Exclude common parameters, bound parameters, and automatic variables
-                Function _temp {[cmdletbinding(SupportsShouldProcess=$True)] param() }
-                $VariablesToExclude = @( (Get-Command _temp | Select-Object -ExpandProperty parameters).Keys + $PSBoundParameters.Keys + $StandardUserEnv.Variables )
-                Write-Verbose "Excluding variables $( ($VariablesToExclude | Sort-Object ) -join ", ")"
-
-                # we don't use 'Get-Variable -Exclude', because it uses regexps.
-                # One of the veriables that we pass is '$?'.
-                # There could be other variables with such problems.
-                # Scope 2 required if we move to a real module
-                $UserVariables = @( Get-Variable | Where-Object { -not ($VariablesToExclude -contains $_.Name) } )
-                Write-Verbose "Found variables to import: $( ($UserVariables | Select-Object -expandproperty Name | Sort-Object ) -join ", " | Out-String).`n"
-            }
-            if ($ImportModules) {
-                $UserModules = @( Get-Module | Where-Object {$StandardUserEnv.Modules -notcontains $_.Name -and (Test-Path $_.Path -ErrorAction SilentlyContinue)} | Select-Object -ExpandProperty Path )
-                $UserSnapins = @( Get-PSSnapin | Select-Object -ExpandProperty Name | Where-Object {$StandardUserEnv.Snapins -notcontains $_ } )
-            }
-            if($ImportFunctions) {
-                $UserFunctions = @( Get-ChildItem function:\ | Where-Object { $StandardUserEnv.Functions -notcontains $_.Name } )
-            }
-        }
-
-        #region functions
-            Function Get-RunspaceData {
-                [cmdletbinding()]
-                param( [switch]$Wait )
-                #loop through runspaces
-                #if $wait is specified, keep looping until all complete
-                Do {
-                    #set more to false for tracking completion
-                    $more = $false
-
-                    #Progress bar if we have inputobject count (bound parameter)
-                    if (-not $Quiet) {
-                        Write-Progress -Id $ProgressId -Activity "Running Query" -Status "Starting threads"`
-                            -CurrentOperation "$startedCount threads defined - $totalCount input objects - $script:completedCount input objects processed"`
-                            -PercentComplete $( Try { $script:completedCount / $totalCount * 100 } Catch {0} )
-                    }
-
-                    #run through each runspace.
-                    Foreach($runspace in $runspaces) {
-
-                        #get the duration - inaccurate
-                        $currentdate = Get-Date
-                        $runtime = $currentdate - $runspace.startTime
-                        $runMin = [math]::Round( $runtime.totalminutes ,2 )
-
-                        #set up log object
-                        $log = "" | Select-Object Date, Action, Runtime, Status, Details
-                        $log.Action = "Removing:'$($runspace.object)'"
-                        $log.Date = $currentdate
-                        $log.Runtime = "$runMin minutes"
-
-                        #If runspace completed, end invoke, dispose, recycle, counter++
-                        If ($runspace.Runspace.isCompleted) {
-
-                            $script:completedCount++
-
-                            #check if there were errors
-                            if($runspace.powershell.Streams.Error.Count -gt 0) {
-                                #set the logging info and move the file to completed
-                                $log.status = "CompletedWithErrors"
-                                Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
-                                foreach($ErrorRecord in $runspace.powershell.Streams.Error) {
-                                    Write-Error -ErrorRecord $ErrorRecord
-                                }
-                            }
-                            else {
-                                #add logging details and cleanup
-                                $log.status = "Completed"
-                                Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
-                            }
-
-                            #everything is logged, clean up the runspace
-                            $runspace.powershell.EndInvoke($runspace.Runspace)
-                            $runspace.powershell.dispose()
-                            $runspace.Runspace = $null
-                            $runspace.powershell = $null
-                        }
-                        #If runtime exceeds max, dispose the runspace
-                        ElseIf ( $runspaceTimeout -ne 0 -and $runtime.totalseconds -gt $runspaceTimeout) {
-                            $script:completedCount++
-                            $timedOutTasks = $true
-
-                            #add logging details and cleanup
-                            $log.status = "TimedOut"
-                            Write-Verbose ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1]
-                            Write-Error "Runspace timed out at $($runtime.totalseconds) seconds for the object:`n$($runspace.object | out-string)"
-
-                            #Depending on how it hangs, we could still get stuck here as dispose calls a synchronous method on the powershell instance
-                            if (!$noCloseOnTimeout) { $runspace.powershell.dispose() }
-                            $runspace.Runspace = $null
-                            $runspace.powershell = $null
-                            $completedCount++
-                        }
-
-                        #If runspace isn't null set more to true
-                        ElseIf ($runspace.Runspace -ne $null ) {
-                            $log = $null
-                            $more = $true
-                        }
-
-                        #log the results if a log file was indicated
-                        if($logFile -and $log) {
-                            ($log | ConvertTo-Csv -Delimiter ";" -NoTypeInformation)[1] | out-file $LogFile -append
-                        }
-                    }
-
-                    #Clean out unused runspace jobs
-                    $temphash = $runspaces.clone()
-                    $temphash | Where-Object { $_.runspace -eq $Null } | ForEach-Object {
-                        $Runspaces.remove($_)
-                    }
-
-                    #sleep for a bit if we will loop again
-                    if($PSBoundParameters['Wait']){ Start-Sleep -milliseconds $SleepTimer }
-
-                #Loop again only if -wait parameter and there are more runspaces to process
-                } while ($more -and $PSBoundParameters['Wait'])
-
-            #End of runspace function
-            }
-        #endregion functions
-
-        #region Init
-
-            if($PSCmdlet.ParameterSetName -eq 'ScriptFile') {
-                $ScriptBlock = [scriptblock]::Create( $(Get-Content $ScriptFile | out-string) )
-            }
-            elseif($PSCmdlet.ParameterSetName -eq 'ScriptBlock') {
-                #Start building parameter names for the param block
-                [string[]]$ParamsToAdd = '$_'
-                if( $PSBoundParameters.ContainsKey('Parameter') ) {
-                    $ParamsToAdd += '$Parameter'
-                }
-
-                $UsingVariableData = $Null
-
-                # This code enables $Using support through the AST.
-                # This is entirely from  Boe Prox, and his https://github.com/proxb/PoshRSJob module; all credit to Boe!
-
-                if($PSVersionTable.PSVersion.Major -gt 2) {
-                    #Extract using references
-                    $UsingVariables = $ScriptBlock.ast.FindAll({$args[0] -is [System.Management.Automation.Language.UsingExpressionAst]},$True)
-
-                    If ($UsingVariables) {
-                        $List = New-Object 'System.Collections.Generic.List`1[System.Management.Automation.Language.VariableExpressionAst]'
-                        ForEach ($Ast in $UsingVariables) {
-                            [void]$list.Add($Ast.SubExpression)
-                        }
-
-                        $UsingVar = $UsingVariables | Group-Object -Property SubExpression | ForEach-Object {$_.Group | Select-Object -First 1}
-
-                        #Extract the name, value, and create replacements for each
-                        $UsingVariableData = ForEach ($Var in $UsingVar) {
-                            try {
-                                $Value = Get-Variable -Name $Var.SubExpression.VariablePath.UserPath -ErrorAction Stop
-                                [pscustomobject]@{
-                                    Name = $Var.SubExpression.Extent.Text
-                                    Value = $Value.Value
-                                    NewName = ('$__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
-                                    NewVarName = ('__using_{0}' -f $Var.SubExpression.VariablePath.UserPath)
-                                }
-                            }
-                            catch {
-                                Write-Error "$($Var.SubExpression.Extent.Text) is not a valid Using: variable!"
-                            }
-                        }
-                        $ParamsToAdd += $UsingVariableData | Select-Object -ExpandProperty NewName -Unique
-
-                        $NewParams = $UsingVariableData.NewName -join ', '
-                        $Tuple = [Tuple]::Create($list, $NewParams)
-                        $bindingFlags = [Reflection.BindingFlags]"Default,NonPublic,Instance"
-                        $GetWithInputHandlingForInvokeCommandImpl = ($ScriptBlock.ast.gettype().GetMethod('GetWithInputHandlingForInvokeCommandImpl',$bindingFlags))
-
-                        $StringScriptBlock = $GetWithInputHandlingForInvokeCommandImpl.Invoke($ScriptBlock.ast,@($Tuple))
-
-                        $ScriptBlock = [scriptblock]::Create($StringScriptBlock)
-
-                        Write-Verbose $StringScriptBlock
-                    }
-                }
-
-                $ScriptBlock = $ExecutionContext.InvokeCommand.NewScriptBlock("param($($ParamsToAdd -Join ", "))`r`n" + $Scriptblock.ToString())
-            }
-            else {
-                Throw "Must provide ScriptBlock or ScriptFile"; Break
-            }
-
-            Write-Debug "`$ScriptBlock: $($ScriptBlock | Out-String)"
-            Write-Verbose "Creating runspace pool and session states"
-
-            #If specified, add variables and modules/snapins to session state
-            $sessionstate = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-            if($ImportVariables -and $UserVariables.count -gt 0) {
-                foreach($Variable in $UserVariables) {
-                    $sessionstate.Variables.Add((New-Object -TypeName System.Management.Automation.Runspaces.SessionStateVariableEntry -ArgumentList $Variable.Name, $Variable.Value, $null) )
-                }
-            }
-            if ($ImportModules) {
-                if($UserModules.count -gt 0) {
-                    foreach($ModulePath in $UserModules) {
-                        $sessionstate.ImportPSModule($ModulePath)
-                    }
-                }
-                if($UserSnapins.count -gt 0) {
-                    foreach($PSSnapin in $UserSnapins) {
-                        [void]$sessionstate.ImportPSSnapIn($PSSnapin, [ref]$null)
-                    }
-                }
-            }
-            if($ImportFunctions -and $UserFunctions.count -gt 0) {
-                foreach ($FunctionDef in $UserFunctions) {
-                    $sessionstate.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry -ArgumentList $FunctionDef.Name,$FunctionDef.ScriptBlock))
-                }
-            }
-
-            #Create runspace pool
-            $runspacepool = [runspacefactory]::CreateRunspacePool(1, $Throttle, $sessionstate, $Host)
-            $runspacepool.Open()
-
-            Write-Verbose "Creating empty collection to hold runspace jobs"
-            $Script:runspaces = New-Object System.Collections.ArrayList
-
-            #If inputObject is bound get a total count and set bound to true
-            $bound = $PSBoundParameters.keys -contains "InputObject"
-            if(-not $bound) {
-                [System.Collections.ArrayList]$allObjects = @()
-            }
-
-            #Set up log file if specified
-            if( $LogFile -and (-not (Test-Path $LogFile) -or $AppendLog -eq $false)){
-                New-Item -ItemType file -Path $logFile -Force | Out-Null
-                ("" | Select-Object -Property Date, Action, Runtime, Status, Details | ConvertTo-Csv -NoTypeInformation -Delimiter ";")[0] | Out-File $LogFile
-            }
-
-            #write initial log entry
-            $log = "" | Select-Object -Property Date, Action, Runtime, Status, Details
-                $log.Date = Get-Date
-                $log.Action = "Batch processing started"
-                $log.Runtime = $null
-                $log.Status = "Started"
-                $log.Details = $null
-                if($logFile) {
-                    ($log | convertto-csv -Delimiter ";" -NoTypeInformation)[1] | Out-File $LogFile -Append
-                }
-            $timedOutTasks = $false
-        #endregion INIT
-    }
-    process {
-        #add piped objects to all objects or set all objects to bound input object parameter
-        if($bound) {
-            $allObjects = $InputObject
-        }
-        else {
-            [void]$allObjects.add( $InputObject )
-        }
-    }
-    end {
-        #Use Try/Finally to catch Ctrl+C and clean up.
-        try {
-            #counts for progress
-            $totalCount = $allObjects.count
-            $script:completedCount = 0
-            $startedCount = 0
-            foreach($object in $allObjects) {
-                #region add scripts to runspace pool
-                    #Create the powershell instance, set verbose if needed, supply the scriptblock and parameters
-                    $powershell = [powershell]::Create()
-
-                    if ($VerbosePreference -eq 'Continue') {
-                        [void]$PowerShell.AddScript({$VerbosePreference = 'Continue'})
-                    }
-
-                    [void]$PowerShell.AddScript($ScriptBlock).AddArgument($object)
-
-                    if ($parameter) {
-                        [void]$PowerShell.AddArgument($parameter)
-                    }
-
-                    # $Using support from Boe Prox
-                    if ($UsingVariableData) {
-                        Foreach($UsingVariable in $UsingVariableData) {
-                            Write-Verbose "Adding $($UsingVariable.Name) with value: $($UsingVariable.Value)"
-                            [void]$PowerShell.AddArgument($UsingVariable.Value)
-                        }
-                    }
-
-                    #Add the runspace into the powershell instance
-                    $powershell.RunspacePool = $runspacepool
-
-                    #Create a temporary collection for each runspace
-                    $temp = "" | Select-Object PowerShell, StartTime, object, Runspace
-                    $temp.PowerShell = $powershell
-                    $temp.StartTime = Get-Date
-                    $temp.object = $object
-
-                    #Save the handle output when calling BeginInvoke() that will be used later to end the runspace
-                    $temp.Runspace = $powershell.BeginInvoke()
-                    $startedCount++
-
-                    #Add the temp tracking info to $runspaces collection
-                    Write-Verbose ( "Adding {0} to collection at {1}" -f $temp.object, $temp.starttime.tostring() )
-                    $runspaces.Add($temp) | Out-Null
-
-                    #loop through existing runspaces one time
-                    Get-RunspaceData
-
-                    #If we have more running than max queue (used to control timeout accuracy)
-                    #Script scope resolves odd PowerShell 2 issue
-                    $firstRun = $true
-                    while ($runspaces.count -ge $Script:MaxQueue) {
-                        #give verbose output
-                        if($firstRun) {
-                            Write-Verbose "$($runspaces.count) items running - exceeded $Script:MaxQueue limit."
-                        }
-                        $firstRun = $false
-
-                        #run get-runspace data and sleep for a short while
-                        Get-RunspaceData
-                        Start-Sleep -Milliseconds $sleepTimer
-                    }
-                #endregion add scripts to runspace pool
-            }
-            Write-Verbose ( "Finish processing the remaining runspace jobs: {0}" -f ( @($runspaces | Where-Object {$_.Runspace -ne $Null}).Count) )
-
-            Get-RunspaceData -wait
-            if (-not $quiet) {
-                Write-Progress -Id $ProgressId -Activity "Running Query" -Status "Starting threads" -Completed
-            }
-        }
-        finally {
-            #Close the runspace pool, unless we specified no close on timeout and something timed out
-            if ( ($timedOutTasks -eq $false) -or ( ($timedOutTasks -eq $true) -and ($noCloseOnTimeout -eq $false) ) ) {
-                Write-Verbose "Closing the runspace pool"
-                $runspacepool.close()
-            }
-            #collect garbage
-            [gc]::Collect()
-        }
-    }
-}
-
-
-<#
-    .SYNOPSIS
         Manages a HyperV VM.
 
         This is a refactor of the PowerShell Script used to deploy a MobyLinux VM on Hyper-V during a Docker CE install.
@@ -9139,8 +8671,14 @@ function New-DomainController {
     $NewBackupDomainAdminLastName =  "backup"
 
     # Get the needed DSC Resources in preparation for copying them to the Remote Host
-    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+    else {
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+
     $NeededDSCResources = @(
         "xPSDesiredStateConfiguration"
         "xActiveDirectory"
@@ -9175,7 +8713,12 @@ function New-DomainController {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
     catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
 
         try {
             $null = Enable-PSRemoting -Force
@@ -9213,71 +8756,32 @@ function New-DomainController {
 
     # New-SelfSignedCertifciateEx
     # Get-DSCEncryptionCert
-
-    $NewSelfSignedCertUrl = "https://raw.githubusercontent.com/pldmgg/misc-powershell/master/ThirdPartyRefactors/Functions/New-SelfSignedCertificateEx.ps1"
-    Invoke-Expression $([System.Net.WebClient]::new().DownloadString($NewSelfSignedCertUrl))
-
-    function Get-DSCEncryptionCert {
-        [CmdletBinding()]
-        param (
-            [Parameter(Mandatory=$True)]
-            [string]$MachineName,
     
-            [Parameter(Mandatory=$True)]
-            [string]$ExportDirectory
-        )
-    
-        if (!$(Test-Path $ExportDirectory)) {
-            Write-Error "The path '$ExportDirectory' was not found! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-    
-        $CertificateFriendlyName = "DSC Credential Encryption"
-        $Cert = Get-ChildItem -Path "Cert:\LocalMachine\My" | Where-Object {
-            $_.FriendlyName -eq $CertificateFriendlyName
-        } | Select-Object -First 1
-    
-        if (!$Cert) {
-            $NewSelfSignedCertExSplatParams = @{
-                Subject             = "CN=$Machinename"
-                EKU                 = @('1.3.6.1.4.1.311.80.1','1.3.6.1.5.5.7.3.1','1.3.6.1.5.5.7.3.2')
-                KeyUsage            = 'DigitalSignature, KeyEncipherment, DataEncipherment'
-                SAN                 = $MachineName
-                FriendlyName        = $CertificateFriendlyName
-                Exportable          = $True
-                StoreName           = 'My'
-                StoreLocation       = 'LocalMachine'
-                KeyLength           = 2048
-                ProviderName        = 'Microsoft Enhanced Cryptographic Provider v1.0'
-                AlgorithmName       = "RSA"
-                SignatureAlgorithm  = "SHA256"
-            }
-    
-            New-SelfsignedCertificateEx @NewSelfSignedCertExSplatParams
-    
-            # There is a slight delay before new cert shows up in Cert:
-            # So wait for it to show.
-            while (!$Cert) {
-                $Cert = Get-ChildItem -Path "Cert:\LocalMachine\My" | Where-Object {$_.FriendlyName -eq $CertificateFriendlyName}
-            }
-        }
-    
-        $null = Export-Certificate -Type CERT -Cert $Cert -FilePath "$ExportDirectory\DSCEncryption.cer"
-    
-        $CertInfo = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new()
-        $CertInfo.Import("$ExportDirectory\DSCEncryption.cer")
-    
-        [pscustomobject]@{
-            CertFile        = Get-Item "$ExportDirectory\DSCEncryption.cer"
-            CertInfo        = $CertInfo
-        }
-    }
-
     #endregion >> Helper Functions
 
     
     #region >> Rename Computer
+
+    # Waiting for maximum of 15 minutes for the Server to accept new PSSessions...
+    $Counter = 0
+    while (![bool]$(Get-PSSession -Name "To$DesiredHostName" -ErrorAction SilentlyContinue)) {
+        try {
+            New-PSSession -ComputerName $ServerIP -Credential $PSRemotingLocalAdminCredentials -Name "To$DesiredHostName" -ErrorAction SilentlyContinue
+            if (![bool]$(Get-PSSession -Name "To$DesiredHostName" -ErrorAction SilentlyContinue)) {throw}
+        }
+        catch {
+            if ($Counter -le 60) {
+                Write-Warning "New-PSSession 'To$DesiredHostName' failed. Trying again in 15 seconds..."
+                Start-Sleep -Seconds 15
+            }
+            else {
+                Write-Error "Unable to create new PSSession to 'To$DesiredHostName' using Local Admin account '$($PSRemotingLocalAdminCredentials.UserName)'! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        $Counter++
+    }
 
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
@@ -9286,8 +8790,7 @@ function New-DomainController {
         $env:ComputerName
     }
     $InvCmdCheckSplatParams = @{
-        ComputerName            = $ServerIP
-        Credential              = $PSRemotingLocalAdminCredentials
+        Session                 = Get-PSSession -Name "To$DesiredHostName"
         ScriptBlock             = $InvCmdCheckSB
         ArgumentList            = $LocalAdministratorAccountCredentials.Password
         ErrorAction             = "Stop"
@@ -9306,8 +8809,7 @@ function New-DomainController {
             Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart -ErrorAction SilentlyContinue
         }
         $InvCmdRenameComputerSplatParams = @{
-            ComputerName    = $ServerIP
-            Credential      = $PSRemotingLocalAdminCredentials
+            Session         = Get-PSSession -Name "To$DesiredHostName"
             ScriptBlock     = $RenameComputerSB
             ArgumentList    = $DesiredHostName,$PSRemotingLocalAdminCredentials
             ErrorAction     = "SilentlyContinue"
@@ -9329,6 +8831,8 @@ function New-DomainController {
 
 
     #region >> Wait For HostName Change
+
+    Get-PSSession -Name "To$DesiredHostName" | Remove-PSSession
     
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions Post Name Change Reboot...
     $Counter = 0
@@ -9392,7 +8896,12 @@ function New-DomainController {
                 $null = Enable-PSRemoting -Force -ErrorAction Stop
             }
             catch {
-                $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+                $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+                if ($NICsWPublicProfile.Count -gt 0) {
+                    foreach ($Nic in $NICsWPublicProfile) {
+                        Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                    }
+                }
             
                 try {
                     $null = Enable-PSRemoting -Force
@@ -9509,130 +9018,126 @@ function New-DomainController {
     }
     #>
 
-    $NewDomainControllerConfigAsStringPrep = @'
-configuration NewDomainController {
-    param (
-        [Parameter(Mandatory=$True)]
-        [pscredential]$NewDomainAdminCredentials,
-
-        [Parameter(Mandatory=$True)]
-        [pscredential]$LocalAdministratorAccountCredentials
+    $NewDomainControllerConfigAsStringPrep = @(
+        'configuration NewDomainController {'
+        '    param ('
+        '        [Parameter(Mandatory=$True)]'
+        '        [pscredential]$NewDomainAdminCredentials,'
+        ''
+        '        [Parameter(Mandatory=$True)]'
+        '        [pscredential]$LocalAdministratorAccountCredentials'
+        '    )'
+        ''
+        "    Import-DscResource -ModuleName 'PSDesiredStateConfiguration' -ModuleVersion $PSDSCVersion"
+        "    Import-DscResource -ModuleName 'xPSDesiredStateConfiguration' -ModuleVersion $xPSDSCVersion"
+        "    Import-DscResource -ModuleName 'xActiveDirectory' -ModuleVersion $xActiveDirectoryVersion"
+        ''
+        '    $NewDomainAdminUser = $($NewDomainAdminCredentials.UserName -split "\\")[-1]'
+        '    $NewDomainAdminUserBackup = $NewDomainAdminUser + "backup"'
+        '            '
+        '    Node $AllNodes.where({ $_.Purpose -eq "Domain Controller" }).NodeName'
+        '    {'
+        '        @($ConfigurationData.NonNodeData.ADGroups).foreach({'
+        '            xADGroup $_'
+        '            {'
+        '                Ensure = "Present"'
+        '                GroupName = $_'
+        '                DependsOn = "[xADUser]FirstUser"'
+        '            }'
+        '        })'
+        ''
+        '        @($ConfigurationData.NonNodeData.OrganizationalUnits).foreach({'
+        '            xADOrganizationalUnit $_'
+        '            {'
+        '                Ensure = "Present"'
+        '                Name = ($_ -replace "-")'
+        '                Path = ("DC={0},DC={1}" -f ($ConfigurationData.NonNodeData.DomainName -split "\.")[0], ($ConfigurationData.NonNodeData.DomainName -split "\.")[1])'
+        '                DependsOn = "[xADUser]FirstUser"'
+        '            }'
+        '        })'
+        ''
+        '        @($ConfigurationData.NonNodeData.ADUsers).foreach({'
+        '            xADUser "$($_.FirstName) $($_.LastName)"'
+        '            {'
+        '                Ensure = "Present"'
+        '                DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '                GivenName = $_.FirstName'
+        '                SurName = $_.LastName'
+        '                UserName = ("{0}{1}" -f $_.FirstName, $_.LastName)'
+        '                Department = $_.Department'
+        '                Path = ("OU={0},DC={1},DC={2}" -f $_.Department, ($ConfigurationData.NonNodeData.DomainName -split "\.")[0], ($ConfigurationData.NonNodeData.DomainName -split "\.")[1])'
+        '                JobTitle = $_.Title'
+        '                Password = $NewDomainAdminCredentials'
+        '                DependsOn = "[xADOrganizationalUnit]$($_.Department)"'
+        '            }'
+        '        })'
+        ''
+        '        ($Node.WindowsFeatures).foreach({'
+        '            WindowsFeature $_'
+        '            {'
+        '                Ensure = "Present"'
+        '                Name = $_'
+        '            }'
+        '        })'
+        ''
+        '        xADDomain ADDomain'
+        '        {'
+        '            DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '            DomainAdministratorCredential = $LocalAdministratorAccountCredentials'
+        '            SafemodeAdministratorPassword = $LocalAdministratorAccountCredentials'
+        '            DependsOn = "[WindowsFeature]AD-Domain-Services"'
+        '        }'
+        ''
+        '        xWaitForADDomain DscForestWait'
+        '        {'
+        '            DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '            DomainUserCredential = $LocalAdministratorAccountCredentials'
+        '            RetryCount = $Node.RetryCount'
+        '            RetryIntervalSec = $Node.RetryIntervalSec'
+        '            DependsOn = "[xADDomain]ADDomain"'
+        '        }'
+        ''
+        '        xADUser FirstUser'
+        '        {'
+        '            DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '            DomainAdministratorCredential = $LocalAdministratorAccountCredentials'
+        '            UserName = $NewDomainAdminUser'
+        '            Password = $NewDomainAdminCredentials'
+        '            Ensure = "Present"'
+        '            DependsOn = "[xWaitForADDomain]DscForestWait"'
+        '        }'
+        ''
+        '        xADGroup DomainAdmins {'
+        '            GroupName = "Domain Admins"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        '        '
+        '        xADGroup EnterpriseAdmins {'
+        '            GroupName = "Enterprise Admins"'
+        '            GroupScope = "Universal"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        ''
+        '        xADGroup GroupPolicyOwners {'
+        '            GroupName = "Group Policy Creator Owners"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        ''
+        '        xADGroup SchemaAdmins {'
+        '            GroupName = "Schema Admins"'
+        '            GroupScope = "Universal"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        '    }'
+        '}'
     )
 
-'@ + @"
-
-    Import-DscResource -ModuleName 'PSDesiredStateConfiguration' -ModuleVersion $PSDSCVersion
-    Import-DscResource -ModuleName 'xPSDesiredStateConfiguration' -ModuleVersion $xPSDSCVersion
-    Import-DscResource -ModuleName 'xActiveDirectory' -ModuleVersion $xActiveDirectoryVersion
-
-"@ + @'
-
-    $NewDomainAdminUser = $($NewDomainAdminCredentials.UserName -split "\\")[-1]
-    $NewDomainAdminUserBackup = $NewDomainAdminUser + "backup"
-            
-    Node $AllNodes.where({ $_.Purpose -eq 'Domain Controller' }).NodeName
-    {
-        @($ConfigurationData.NonNodeData.ADGroups).foreach({
-            xADGroup $_
-            {
-                Ensure = 'Present'
-                GroupName = $_
-                DependsOn = '[xADUser]FirstUser'
-            }
-        })
-
-        @($ConfigurationData.NonNodeData.OrganizationalUnits).foreach({
-            xADOrganizationalUnit $_
-            {
-                Ensure = 'Present'
-                Name = ($_ -replace '-')
-                Path = ('DC={0},DC={1}' -f ($ConfigurationData.NonNodeData.DomainName -split '\.')[0], ($ConfigurationData.NonNodeData.DomainName -split '\.')[1])
-                DependsOn = '[xADUser]FirstUser'
-            }
-        })
-
-        @($ConfigurationData.NonNodeData.ADUsers).foreach({
-            xADUser "$($_.FirstName) $($_.LastName)"
-            {
-                Ensure = 'Present'
-                DomainName = $ConfigurationData.NonNodeData.DomainName
-                GivenName = $_.FirstName
-                SurName = $_.LastName
-                UserName = ('{0}{1}' -f $_.FirstName, $_.LastName)
-                Department = $_.Department
-                Path = ("OU={0},DC={1},DC={2}" -f $_.Department, ($ConfigurationData.NonNodeData.DomainName -split '\.')[0], ($ConfigurationData.NonNodeData.DomainName -split '\.')[1])
-                JobTitle = $_.Title
-                Password = $NewDomainAdminCredentials
-                DependsOn = "[xADOrganizationalUnit]$($_.Department)"
-            }
-        })
-
-        ($Node.WindowsFeatures).foreach({
-            WindowsFeature $_
-            {
-                Ensure = 'Present'
-                Name = $_
-            }
-        })        
-        
-        xADDomain ADDomain          
-        {             
-            DomainName = $ConfigurationData.NonNodeData.DomainName
-            DomainAdministratorCredential = $LocalAdministratorAccountCredentials
-            SafemodeAdministratorPassword = $LocalAdministratorAccountCredentials
-            DependsOn = '[WindowsFeature]AD-Domain-Services'
-        }
-
-        xWaitForADDomain DscForestWait
-        {
-            DomainName = $ConfigurationData.NonNodeData.DomainName
-            DomainUserCredential = $LocalAdministratorAccountCredentials
-            RetryCount = $Node.RetryCount
-            RetryIntervalSec = $Node.RetryIntervalSec
-            DependsOn = "[xADDomain]ADDomain"
-        }
-
-        xADUser FirstUser
-        {
-            DomainName = $ConfigurationData.NonNodeData.DomainName
-            DomainAdministratorCredential = $LocalAdministratorAccountCredentials
-            UserName = $NewDomainAdminUser
-            Password = $NewDomainAdminCredentials
-            Ensure = "Present"
-            DependsOn = "[xWaitForADDomain]DscForestWait"
-        }
-
-        xADGroup DomainAdmins {
-            GroupName = 'Domain Admins'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-        
-        xADGroup EnterpriseAdmins {
-            GroupName = 'Enterprise Admins'
-            GroupScope = 'Universal'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-
-        xADGroup GroupPolicyOwners {
-            GroupName = 'Group Policy Creator Owners'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-
-        xADGroup SchemaAdmins {
-            GroupName = 'Schema Admins'
-            GroupScope = 'Universal'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-    }         
-}
-'@
-
     try {
-        $NewDomainControllerConfigAsString = [scriptblock]::Create($NewDomainControllerConfigAsStringPrep).ToString()
+        $NewDomainControllerConfigAsString = [scriptblock]::Create($($NewDomainControllerConfigAsStringPrep -join "`n")).ToString()
     }
     catch {
         Write-Error $_
@@ -10007,8 +9512,14 @@ function New-RootCA {
         }
         catch {
             try {
-                $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                if ($PSVersionTable.PSEdition -ne "Core") {
+                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+                else {
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+
                 Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
                 Import-Module PSPKI -ErrorAction Stop
             }
@@ -10057,7 +9568,12 @@ function New-RootCA {
             $null = Enable-PSRemoting -Force -ErrorAction Stop
         }
         catch {
-            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+            $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+            if ($NICsWPublicProfile.Count -gt 0) {
+                foreach ($Nic in $NICsWPublicProfile) {
+                    Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                }
+            }
 
             try {
                 $null = Enable-PSRemoting -Force
@@ -10382,7 +9898,12 @@ function New-RootCA {
                 $null = Enable-PSRemoting -Force -ErrorAction Stop
             }
             catch {
-                $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+                $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+                if ($NICsWPublicProfile.Count -gt 0) {
+                    foreach ($Nic in $NICsWPublicProfile) {
+                        Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                    }
+                }
 
                 try {
                     $null = Enable-PSRemoting -Force
@@ -10489,8 +10010,14 @@ function New-RootCA {
     [array]$NeededModules = @(
         "PSPKI"
     )
-    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+    else {
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
 
     [System.Collections.ArrayList]$FailedModuleInstall = @()
     foreach ($ModuleResource in $NeededModules) {
@@ -10578,6 +10105,484 @@ function New-RootCA {
     $Output
 
     #endregion >> Do RootCA Install
+}
+
+
+function New-RunSpace {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$True)]
+        [string]$RunspaceName,
+
+        [Parameter(Mandatory=$True)]
+        [scriptblock]$ScriptBlock,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$MirrorCurrentEnv = $True,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$Wait
+    )
+
+    #region >> Helper Functions
+
+    function NewUniqueString {
+        [CmdletBinding()]
+        Param(
+            [Parameter(Mandatory=$False)]
+            [string[]]$ArrayOfStrings,
+    
+            [Parameter(Mandatory=$True)]
+            [string]$PossibleNewUniqueString
+        )
+    
+        if (!$ArrayOfStrings -or $ArrayOfStrings.Count -eq 0 -or ![bool]$($ArrayOfStrings -match "[\w]")) {
+            $PossibleNewUniqueString
+        }
+        else {
+            $OriginalString = $PossibleNewUniqueString
+            $Iteration = 1
+            while ($ArrayOfStrings -contains $PossibleNewUniqueString) {
+                $AppendedValue = "_$Iteration"
+                $PossibleNewUniqueString = $OriginalString + $AppendedValue
+                $Iteration++
+            }
+    
+            $PossibleNewUniqueString
+        }
+    }
+
+    #endregion >> Helper Functions
+
+    #region >> Runspace Prep
+
+    # Create Global Variable Names that don't conflict with other exisiting Global Variables
+    $ExistingGlobalVariables = Get-Variable -Scope Global
+    $DesiredGlobalVariables = @("RSSyncHash","RSJobCleanup","RSJobs")
+    if ($ExistingGlobalVariables.Name -notcontains 'RSSyncHash') {
+        $GlobalRSSyncHashName = NewUniqueString -PossibleNewUniqueString "RSSyncHash" -ArrayOfStrings $ExistingGlobalVariables.Name
+        Invoke-Expression "`$global:$GlobalRSSyncHashName = [hashtable]::Synchronized(@{})"
+        $globalRSSyncHash = Get-Variable -Name $GlobalRSSyncHashName -Scope Global -ValueOnly
+    }
+    else {
+        $GlobalRSSyncHashName = 'RSSyncHash'
+
+        # Also make sure that $RunSpaceName is a unique key in $global:RSSyncHash
+        if ($RSSyncHash.Keys -contains $RunSpaceName) {
+            $RSNameOriginal = $RunSpaceName
+            $RunSpaceName = NewUniqueString -PossibleNewUniqueString $RunSpaceName -ArrayOfStrings $RSSyncHash.Keys
+            if ($RSNameOriginal -ne $RunSpaceName) {
+                Write-Warning "The RunspaceName '$RSNameOriginal' already exists. Your new RunspaceName will be '$RunSpaceName'"
+            }
+        }
+
+        $globalRSSyncHash = $global:RSSyncHash
+    }
+    if ($ExistingGlobalVariables.Name -notcontains 'RSJobCleanup') {
+        $GlobalRSJobCleanupName = NewUniqueString -PossibleNewUniqueString "RSJobCleanup" -ArrayOfStrings $ExistingGlobalVariables.Name
+        Invoke-Expression "`$global:$GlobalRSJobCleanupName = [hashtable]::Synchronized(@{})"
+        $globalRSJobCleanup = Get-Variable -Name $GlobalRSJobCleanupName -Scope Global -ValueOnly
+    }
+    else {
+        $GlobalRSJobCleanupName = 'RSJobCleanup'
+        $globalRSJobCleanup = $global:RSJobCleanup
+    }
+    if ($ExistingGlobalVariables.Name -notcontains 'RSJobs') {
+        $GlobalRSJobsName = NewUniqueString -PossibleNewUniqueString "RSJobs" -ArrayOfStrings $ExistingGlobalVariables.Name
+        Invoke-Expression "`$global:$GlobalRSJobsName = [System.Collections.ArrayList]::Synchronized([System.Collections.ArrayList]::new())"
+        $globalRSJobs = Get-Variable -Name $GlobalRSJobsName -Scope Global -ValueOnly
+    }
+    else {
+        $GlobalRSJobsName = 'RSJobs'
+        $globalRSJobs = $global:RSJobs
+    }
+    $GlobalVariables = @($GlobalSyncHashName,$GlobalRSJobCleanupName,$GlobalRSJobsName)
+    #Write-Host "Global Variable names are: $($GlobalVariables -join ", ")"
+
+    # Prep an empty pscustomobject for the RunspaceNameResult Key in $globalRSSyncHash
+    $globalRSSyncHash."$RunspaceName`Result" = [pscustomobject]@{}
+
+    #endregion >> Runspace Prep
+
+
+    ##### BEGIN Runspace Manager Runspace (A Runspace to Manage All Runspaces) #####
+
+    $globalRSJobCleanup.Flag = $True
+
+    if ($ExistingGlobalVariables.Name -notcontains 'RSJobCleanup') {
+        #Write-Host '$global:RSJobCleanup does NOT already exists. Creating New Runspace Manager Runspace...'
+        $RunspaceMgrRunspace = [runspacefactory]::CreateRunspace()
+        if ($PSVersionTable.PSEdition -ne "Core") {
+            $RunspaceMgrRunspace.ApartmentState = "STA"
+        }
+        $RunspaceMgrRunspace.ThreadOptions = "ReuseThread"
+        $RunspaceMgrRunspace.Open()
+
+        # Prepare to Receive the Child Runspace Info to the RunspaceManagerRunspace
+        $RunspaceMgrRunspace.SessionStateProxy.SetVariable("JobCleanup",$globalRSJobCleanup)
+        $RunspaceMgrRunspace.SessionStateProxy.SetVariable("jobs",$globalRSJobs)
+        $RunspaceMgrRunspace.SessionStateProxy.SetVariable("SyncHash",$globalRSSyncHash)
+
+        $globalRSJobCleanup.PowerShell = [PowerShell]::Create().AddScript({
+
+            ##### BEGIN Runspace Manager Runspace Helper Functions #####
+
+            # Load the functions we packed up
+            $FunctionsForSBUse | foreach { Invoke-Expression $_ }
+
+            ##### END Runspace Manager Runspace Helper Functions #####
+
+            # Routine to handle completed Runspaces
+            $ProcessedJobRecords = [System.Collections.ArrayList]::new()
+            $SyncHash.ProcessedJobRecords = $ProcessedJobRecords
+            while ($JobCleanup.Flag) {
+                if ($jobs.Count -gt 0) {
+                    $Counter = 0
+                    foreach($job in $jobs) { 
+                        if ($ProcessedJobRecords.Runspace.InstanceId.Guid -notcontains $job.Runspace.InstanceId.Guid) {
+                            $job | Export-CliXml "$HOME\job$Counter.xml" -Force
+                            $CollectJobRecordPrep = Import-CliXML -Path "$HOME\job$Counter.xml"
+                            Remove-Item -Path "$HOME\job$Counter.xml" -Force
+                            $null = $ProcessedJobRecords.Add($CollectJobRecordPrep)
+                        }
+
+                        if ($job.AsyncHandle.IsCompleted -or $job.AsyncHandle -eq $null) {
+                            [void]$job.PSInstance.EndInvoke($job.AsyncHandle)
+                            $job.Runspace.Dispose()
+                            $job.PSInstance.Dispose()
+                            $job.AsyncHandle = $null
+                            $job.PSInstance = $null
+                        }
+                        $Counter++
+                    }
+
+                    # Determine if we can have the Runspace Manager Runspace rest
+                    $temparray = $jobs.clone()
+                    $temparray | Where-Object {
+                        $_.AsyncHandle.IsCompleted -or $_.AsyncHandle -eq $null
+                    } | foreach {
+                        $temparray.remove($_)
+                    }
+
+                    <#
+                    if ($temparray.Count -eq 0 -or $temparray.AsyncHandle.IsCompleted -notcontains $False) {
+                        $JobCleanup.Flag = $False
+                    }
+                    #>
+
+                    Start-Sleep -Seconds 5
+
+                    # Optional -
+                    # For realtime updates to a GUI depending on changes in data within the $globalRSSyncHash, use
+                    # a something like the following (replace with $RSSyncHash properties germane to your project)
+                    <#
+                    if ($RSSyncHash.WPFInfoDatagrid.Items.Count -ne 0 -and $($RSSynchash.IPArray.Count -ne 0 -or $RSSynchash.IPArray -ne $null)) {
+                        if ($RSSyncHash.WPFInfoDatagrid.Items.Count -ge $RSSynchash.IPArray.Count) {
+                            Update-Window -Control $RSSyncHash.WPFInfoPleaseWaitLabel -Property Visibility -Value "Hidden"
+                        }
+                    }
+                    #>
+                }
+            } 
+        })
+
+        # Start the RunspaceManagerRunspace
+        $globalRSJobCleanup.PowerShell.Runspace = $RunspaceMgrRunspace
+        $globalRSJobCleanup.Thread = $globalRSJobCleanup.PowerShell.BeginInvoke()
+    }
+
+    ##### END Runspace Manager Runspace #####
+
+
+    ##### BEGIN New Generic Runspace #####
+
+    $GenericRunspace = [runspacefactory]::CreateRunspace()
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $GenericRunspace.ApartmentState = "STA"
+    }
+    $GenericRunspace.ThreadOptions = "ReuseThread"
+    $GenericRunspace.Open()
+
+    # Pass the $globalRSSyncHash to the Generic Runspace so it can read/write properties to it and potentially
+    # coordinate with other runspaces
+    $GenericRunspace.SessionStateProxy.SetVariable("SyncHash",$globalRSSyncHash)
+
+    # Pass $globalRSJobCleanup and $globalRSJobs to the Generic Runspace so that the Runspace Manager Runspace can manage it
+    $GenericRunspace.SessionStateProxy.SetVariable("JobCleanup",$globalRSJobCleanup)
+    $GenericRunspace.SessionStateProxy.SetVariable("Jobs",$globalRSJobs)
+    $GenericRunspace.SessionStateProxy.SetVariable("ScriptBlock",$ScriptBlock)
+
+    # Pass all other notable environment characteristics 
+    if ($MirrorCurrentEnv) {
+        [System.Collections.ArrayList]$SetEnvStringArray = @()
+
+        $VariablesNotToForward = @('globalRSSyncHash','RSSyncHash','globalRSJobCleanUp','RSJobCleanup',
+        'globalRSJobs','RSJobs','ExistingGlobalVariables','DesiredGlobalVariables','$GlobalRSSyncHashName',
+        'RSNameOriginal','GlobalRSJobCleanupName','GlobalRSJobsName','GlobalVariables','RunspaceMgrRunspace',
+        'GenericRunspace','ScriptBlock')
+
+        $Variables = Get-Variable
+        foreach ($VarObj in $Variables) {
+            if ($VariablesNotToForward -notcontains $VarObj.Name) {
+                try {
+                    $GenericRunspace.SessionStateProxy.SetVariable($VarObj.Name,$VarObj.Value)
+                }
+                catch {
+                    Write-Verbose "Skipping `$$($VarObj.Name)..."
+                }
+            }
+        }
+
+        # Set Environment Variables
+        $EnvVariables = Get-ChildItem Env:\
+        if ($PSBoundParameters['EnvironmentVariablesToForward'] -and $EnvironmentVariablesToForward -notcontains '*') {
+            $EnvVariables = foreach ($VarObj in $EnvVariables) {
+                if ($EnvironmentVariablesToForward -contains $VarObj.Name) {
+                    $VarObj
+                }
+            }
+        }
+        $SetEnvVarsPrep = foreach ($VarObj in $EnvVariables) {
+            if ([char[]]$VarObj.Name -contains '(' -or [char[]]$VarObj.Name -contains ' ') {
+                $EnvStringArr = @(
+                    'try {'
+                    $('    ${env:' + $VarObj.Name + '} = ' + "@'`n$($VarObj.Value)`n'@")
+                    '}'
+                    'catch {'
+                    "    Write-Verbose 'Unable to forward environment variable $($VarObj.Name)'"
+                    '}'
+                )
+            }
+            else {
+                $EnvStringArr = @(
+                    'try {'
+                    $('    $env:' + $VarObj.Name + ' = ' + "@'`n$($VarObj.Value)`n'@")
+                    '}'
+                    'catch {'
+                    "    Write-Verbose 'Unable to forward environment variable $($VarObj.Name)'"
+                    '}'
+                )
+            }
+            $EnvStringArr -join "`n"
+        }
+        $SetEnvVarsString = $SetEnvVarsPrep -join "`n"
+
+        $null = $SetEnvStringArray.Add($SetEnvVarsString)
+
+        # Set Modules
+        $Modules = Get-Module
+        if ($PSBoundParameters['ModulesToForward'] -and $ModulesToForward -notcontains '*') {
+            $Modules = foreach ($ModObj in $Modules) {
+                if ($ModulesToForward -contains $ModObj.Name) {
+                    $ModObj
+                }
+            }
+        }
+        $SetModulesPrep = foreach ($ModObj in $Modules) {
+            $ModuleManifestFullPath = $(Get-ChildItem -Path $ModObj.ModuleBase -Recurse -File | Where-Object {
+                $_.Name -eq "$($ModObj.Name).psd1"
+            }).FullName
+
+            $ModStringArray = @(
+                "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
+                '    try {'
+                "        Import-Module '$($ModObj.Name)' -NoClobber -ErrorAction Stop"
+                '    }'
+                '    catch {'
+                '        try {'
+                "            Import-Module '$ModuleManifestFullPath' -NoClobber -ErrorAction Stop"
+                '        }'
+                '        catch {'
+                "            Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
+                '        }'
+                '    }'
+                '}'
+            )
+            $ModStringArray -join "`n"
+        }
+        $SetModulesString = $SetModulesPrep -join "`n"
+
+        $null = $SetEnvStringArray.Add($SetModulesString)
+    
+        # Set Functions
+        $Functions = Get-ChildItem Function:\ | Where-Object {![System.String]::IsNullOrWhiteSpace($_.Name)}
+        if ($PSBoundParameters['FunctionsToForward'] -and $FunctionsToForward -notcontains '*') {
+            $Functions = foreach ($FuncObj in $Functions) {
+                if ($FunctionsToForward -contains $FuncObj.Name) {
+                    $FuncObj
+                }
+            }
+        }
+        $SetFunctionsPrep = foreach ($FuncObj in $Functions) {
+            $FunctionText = Invoke-Expression $('@(${Function:' + $FuncObj.Name + '}.Ast.Extent.Text)')
+            if ($($FunctionText -split "`n").Count -gt 1) {
+                if ($($FunctionText -split "`n")[0] -match "^function ") {
+                    if ($($FunctionText -split "`n") -match "^'@") {
+                        Write-Warning "Unable to forward function $($FuncObj.Name) due to heredoc string: '@"
+                    }
+                    else {
+                        'Invoke-Expression ' + "@'`n$FunctionText`n'@"
+                    }
+                }
+            }
+            elseif ($($FunctionText -split "`n").Count -eq 1) {
+                if ($FunctionText -match "^function ") {
+                    'Invoke-Expression ' + "@'`n$FunctionText`n'@"
+                }
+            }
+        }
+        $SetFunctionsString = $SetFunctionsPrep -join "`n"
+
+        $null = $SetEnvStringArray.Add($SetFunctionsString)
+
+        $GenericRunspace.SessionStateProxy.SetVariable("SetEnvStringArray",$SetEnvStringArray)
+    }
+
+    #$SetEnvStringArray | Export-CliXml -Path "$HOME\SetEnvStringArray.xml" -Force 
+
+    $GenericPSInstance = [powershell]::Create()
+
+    # Define the main PowerShell Script that will run the $ScriptBlock
+    $null = $GenericPSInstance.AddScript({
+        $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name Done -Value $False
+        $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name Errors -Value $null
+        $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name ErrorsDetailed -Value $null
+        $SyncHash."$RunspaceName`Result".Errors = [System.Collections.ArrayList]::new()
+        $SyncHash."$RunspaceName`Result".ErrorsDetailed = [System.Collections.ArrayList]::new()
+        
+        ##### BEGIN Generic Runspace Helper Functions #####
+
+        # Load the environment we packed up
+        if ($SetEnvStringArray) {
+            foreach ($obj in $SetEnvStringArray) {
+                if (![string]::IsNullOrWhiteSpace($obj)) {
+                    try {
+                        Invoke-Expression $obj
+                    }
+                    catch {
+                        $null = $SyncHash."$RunSpaceName`Result".Errors.Add($_)
+
+                        $ErrMsg = "Problem with:`n$obj`nError Message:`n" + $($_ | Out-String)
+                        $null = $SyncHash."$RunSpaceName`Result".ErrorsDetailed.Add($ErrMsg)
+                    }
+                }
+            }
+        }
+
+        ##### END Generic Runspace Helper Functions #####
+
+        ##### BEGIN Script To Run #####
+
+        try {
+            # NOTE: Depending on the content of the scriptblock, InvokeReturnAsIs() and Invoke-Command can cause
+            # the Runspace to hang. Invoke-Expression works all the time.
+            #$Result = $ScriptBlock.InvokeReturnAsIs()
+            #$Result = Invoke-Command -ScriptBlock $ScriptBlock
+            #$ScriptBlock.ToString() | Export-CliXml -Path "$HOME\SBToString.xml"
+            $Result = Invoke-Expression $ScriptBlock.ToString()
+            $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name Output -Value $Result
+        }
+        catch {
+            $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name Output -Value $Result
+
+            $null = $SyncHash."$RunSpaceName`Result".Errors.Add($_)
+
+            $ErrMsg = "Problem with:`n$($ScriptBlock.ToString())`nError Message:`n" + $($_ | Out-String)
+            $null = $SyncHash."$RunSpaceName`Result".ErrorsDetailed.Add($ErrMsg)
+        }
+
+        ##### END Script To Run #####
+
+        $SyncHash."$RunSpaceName`Result".Done = $True
+    })
+
+    # Start the Generic Runspace
+    $GenericPSInstance.Runspace = $GenericRunspace
+
+    if ($Wait) {
+        # The below will make any output of $GenericRunspace available in $Object in current scope
+        $Object = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
+        $GenericAsyncHandle = $GenericPSInstance.BeginInvoke($Object,$Object)
+
+        $GenericRunspaceInfo = [pscustomobject]@{
+            Name            = $RunSpaceName + "Generic"
+            PSInstance      = $GenericPSInstance
+            Runspace        = $GenericRunspace
+            AsyncHandle     = $GenericAsyncHandle
+        }
+        $null = $globalRSJobs.Add($GenericRunspaceInfo)
+
+        #while ($globalRSSyncHash."$RunSpaceName`Done" -ne $True) {
+        while ($GenericAsyncHandle.IsCompleted -ne $True) {
+            #Write-Host "Waiting for -ScriptBlock to finish..."
+            Start-Sleep -Milliseconds 10
+        }
+
+        $globalRSSyncHash."$RunspaceName`Result".Output
+        #$Object
+    }
+    else {
+        $HelperRunspace = [runspacefactory]::CreateRunspace()
+        if ($PSVersionTable.PSEdition -ne "Core") {
+            $HelperRunspace.ApartmentState = "STA"
+        }
+        $HelperRunspace.ThreadOptions = "ReuseThread"
+        $HelperRunspace.Open()
+
+        # Pass the $globalRSSyncHash to the Helper Runspace so it can read/write properties to it and potentially
+        # coordinate with other runspaces
+        $HelperRunspace.SessionStateProxy.SetVariable("SyncHash",$globalRSSyncHash)
+
+        # Pass $globalRSJobCleanup and $globalRSJobs to the Helper Runspace so that the Runspace Manager Runspace can manage it
+        $HelperRunspace.SessionStateProxy.SetVariable("JobCleanup",$globalRSJobCleanup)
+        $HelperRunspace.SessionStateProxy.SetVariable("Jobs",$globalRSJobs)
+
+        # Set any other needed variables in the $HelperRunspace
+        $HelperRunspace.SessionStateProxy.SetVariable("GenericRunspace",$GenericRunspace)
+        $HelperRunspace.SessionStateProxy.SetVariable("GenericPSInstance",$GenericPSInstance)
+        $HelperRunspace.SessionStateProxy.SetVariable("RunSpaceName",$RunSpaceName)
+
+        $HelperPSInstance = [powershell]::Create()
+
+        # Define the main PowerShell Script that will run the $ScriptBlock
+        $null = $HelperPSInstance.AddScript({
+            ##### BEGIN Script To Run #####
+
+            # The below will make any output of $GenericRunspace available in $Object in current scope
+            $Object = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
+            $GenericAsyncHandle = $GenericPSInstance.BeginInvoke($Object,$Object)
+
+            $GenericRunspaceInfo = [pscustomobject]@{
+                Name            = $RunSpaceName + "Generic"
+                PSInstance      = $GenericPSInstance
+                Runspace        = $GenericRunspace
+                AsyncHandle     = $GenericAsyncHandle
+            }
+            $null = $Jobs.Add($GenericRunspaceInfo)
+
+            #while ($SyncHash."$RunSpaceName`Done" -ne $True) {
+            while ($GenericAsyncHandle.IsCompleted -ne $True) {
+                #Write-Host "Waiting for -ScriptBlock to finish..."
+                Start-Sleep -Milliseconds 10
+            }
+
+            ##### END Script To Run #####
+        })
+
+        # Start the Helper Runspace
+        $HelperPSInstance.Runspace = $HelperRunspace
+        $HelperAsyncHandle = $HelperPSInstance.BeginInvoke()
+
+        $HelperRunspaceInfo = [pscustomobject]@{
+            Name            = $RunSpaceName + "Helper"
+            PSInstance      = $HelperPSInstance
+            Runspace        = $HelperRunspace
+            AsyncHandle     = $HelperAsyncHandle
+        }
+        $null = $globalRSJobs.Add($HelperRunspaceInfo)
+    }
+
+    ##### END Generic Runspace
 }
 
 
@@ -11239,8 +11244,14 @@ function New-SubordinateCA {
         }
         catch {
             try {
-                $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                if ($PSVersionTable.PSEdition -ne "Core") {
+                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+                else {
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+
                 Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
                 Import-Module PSPKI -ErrorAction Stop
             }
@@ -11294,7 +11305,12 @@ function New-SubordinateCA {
             $null = Enable-PSRemoting -Force -ErrorAction Stop
         }
         catch {
-            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+            $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+            if ($NICsWPublicProfile.Count -gt 0) {
+                foreach ($Nic in $NICsWPublicProfile) {
+                    Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                }
+            }
 
             try {
                 $null = Enable-PSRemoting -Force
@@ -11626,32 +11642,33 @@ function New-SubordinateCA {
         $PKIWebsiteCertFileOut = "$FileOutputDirectory\pki.$($RelevantSubCANetworkInfo.DomainName).cer"
         $PKIWebSiteCertInfFile = "$FileOutputDirectory\pki.$($RelevantSubCANetworkInfo.DomainName).inf"
         $PKIWebSiteCertRequestFile = "$FileOutputDirectory\pki.$($RelevantSubCANetworkInfo.DomainName).csr"
-        $inf = @"
-[Version]
-Signature="`$Windows NT`$"
 
-[NewRequest]
-FriendlyName = pki.$($RelevantSubCANetworkInfo.DomainName)
-Subject = "CN=pki.$($RelevantSubCANetworkInfo.DomainName)"
-KeyLength = 2048
-HashAlgorithm = SHA256
-Exportable = TRUE
-KeySpec = 1
-KeyUsage = 0xa0
-MachineKeySet = TRUE
-SMIME = FALSE
-PrivateKeyArchive = FALSE
-UserProtected = FALSE
-UseExistingKeySet = FALSE
-ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
-ProviderType = 12
-RequestType = PKCS10
-
-[Extensions]
-2.5.29.17 = "{text}"
-_continue_ = "dns=pki.$($RelevantSubCANetworkInfo.DomainName)&"
-_continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
-"@
+        $inf = @(
+            '[Version]'
+            'Signature="$Windows NT$"'
+            ''
+            '[NewRequest]'
+            "FriendlyName = pki.$($RelevantSubCANetworkInfo.DomainName)"
+            "Subject = `"CN=pki.$($RelevantSubCANetworkInfo.DomainName)`""
+            'KeyLength = 2048'
+            'HashAlgorithm = SHA256'
+            'Exportable = TRUE'
+            'KeySpec = 1'
+            'KeyUsage = 0xa0'
+            'MachineKeySet = TRUE'
+            'SMIME = FALSE'
+            'PrivateKeyArchive = FALSE'
+            'UserProtected = FALSE'
+            'UseExistingKeySet = FALSE'
+            'ProviderName = "Microsoft RSA SChannel Cryptographic Provider"'
+            'ProviderType = 12'
+            'RequestType = PKCS10'
+            ''
+            '[Extensions]'
+            '2.5.29.17 = "{text}"'
+            "_continue_ = `"dns=pki.$($RelevantSubCANetworkInfo.DomainName)&`""
+            "_continue_ = `"ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&`""
+        )
 
         $inf | Out-File $PKIWebSiteCertInfFile
         # NOTE: The generation of a Certificate Request File using the below "certreq.exe -new" command also adds the CSR to the 
@@ -11883,7 +11900,12 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
                 $null = Enable-PSRemoting -Force -ErrorAction Stop
             }
             catch {
-                $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+                $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+                if ($NICsWPublicProfile.Count -gt 0) {
+                    foreach ($Nic in $NICsWPublicProfile) {
+                        Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                    }
+                }
 
                 try {
                     $null = Enable-PSRemoting -Force
@@ -11991,8 +12013,13 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
     [array]$NeededModules = @(
         "PSPKI"
     )
-    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+    else {
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
 
     [System.Collections.ArrayList]$FailedModuleInstall = @()
     foreach ($ModuleResource in $NeededModules) {
@@ -12078,8 +12105,13 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
         if (![bool]$(Get-Module -ListAvailable Invoke-CommandAs -ErrorAction SilentlyContinue)) {
             try {
                 Write-Host "Installing 'Invoke-CommandAs' PowerShell Module..."
-                $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                if ($PSVersionTable.PSEdition -ne "Core") {
+                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+                else {
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
                 Install-Module Invoke-CommandAs -ErrorAction Stop
             }
             catch {
@@ -12131,56 +12163,49 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
             ${Function:GetDomainController}.Ast.Extent.Text | Out-File "$HOME\GetDomainController.ps1"
             ${Function:SetupSubCA}.Ast.Extent.Text | Out-File "$HOME\SetupSubCA.ps1"
             $using:NetworkInfoPSObjects | Export-CliXml "$HOME\NetworkInfoPSObjects.xml"
+
+            $ExecutionScript = @(
+                'Start-Transcript -Path "$HOME\NewSubCATask.log" -Append'
+                ''
+                '. "$HOME\GetDomainController.ps1"'
+                '. "$HOME\SetupSubCA.ps1"'
+                '$NetworkInfoPSObjects = Import-CliXML "$HOME\NetworkInfoPSObjects.xml"'
+                ''
+                "`$DomainAdminPwdSS = ConvertTo-SecureString '$using:DomainAdminPwd' -AsPlainText -Force"
+                "`$DomainAdminCredentials = [pscredential]::new('$using:DomainAdminAccount',`$DomainAdminPwdSS)"
+                ''
+                '$SetupSubCASplatParams = @{'
+                '    DomainAdminCredentials              = $DomainAdminCredentials'
+                '    NetworkInfoPSObjects                = $NetworkInfoPSObjects'
+                '    '
+                "    CAType                              = '$using:CAType'"
+                "    NewComputerTemplateCommonName       = '$using:NewComputerTemplateCommonName'"
+                "    NewWebServerTemplateCommonName      = '$using:NewWebServerTemplateCommonName'"
+                "    FileOutputDirectory                 = '$using:FileOutputDirectory'"
+                "    CryptoProvider                      = '$using:CryptoProvider'"
+                "    KeyLength                           = '$using:KeyLength'"
+                "    HashAlgorithm                       = '$using:HashAlgorithm'"
+                "    KeyAlgorithmValue                   = '$using:KeyAlgorithmValue'"
+                "    CDPUrl                              = '$using:CDPUrl'"
+                "    AIAUrl                              = '$using:AIAUrl'"
+                '}'
+                ''
+                '    SetupSubCA @SetupSubCASplatParams -OutVariable Output -ErrorAction SilentlyContinue -ErrorVariable NewSubCAErrs'
+                ''
+                '    $Output | Export-CliXml "$HOME\SetupSubCAOutput.xml"'
+                ''
+                '    if ($NewSubCAErrs) {'
+                '        Write-Warning "Ignored errors are as follows:"'
+                '        Write-Error ($NewSubCAErrs | Select-Object -Unique | Out-String)'
+                '    }'
+                ''
+                '    Stop-Transcript'
+                ''
+                '    # Delete this script file after it is finished running'
+                '    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force'
+                ''
+            )
             
-            $ExecutionScript = @'
-Start-Transcript -Path "$HOME\NewSubCATask.log" -Append
-
-. "$HOME\GetDomainController.ps1"
-. "$HOME\SetupSubCA.ps1"
-$NetworkInfoPSObjects = Import-CliXML "$HOME\NetworkInfoPSObjects.xml"
-
-'@ + @"
-
-`$DomainAdminPwdSS = ConvertTo-SecureString '$using:DomainAdminPwd' -AsPlainText -Force
-`$DomainAdminCredentials = [pscredential]::new("$using:DomainAdminAccount",`$DomainAdminPwdSS)
-
-"@ + @'
-
-$SetupSubCASplatParams = @{
-    DomainAdminCredentials              = $DomainAdminCredentials
-    NetworkInfoPSObjects                = $NetworkInfoPSObjects
-
-'@ + @"
-    
-    CAType                              = "$using:CAType"
-    NewComputerTemplateCommonName       = "$using:NewComputerTemplateCommonName"
-    NewWebServerTemplateCommonName      = "$using:NewWebServerTemplateCommonName"
-    FileOutputDirectory                 = "$using:FileOutputDirectory"
-    CryptoProvider                      = "$using:CryptoProvider"
-    KeyLength                           = "$using:KeyLength"
-    HashAlgorithm                       = "$using:HashAlgorithm"
-    KeyAlgorithmValue                   = "$using:KeyAlgorithmValue"
-    CDPUrl                              = "$using:CDPUrl"
-    AIAUrl                              = "$using:AIAUrl"
-}
-
-"@ + @'
-
-    SetupSubCA @SetupSubCASplatParams -OutVariable Output -ErrorAction SilentlyContinue -ErrorVariable NewSubCAErrs
-
-    $Output | Export-CliXml "$HOME\SetupSubCAOutput.xml"
-
-    if ($NewSubCAErrs) {
-        Write-Warning "Ignored errors are as follows:"
-        Write-Error ($NewSubCAErrs | Select-Object -Unique | Out-String)
-    }
-
-    Stop-Transcript
-
-    # Delete this script file after it is finished running
-    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force
-
-'@
             Set-Content -Path "$HOME\NewSubCAExecutionScript.ps1" -Value $ExecutionScript
 
             $Trigger = New-ScheduledTaskTrigger -Once -At $(Get-Date).AddSeconds(10)
@@ -12256,12 +12281,44 @@ $SetupSubCASplatParams = @{
 }
 
 
+$FunctionsForSBUse = @(
+    ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+    ${Function:GetDomainController}.Ast.Extent.Text
+    ${Function:GetElevation}.Ast.Extent.Text
+    ${Function:GetFileLockProcess}.Ast.Extent.Text
+    ${Function:GetNativePath}.Ast.Extent.Text
+    ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+    ${Function:GetWinPSInCore}.Ast.Extent.Text
+    ${Function:InstallFeatureDism}.Ast.Extent.Text
+    ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+    ${Function:InvokePSCompatibility}.Ast.Extent.Text
+    ${Function:NewUniqueString}.Ast.Extent.Text
+    ${Function:PauseForWarning}.Ast.Extent.Text
+    ${Function:ResolveHost}.Ast.Extent.Text
+    ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+    ${Function:UnzipFile}.Ast.Extent.Text
+    ${Function:Create-Domain}.Ast.Extent.Text
+    ${Function:Create-RootCA}.Ast.Extent.Text
+    ${Function:Create-SubordinateCA}.Ast.Extent.Text
+    ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+    ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
+    ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+    ${Function:Generate-Certificate}.Ast.Extent.Text
+    ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+    ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+    ${Function:Manage-HyperVVM}.Ast.Extent.Text
+    ${Function:New-DomainController}.Ast.Extent.Text
+    ${Function:New-RootCA}.Ast.Extent.Text
+    ${Function:New-Runspace}.Ast.Extent.Text
+    ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
+    ${Function:New-SubordinateCA}.Ast.Extent.Text
+)
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUFuoowkzqrGWx/UVx65pWFECE
-# tlSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUX1zQc+uaVnMcdCH2HhRE0AZ6
+# NSKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12318,11 +12375,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFINpRl0IYBuymv1p
-# DpSKj66fdyBiMA0GCSqGSIb3DQEBAQUABIIBALbqflSwu8Qvo3k4HDM+gHTFnbTs
-# Omik4Jayq49HTQIij3911lzm2PhYjRx1vtnnhLnwJ63+HQCnNaTnmGnO8AEfrgh2
-# s6AT2/5SDBHm2hy1kT2SS3NeCrtr2wfBxHWmHUtTaG3jXWVRMslaYfUBcKTed3x4
-# T/q58Rofyg01Eg3LUgzu9QMNn/ICjyAUUngTi7PEZ8uNAgXCXlEwAvU5hnhMv3D3
-# /Bdr7tCDTxF3HqvXZVTeWoG5sZBl36HMwKsUVPgeLyZ6MQ0MAVBHqL7VY/gR08MQ
-# KN6RI73e8HCApsJQCsdFtCVIn05Nh+Uzpi3g+YmrTSpvnIv00zX5zac58YA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDEJHiNkqdwAF0m7
+# xs2Y6/TdsKsLMA0GCSqGSIb3DQEBAQUABIIBAGY0siIYFMgbPlkqjUciZzDGy34V
+# PamvVTWb466HPEu5jgt+IIal7YbfiBUUS2/0KsoD5hIdVjmHP9XZgBhxusi2RXv6
+# oXsNszVAI0FIlunRPSO+11s3hwJxuAf2s7HM3f8y5XdYHMn4ZhNC7PXUkvM5YY3p
+# SI7KOE12oFkN5MaV7r9GHhh07QiJOuJCfQfCe2KJp8pW372MQNVyrVmPFZy4kf3q
+# fbg3aef7L3wbnU9FfRSZc7mAZtlfgn0foeP+RQb9LuQ0ax8rK4whyv5PGjXHiURu
+# U/Dqw+A6DhQXN2YaL+rNfzZQf9tG0iLX0Te/MV/LVHQAHowo96a+tOOxreM=
 # SIG # End signature block

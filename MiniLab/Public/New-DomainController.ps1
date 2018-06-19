@@ -164,8 +164,14 @@ function New-DomainController {
     $NewBackupDomainAdminLastName =  "backup"
 
     # Get the needed DSC Resources in preparation for copying them to the Remote Host
-    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+    else {
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+
     $NeededDSCResources = @(
         "xPSDesiredStateConfiguration"
         "xActiveDirectory"
@@ -200,7 +206,12 @@ function New-DomainController {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
     catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
 
         try {
             $null = Enable-PSRemoting -Force
@@ -238,71 +249,32 @@ function New-DomainController {
 
     # New-SelfSignedCertifciateEx
     # Get-DSCEncryptionCert
-
-    $NewSelfSignedCertUrl = "https://raw.githubusercontent.com/pldmgg/misc-powershell/master/ThirdPartyRefactors/Functions/New-SelfSignedCertificateEx.ps1"
-    Invoke-Expression $([System.Net.WebClient]::new().DownloadString($NewSelfSignedCertUrl))
-
-    function Get-DSCEncryptionCert {
-        [CmdletBinding()]
-        param (
-            [Parameter(Mandatory=$True)]
-            [string]$MachineName,
     
-            [Parameter(Mandatory=$True)]
-            [string]$ExportDirectory
-        )
-    
-        if (!$(Test-Path $ExportDirectory)) {
-            Write-Error "The path '$ExportDirectory' was not found! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-    
-        $CertificateFriendlyName = "DSC Credential Encryption"
-        $Cert = Get-ChildItem -Path "Cert:\LocalMachine\My" | Where-Object {
-            $_.FriendlyName -eq $CertificateFriendlyName
-        } | Select-Object -First 1
-    
-        if (!$Cert) {
-            $NewSelfSignedCertExSplatParams = @{
-                Subject             = "CN=$Machinename"
-                EKU                 = @('1.3.6.1.4.1.311.80.1','1.3.6.1.5.5.7.3.1','1.3.6.1.5.5.7.3.2')
-                KeyUsage            = 'DigitalSignature, KeyEncipherment, DataEncipherment'
-                SAN                 = $MachineName
-                FriendlyName        = $CertificateFriendlyName
-                Exportable          = $True
-                StoreName           = 'My'
-                StoreLocation       = 'LocalMachine'
-                KeyLength           = 2048
-                ProviderName        = 'Microsoft Enhanced Cryptographic Provider v1.0'
-                AlgorithmName       = "RSA"
-                SignatureAlgorithm  = "SHA256"
-            }
-    
-            New-SelfsignedCertificateEx @NewSelfSignedCertExSplatParams
-    
-            # There is a slight delay before new cert shows up in Cert:
-            # So wait for it to show.
-            while (!$Cert) {
-                $Cert = Get-ChildItem -Path "Cert:\LocalMachine\My" | Where-Object {$_.FriendlyName -eq $CertificateFriendlyName}
-            }
-        }
-    
-        $null = Export-Certificate -Type CERT -Cert $Cert -FilePath "$ExportDirectory\DSCEncryption.cer"
-    
-        $CertInfo = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new()
-        $CertInfo.Import("$ExportDirectory\DSCEncryption.cer")
-    
-        [pscustomobject]@{
-            CertFile        = Get-Item "$ExportDirectory\DSCEncryption.cer"
-            CertInfo        = $CertInfo
-        }
-    }
-
     #endregion >> Helper Functions
 
     
     #region >> Rename Computer
+
+    # Waiting for maximum of 15 minutes for the Server to accept new PSSessions...
+    $Counter = 0
+    while (![bool]$(Get-PSSession -Name "To$DesiredHostName" -ErrorAction SilentlyContinue)) {
+        try {
+            New-PSSession -ComputerName $ServerIP -Credential $PSRemotingLocalAdminCredentials -Name "To$DesiredHostName" -ErrorAction SilentlyContinue
+            if (![bool]$(Get-PSSession -Name "To$DesiredHostName" -ErrorAction SilentlyContinue)) {throw}
+        }
+        catch {
+            if ($Counter -le 60) {
+                Write-Warning "New-PSSession 'To$DesiredHostName' failed. Trying again in 15 seconds..."
+                Start-Sleep -Seconds 15
+            }
+            else {
+                Write-Error "Unable to create new PSSession to 'To$DesiredHostName' using Local Admin account '$($PSRemotingLocalAdminCredentials.UserName)'! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        $Counter++
+    }
 
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
@@ -311,8 +283,7 @@ function New-DomainController {
         $env:ComputerName
     }
     $InvCmdCheckSplatParams = @{
-        ComputerName            = $ServerIP
-        Credential              = $PSRemotingLocalAdminCredentials
+        Session                 = Get-PSSession -Name "To$DesiredHostName"
         ScriptBlock             = $InvCmdCheckSB
         ArgumentList            = $LocalAdministratorAccountCredentials.Password
         ErrorAction             = "Stop"
@@ -331,8 +302,7 @@ function New-DomainController {
             Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart -ErrorAction SilentlyContinue
         }
         $InvCmdRenameComputerSplatParams = @{
-            ComputerName    = $ServerIP
-            Credential      = $PSRemotingLocalAdminCredentials
+            Session         = Get-PSSession -Name "To$DesiredHostName"
             ScriptBlock     = $RenameComputerSB
             ArgumentList    = $DesiredHostName,$PSRemotingLocalAdminCredentials
             ErrorAction     = "SilentlyContinue"
@@ -354,6 +324,8 @@ function New-DomainController {
 
 
     #region >> Wait For HostName Change
+
+    Get-PSSession -Name "To$DesiredHostName" | Remove-PSSession
     
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions Post Name Change Reboot...
     $Counter = 0
@@ -417,7 +389,12 @@ function New-DomainController {
                 $null = Enable-PSRemoting -Force -ErrorAction Stop
             }
             catch {
-                $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+                $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+                if ($NICsWPublicProfile.Count -gt 0) {
+                    foreach ($Nic in $NICsWPublicProfile) {
+                        Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                    }
+                }
             
                 try {
                     $null = Enable-PSRemoting -Force
@@ -534,130 +511,126 @@ function New-DomainController {
     }
     #>
 
-    $NewDomainControllerConfigAsStringPrep = @'
-configuration NewDomainController {
-    param (
-        [Parameter(Mandatory=$True)]
-        [pscredential]$NewDomainAdminCredentials,
-
-        [Parameter(Mandatory=$True)]
-        [pscredential]$LocalAdministratorAccountCredentials
+    $NewDomainControllerConfigAsStringPrep = @(
+        'configuration NewDomainController {'
+        '    param ('
+        '        [Parameter(Mandatory=$True)]'
+        '        [pscredential]$NewDomainAdminCredentials,'
+        ''
+        '        [Parameter(Mandatory=$True)]'
+        '        [pscredential]$LocalAdministratorAccountCredentials'
+        '    )'
+        ''
+        "    Import-DscResource -ModuleName 'PSDesiredStateConfiguration' -ModuleVersion $PSDSCVersion"
+        "    Import-DscResource -ModuleName 'xPSDesiredStateConfiguration' -ModuleVersion $xPSDSCVersion"
+        "    Import-DscResource -ModuleName 'xActiveDirectory' -ModuleVersion $xActiveDirectoryVersion"
+        ''
+        '    $NewDomainAdminUser = $($NewDomainAdminCredentials.UserName -split "\\")[-1]'
+        '    $NewDomainAdminUserBackup = $NewDomainAdminUser + "backup"'
+        '            '
+        '    Node $AllNodes.where({ $_.Purpose -eq "Domain Controller" }).NodeName'
+        '    {'
+        '        @($ConfigurationData.NonNodeData.ADGroups).foreach({'
+        '            xADGroup $_'
+        '            {'
+        '                Ensure = "Present"'
+        '                GroupName = $_'
+        '                DependsOn = "[xADUser]FirstUser"'
+        '            }'
+        '        })'
+        ''
+        '        @($ConfigurationData.NonNodeData.OrganizationalUnits).foreach({'
+        '            xADOrganizationalUnit $_'
+        '            {'
+        '                Ensure = "Present"'
+        '                Name = ($_ -replace "-")'
+        '                Path = ("DC={0},DC={1}" -f ($ConfigurationData.NonNodeData.DomainName -split "\.")[0], ($ConfigurationData.NonNodeData.DomainName -split "\.")[1])'
+        '                DependsOn = "[xADUser]FirstUser"'
+        '            }'
+        '        })'
+        ''
+        '        @($ConfigurationData.NonNodeData.ADUsers).foreach({'
+        '            xADUser "$($_.FirstName) $($_.LastName)"'
+        '            {'
+        '                Ensure = "Present"'
+        '                DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '                GivenName = $_.FirstName'
+        '                SurName = $_.LastName'
+        '                UserName = ("{0}{1}" -f $_.FirstName, $_.LastName)'
+        '                Department = $_.Department'
+        '                Path = ("OU={0},DC={1},DC={2}" -f $_.Department, ($ConfigurationData.NonNodeData.DomainName -split "\.")[0], ($ConfigurationData.NonNodeData.DomainName -split "\.")[1])'
+        '                JobTitle = $_.Title'
+        '                Password = $NewDomainAdminCredentials'
+        '                DependsOn = "[xADOrganizationalUnit]$($_.Department)"'
+        '            }'
+        '        })'
+        ''
+        '        ($Node.WindowsFeatures).foreach({'
+        '            WindowsFeature $_'
+        '            {'
+        '                Ensure = "Present"'
+        '                Name = $_'
+        '            }'
+        '        })'
+        ''
+        '        xADDomain ADDomain'
+        '        {'
+        '            DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '            DomainAdministratorCredential = $LocalAdministratorAccountCredentials'
+        '            SafemodeAdministratorPassword = $LocalAdministratorAccountCredentials'
+        '            DependsOn = "[WindowsFeature]AD-Domain-Services"'
+        '        }'
+        ''
+        '        xWaitForADDomain DscForestWait'
+        '        {'
+        '            DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '            DomainUserCredential = $LocalAdministratorAccountCredentials'
+        '            RetryCount = $Node.RetryCount'
+        '            RetryIntervalSec = $Node.RetryIntervalSec'
+        '            DependsOn = "[xADDomain]ADDomain"'
+        '        }'
+        ''
+        '        xADUser FirstUser'
+        '        {'
+        '            DomainName = $ConfigurationData.NonNodeData.DomainName'
+        '            DomainAdministratorCredential = $LocalAdministratorAccountCredentials'
+        '            UserName = $NewDomainAdminUser'
+        '            Password = $NewDomainAdminCredentials'
+        '            Ensure = "Present"'
+        '            DependsOn = "[xWaitForADDomain]DscForestWait"'
+        '        }'
+        ''
+        '        xADGroup DomainAdmins {'
+        '            GroupName = "Domain Admins"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        '        '
+        '        xADGroup EnterpriseAdmins {'
+        '            GroupName = "Enterprise Admins"'
+        '            GroupScope = "Universal"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        ''
+        '        xADGroup GroupPolicyOwners {'
+        '            GroupName = "Group Policy Creator Owners"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        ''
+        '        xADGroup SchemaAdmins {'
+        '            GroupName = "Schema Admins"'
+        '            GroupScope = "Universal"'
+        '            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup'
+        '            DependsOn = "[xADUser]FirstUser"'
+        '        }'
+        '    }'
+        '}'
     )
 
-'@ + @"
-
-    Import-DscResource -ModuleName 'PSDesiredStateConfiguration' -ModuleVersion $PSDSCVersion
-    Import-DscResource -ModuleName 'xPSDesiredStateConfiguration' -ModuleVersion $xPSDSCVersion
-    Import-DscResource -ModuleName 'xActiveDirectory' -ModuleVersion $xActiveDirectoryVersion
-
-"@ + @'
-
-    $NewDomainAdminUser = $($NewDomainAdminCredentials.UserName -split "\\")[-1]
-    $NewDomainAdminUserBackup = $NewDomainAdminUser + "backup"
-            
-    Node $AllNodes.where({ $_.Purpose -eq 'Domain Controller' }).NodeName
-    {
-        @($ConfigurationData.NonNodeData.ADGroups).foreach({
-            xADGroup $_
-            {
-                Ensure = 'Present'
-                GroupName = $_
-                DependsOn = '[xADUser]FirstUser'
-            }
-        })
-
-        @($ConfigurationData.NonNodeData.OrganizationalUnits).foreach({
-            xADOrganizationalUnit $_
-            {
-                Ensure = 'Present'
-                Name = ($_ -replace '-')
-                Path = ('DC={0},DC={1}' -f ($ConfigurationData.NonNodeData.DomainName -split '\.')[0], ($ConfigurationData.NonNodeData.DomainName -split '\.')[1])
-                DependsOn = '[xADUser]FirstUser'
-            }
-        })
-
-        @($ConfigurationData.NonNodeData.ADUsers).foreach({
-            xADUser "$($_.FirstName) $($_.LastName)"
-            {
-                Ensure = 'Present'
-                DomainName = $ConfigurationData.NonNodeData.DomainName
-                GivenName = $_.FirstName
-                SurName = $_.LastName
-                UserName = ('{0}{1}' -f $_.FirstName, $_.LastName)
-                Department = $_.Department
-                Path = ("OU={0},DC={1},DC={2}" -f $_.Department, ($ConfigurationData.NonNodeData.DomainName -split '\.')[0], ($ConfigurationData.NonNodeData.DomainName -split '\.')[1])
-                JobTitle = $_.Title
-                Password = $NewDomainAdminCredentials
-                DependsOn = "[xADOrganizationalUnit]$($_.Department)"
-            }
-        })
-
-        ($Node.WindowsFeatures).foreach({
-            WindowsFeature $_
-            {
-                Ensure = 'Present'
-                Name = $_
-            }
-        })        
-        
-        xADDomain ADDomain          
-        {             
-            DomainName = $ConfigurationData.NonNodeData.DomainName
-            DomainAdministratorCredential = $LocalAdministratorAccountCredentials
-            SafemodeAdministratorPassword = $LocalAdministratorAccountCredentials
-            DependsOn = '[WindowsFeature]AD-Domain-Services'
-        }
-
-        xWaitForADDomain DscForestWait
-        {
-            DomainName = $ConfigurationData.NonNodeData.DomainName
-            DomainUserCredential = $LocalAdministratorAccountCredentials
-            RetryCount = $Node.RetryCount
-            RetryIntervalSec = $Node.RetryIntervalSec
-            DependsOn = "[xADDomain]ADDomain"
-        }
-
-        xADUser FirstUser
-        {
-            DomainName = $ConfigurationData.NonNodeData.DomainName
-            DomainAdministratorCredential = $LocalAdministratorAccountCredentials
-            UserName = $NewDomainAdminUser
-            Password = $NewDomainAdminCredentials
-            Ensure = "Present"
-            DependsOn = "[xWaitForADDomain]DscForestWait"
-        }
-
-        xADGroup DomainAdmins {
-            GroupName = 'Domain Admins'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-        
-        xADGroup EnterpriseAdmins {
-            GroupName = 'Enterprise Admins'
-            GroupScope = 'Universal'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-
-        xADGroup GroupPolicyOwners {
-            GroupName = 'Group Policy Creator Owners'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-
-        xADGroup SchemaAdmins {
-            GroupName = 'Schema Admins'
-            GroupScope = 'Universal'
-            MembersToInclude = $NewDomainAdminUser,$NewDomainAdminUserBackup
-            DependsOn = '[xADUser]FirstUser'
-        }
-    }         
-}
-'@
-
     try {
-        $NewDomainControllerConfigAsString = [scriptblock]::Create($NewDomainControllerConfigAsStringPrep).ToString()
+        $NewDomainControllerConfigAsString = [scriptblock]::Create($($NewDomainControllerConfigAsStringPrep -join "`n")).ToString()
     }
     catch {
         Write-Error $_
@@ -778,8 +751,8 @@ configuration NewDomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUtEuFnE9kQpWYRbZdS5ynRDEq
-# N4Ogggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUeSdRde8yirPYQyELMNs2OFQH
+# ufugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -836,11 +809,11 @@ configuration NewDomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCeFzeMxVnrQ0Xuy
-# XZln0q+hgrFHMA0GCSqGSIb3DQEBAQUABIIBAG2klCHnFM24ryhjXF/j6d1hfXog
-# AxuAhRG7LoRQuawQM/Ck2KgRIIYWPiP218mBJG2wyS64PonR+5DyiFWJKsOKYGFj
-# dTBy9uVFcF9O06KfHnVPuqvOqBw4M6uicdzmdW3IIjFvewD38/DQL2MxVe0oxZkX
-# MV84jSwydWA+Spn/pBZYltdvvbTq0/EAnylDxbwffU5NoTZ4DhmtDFZl+fLltdYB
-# OMbmcwRCYXg32H7SVTRPL6QgMDe7nrzf7M5dLbGmZc6dCuDxwNMqDI2eJq+HazLk
-# ybd87xjJdmZ2TFNozNgwMSmD6JJmvYD/WThtJUQ9Vue73U6pqLucMd4gvUc=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFE/QPB4LFm2c7DNU
+# jgzSyup8cmcSMA0GCSqGSIb3DQEBAQUABIIBALiQfiF92RDckiDVNFUrhJE1eJ4M
+# aHZiHY7ayD4Rxdyur/oPAQfWrR3cVNK8xtn7PnNjB/6zU7eV69hBGAnp3Gq9SD+N
+# mPDfKxlwnylBoq7VZvYkYfPBmt3fzopG+zZJ+vOgaL5w4dI3jhoom+711RLKLtOo
+# 0w1U6g/rM9V/mkEkgIFeVQxPJ6GflvPY2ZBPXTTNJ8LdoQqrL7D9cEG8KOhLvMqo
+# FbOQWWP9v2pZNDUZ1nNNbIrWVPYR1vUXdxwNV+UosG5OkVGeA0BfLmiTHB35z/Xn
+# RAbLkXPdyOPtcVozSvjhCGBjoMw2Hux1RkZs4dWbEfVBjrTjo1fiMqLfEDg=
 # SIG # End signature block

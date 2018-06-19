@@ -9,31 +9,34 @@ function InstallHyperVFeatures {
     )
     
     # Import the Dism Module
-    if ($PSVersionTable.PSEdition -eq "Core") {
-        if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
-            Install-Module WindowsCompatibility
-        }
-        if (![bool]$(Get-Module WindowsCompatibility)) {
-            Import-Module WindowsCompatibility
-        }
-    }
     if (![bool]$(Get-Module Dism)) {
         try {
             if ($PSVersionTable.PSEdition -eq "Core") {
-                Import-WinModule Dism
+                Import-WinModule Dism -ErrorAction Stop
             }
             else {
-                Import-Module Dism
+                Import-Module Dism -ErrorAction Stop
             }
         }
         catch {
-            # Using full path to Dism Module Manifest because sometimes there are issues with just 'Import-Module Dism'
-            $DismModuleManifestPaths = $(Get-Module -ListAvailable -Name Dism).Path
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                $DismModuleManifestPaths = Invoke-WinCommand -ScriptBlock {$(Get-Module -ListAvailable -Name Dism).Path}
+            }
+            else {
+                # Using full path to Dism Module Manifest because sometimes there are issues with just 'Import-Module Dism'
+                $DismModuleManifestPaths = $(Get-Module -ListAvailable -Name Dism).Path
+            }
 
             foreach ($MMPath in $DismModuleManifestPaths) {
                 try {
-                    Import-Module $MMPath -ErrorAction Stop
-                    break
+                    if ($PSVersionTable.PSEdition -eq "Core") {
+                        Import-WinModule $MMPath -ErrorAction Stop
+                        break
+                    }
+                    else {
+                        Import-Module $MMPath -ErrorAction Stop
+                        break
+                    }
                 }
                 catch {
                     Write-Verbose "Unable to import $MMPath..."
@@ -92,8 +95,8 @@ function InstallHyperVFeatures {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU6FIF8bT2q0k7SwNyjJb42gL4
-# x3mgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUNspTWPRfFCGDeCMOlq41bBWr
+# dLSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -150,11 +153,11 @@ function InstallHyperVFeatures {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFcPwZe4VolmMLEj
-# xUBgfimerxInMA0GCSqGSIb3DQEBAQUABIIBAHu0XfoimRS54JuEOLz+39lHbjtK
-# GE5tAE7U+sH/0UNvd0KAZOFz+TwpuJNp2QSO+RMy8u+aO4+92ZlXMmAeOfzECOwT
-# lzrNPhgGbLYbm1JILa4fqqtpiVAVQ1DSkc+pL2D5h1LO/KfeU+pw9TXk+1xjJBw2
-# px7E6h09ZXWHlF1zXBHQ4c6H6Q2B5lWbNZzf17fEP9u5kncMZanugOEOazBJlflY
-# kO2j1cLUsgC8trBi2h1gBJW3u6cOQK0MR6himWRJHPiuH9WchSs2jnzJS2fOUOdo
-# qlx6j8Bn20AOhqK5Xp9pHmfWAPOgAf5dqW1zIHi7HbNzgQDkMktjk7yq7bE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI80GGOrYjKCrUaj
+# Dj75Z5tbEgP5MA0GCSqGSIb3DQEBAQUABIIBAAMtWOMwRycATBxK5c1aTbGsuEGW
+# H4CbPCUVQY9iH118x7+tYVPlqVEq2sf+ogJEHXAlYVgvgaHZRz39gPQV9gEshqJu
+# eyg6VxJ33/iizcCxNmWdrdvrhBNx1mGgeKtywCZ49mn4kxjxwR/2/iBbkXuiSKkD
+# DHWjmRgeiBzhyTkTvI/64NU0XpcYB/EEqUwIne7/Lq3fcCTvQtnBza6Aw1ZdiMXz
+# 9zCY5QsP/9+/rpdzz0vHBCZ6pfCvhNZnIsCe41GMe02ojwxcBMrqr1RRUg6YVB2B
+# FlS1TcBbLgU29nm/nPxX6VaHC3ngtf0gl/Ble5OEDJh4FJsW4VtjljVOb6U=
 # SIG # End signature block

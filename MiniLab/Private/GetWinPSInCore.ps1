@@ -10,16 +10,7 @@ function GetWinPSInCore {
         [scriptblock]$ScriptBlock,
 
         [Parameter(Mandatory=$False)]
-        [string[]]$VariablesToForward,
-
-        [Parameter(Mandatory=$False)]
-        [string[]]$EnvironmentVariablesToForward,
-
-        [Parameter(Mandatory=$False)]
-        [string[]]$FunctionsToForward,
-
-        [Parameter(Mandatory=$False)]
-        [string[]]$ModulesToForward,
+        [switch]$MirrorCurrentEnv = $True,
 
         [Parameter(Mandatory=$False)]
         [switch]$NoWinRM
@@ -31,58 +22,26 @@ function GetWinPSInCore {
         return
     }
 
-    [System.Collections.ArrayList]$SetEnvStringArray = @()
+    if ($MirrorCurrentEnv) {
+        [System.Collections.ArrayList]$SetEnvStringArray = @()
 
-    if ($VariablesToForward) {
+        $VariablesNotToForward = @()
+
         $Variables = Get-Variable
-        if ($VariablesToForward -notcontains '*') {
-            $Variables = foreach ($VarObj in $Variables) {
-                if ($VariablesToForward -contains $VarObj.Name) {
-                    $VarObj
+        foreach ($VarObj in $Variables) {
+            if ($VariablesNotToForward -notcontains $VarObj.Name) {
+                try {
+                    $GenericRunspace.SessionStateProxy.SetVariable($VarObj.Name,$VarObj.Value)
+                }
+                catch {
+                    Write-Verbose "Skipping `$$($VarObj.Name)..."
                 }
             }
         }
-        $SetVarsPrep = foreach ($VarObj in $Variables) {
-            try {
-                $VarValueAsJSON = $VarObj.Value | ConvertTo-Json -Compress
-            }
-            catch {
-                #Write-Warning "Unable to pass the variable '$($VarObj.Name)'..."
-            }
 
-            if ($VarValueAsJSON) {
-                if ([char[]]$VarObj.Name -contains '(' -or [char[]]$VarObj.Name -contains ' ') {
-                    $VarStringArr = @(
-                        'try {'
-                        $('    ${' + $VarObj.Name + '}' + ' = ' + 'ConvertFrom-Json ' + "@'`n$VarValueAsJSON`n'@")
-                        '}'
-                        'catch {'
-                        "    Write-Verbose 'Unable to forward variable $($VarObj.Name)'"
-                        '}'
-                    )
-                }
-                else {
-                    $VarStringArr = @(
-                        'try {'
-                        $('    $' + $VarObj.Name + ' = ' + 'ConvertFrom-Json ' + "@'`n$VarValueAsJSON`n'@")
-                        '}'
-                        'catch {'
-                        "    Write-Verbose 'Unable to forward variable $($VarObj.Name)'"
-                        '}'
-                    )
-                }
-                $VarStringArr -join "`n"
-            }
-        }
-        $SetVarsString = $SetVarsPrep -join "`n"
-
-        $null = $SetEnvStringArray.Add($SetVarsString)
-    }
-
-    # Not a good idea to pass the environment variables...
-    if ($EnvironmentVariablesToForward) {
+        # Set Environment Variables
         $EnvVariables = Get-ChildItem Env:\
-        if ($EnvironmentVariablesToForward -notcontains '*') {
+        if ($PSBoundParameters['EnvironmentVariablesToForward'] -and $EnvironmentVariablesToForward -notcontains '*') {
             $EnvVariables = foreach ($VarObj in $EnvVariables) {
                 if ($EnvironmentVariablesToForward -contains $VarObj.Name) {
                     $VarObj
@@ -115,11 +74,10 @@ function GetWinPSInCore {
         $SetEnvVarsString = $SetEnvVarsPrep -join "`n"
 
         $null = $SetEnvStringArray.Add($SetEnvVarsString)
-    }
 
-    if ($ModulesToForward) {
+        # Set Modules
         $Modules = Get-Module
-        if ($ModulesToForward -notcontains '*') {
+        if ($PSBoundParameters['ModulesToForward'] -and $ModulesToForward -notcontains '*') {
             $Modules = foreach ($ModObj in $Modules) {
                 if ($ModulesToForward -contains $ModObj.Name) {
                     $ModObj
@@ -132,15 +90,17 @@ function GetWinPSInCore {
             }).FullName
 
             $ModStringArray = @(
-                'try {'
-                "    Import-Module '$($ModObj.Name)' -ErrorAction Stop"
-                '}'
-                'catch {'
+                "if (![bool]('$($ModObj.Name)' -match '\.WinModule')) {"
                 '    try {'
-                "        Import-Module '$ModuleManifestFullPath' -ErrorAction Stop"
+                "        Import-Module '$($ModObj.Name)' -ErrorAction Stop"
                 '    }'
                 '    catch {'
-                "        Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
+                '        try {'
+                "            Import-Module '$ModuleManifestFullPath' -ErrorAction Stop"
+                '        }'
+                '        catch {'
+                "            Write-Warning 'Unable to Import-Module $($ModObj.Name)'"
+                '        }'
                 '    }'
                 '}'
             )
@@ -149,11 +109,10 @@ function GetWinPSInCore {
         $SetModulesString = $SetModulesPrep -join "`n"
 
         $null = $SetEnvStringArray.Add($SetModulesString)
-    }
-
-    if ($FunctionsToForward) {
+    
+        # Set Functions
         $Functions = Get-ChildItem Function:\ | Where-Object {![System.String]::IsNullOrWhiteSpace($_.Name)}
-        if ($FunctionsToForward -notcontains '*') {
+        if ($PSBoundParameters['FunctionsToForward'] -and $FunctionsToForward -notcontains '*') {
             $Functions = foreach ($FuncObj in $Functions) {
                 if ($FunctionsToForward -contains $FuncObj.Name) {
                     $FuncObj
@@ -209,19 +168,17 @@ function GetWinPSInCore {
         $SetEnvStringArrayPath = "$HOME\SetEnvStringArray.xml"
         $SetEnvStringArray | Export-CliXml -Path $SetEnvStringArrayPath -Force
 
-        $InitSBAsStringB = @"
-`$args = Import-CliXml '$SetEnvStringArrayPath'
-
-"@ + @'
-
-$args | foreach {
-    if (![string]::IsNullOrWhiteSpace($_)) {
-        #Write-Host "Running $_"
-        Invoke-Expression $_
-    }
-}
-
-'@
+        $InitSBAsStringB = @(
+            "`$args = Import-CliXml '$SetEnvStringArrayPath'"
+            ''
+            '$args | foreach {'
+            '    if (![string]::IsNullOrWhiteSpace($_)) {'
+            '        #Write-Host "Running $_"'
+            '        Invoke-Expression $_'
+            '    }'
+            '}'
+            ''    
+        )
     }
 
     if ($InitSBAsStringB) {
@@ -231,13 +188,32 @@ $args | foreach {
     else {
         $FinalSBAsString = $InitSBAsStringA + $ScriptBlock.ToString()
     }
-    $FinalSB = [scriptblock]::Create($FinalSBAsString)
+
+    try {
+        $FinalSB = [scriptblock]::Create($($FinalSBAsString -join "`n"))
+        #$FinalSB | Export-CliXml -path "$HOME\FinalSB.xml"
+    }
+    catch {
+        Write-Error "Problem creating scriptblock `$FinalSB! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+    
 
     # Output
     if ($NoWinRM) {
         powershell.exe -NoProfile -NoLogo -NonInteractive -ExecutionPolicy Bypass -Command $FinalSB
     }
     else {
+        # Check to see if there's a PSSession open from the WindowsCompatibility Module
+        if (!$global:WinPSSession) {
+            $CurrentUser = $($(whoami) -split '\\')[-1]
+            if ([bool]$(Get-PSSession -Name "win-$CurrentUser" -ErrorAction SilentlyContinue)) {
+                $global:WinPSSession = Get-PSSession -Name "win-$CurrentUser"
+            }
+        }
+
+        # If no WindowsCompatibility PSSession was found, we'll make our own...
         if (!$global:WinPSSession) {
             $NewPSSessionSplatParams = @{
                 ConfigurationName   = 'Microsoft.PowerShell'
@@ -261,7 +237,7 @@ $args | foreach {
     # Cleanup
     if ($SetEnvStringArrayPath) {
         if (Test-Path $SetEnvStringArrayPath) {
-            Remove-Item $SetEnvStringArrayPath -Force
+            #Remove-Item $SetEnvStringArrayPath -Force
         }
     }
 }
@@ -269,8 +245,8 @@ $args | foreach {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUEY3lc9SRBuC/ZockLYdvfvkM
-# jAugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUC3pw7yKTLZGviggZgBeM1Emh
+# KqSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -327,11 +303,11 @@ $args | foreach {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIZafiYB7z/OVCJh
-# vmip0+iyd3kLMA0GCSqGSIb3DQEBAQUABIIBAI3vYzllDUZn2gdwp9ZZMyGbsOnJ
-# 9PXnys6jvlyParOFnyujTIgOmjJJ5q+v0Yp6nNYOLubD4BvmEESPMdMpRxn+5kg8
-# v50JVg+6b0ZVwBE5eyxP83XepY5OgJkmuQVvVA96XiyDOWyTVLvCYo9pzVY11Ay/
-# IgFqifpEBj3JZD7V3aiKKJn/nE6DJQl+p2PUWPH1Ma2R/pHY3DBqAeuJEBdfijVr
-# ZsZQn+yzM/WC89Ro9zF+GBWo16mhWjkSbFrSlUxxm7eNLNzlUEIONWzIh/8AXILg
-# CpKdV/PzThAX7+FH1vjJ04hWpQwD4A/hhsyNCugKhMlFN8diNIj8ivnZBT0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFn00Ui9Zs7JcAUq
+# g4xRyfKqb/IDMA0GCSqGSIb3DQEBAQUABIIBAJ0lVmuzAy4+/UdarjV0nbRn7X+r
+# emQt8HbioY+ixcX8TuDhrwjg/BtwWJmZPwgI6s3e5lrr9AhzOpmx/Z7E8MXMZDNt
+# RWqWkfRFuUadrIjVV+xOBwisfG5zxIQgr8LORtUgr2nvRKNPxokQBo6DjH7b0gfJ
+# 36fuVG0wWjquRXoVsCj9+xiuyW+wQLelv8W9VzPLIFDkRFevanKU8Yf9tH13xdBX
+# m8GY69LC2oLKmQMLIWhHh86AeNwaljLi+BYPYaXy7YsiB+4xHCZl8XP+qaYkztJC
+# LLr+ZJ5uVXnxW18p5S097huxWrxn1dwfS5eIlppvpS6vqaMGtQXgd+ZiIzw=
 # SIG # End signature block

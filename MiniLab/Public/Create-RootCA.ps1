@@ -344,40 +344,48 @@ function Create-RootCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        $NewVMDeploySBAsString = @"
-[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+        $NewVMDeploySBAsString = @(
+            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
+            ''
+            "`$env:Path = '$env:Path'"
+            ''
+            '# Load the functions we packed up'
+            '$args | foreach { Invoke-Expression $_ }'
+            ''
+            '$DeployBoxSplatParams = @{'
+            "    VagrantBox                  = '$Windows2016VagrantBox'"
+            '    CPUs                        = 2'
+            '    Memory                      = 4096'
+            '    VagrantProvider             = "hyperv"'
+            "    VMName                      = '$DomainShortName' + 'RootCA'"
+            "    VMDestinationDirectory      = '$VMStorageDirectory'"
+            '    SkipHyperVInstallCheck      = $True'
+            '    CopyDecompressedDirectory   = $True'
+            '}'
+            ''
+            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
+            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
+            '    }'
+            '}'
+            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
+            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
+            '    }'
+            '}'
+            ''
+            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
+            '$DeployBoxResult'
+        )
 
-`$env:Path = '$env:Path'
-
-# Load the functions we packed up
-`$args | foreach { Invoke-Expression `$_ }
-
-`$DeployBoxSplatParams = @{
-    VagrantBox                  = '$Windows2016VagrantBox'
-    CPUs                        = 2
-    Memory                      = 4096
-    VagrantProvider             = "hyperv"
-    VMName                      = '$DomainShortName' + "RootCA"
-    VMDestinationDirectory      = '$VMStorageDirectory'
-    SkipHyperVInstallCheck      = `$True
-    CopyDecompressedDirectory   = `$True
-}
-
-if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
-    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
-    }
-}
-if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
-    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
-    }
-}
-
-`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
-`$DeployBoxResult
-"@
-        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+        try {
+            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
+        }
+        catch {
+            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
 
         if (!$IPofServerToBeRootCA) {
             $DomainShortName = $($ExistingDomain -split "\.")[0]
@@ -436,7 +444,12 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
     catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
 
         try {
             $null = Enable-PSRemoting -Force
@@ -517,46 +530,53 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
     # Check if DC and RootCA should be the same server. If not, then need to join RootCA to Domain.
     if ($IPofDomainController -ne $IPofServerToBeRootCA) {
         $JoinDomainJobSB = {
-            $JoinDomainSBAsString = @'
-# Synchronize time with time servers
-$null = W32tm /resync /rediscover /nowait
-
-# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)
-$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex
-$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4
-$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses
-$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList
-$UpdatedDNSServerList.Insert(0,$args[0])
-$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList
-
-$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList
-[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder
-$UpdatedDNSSuffixList.Insert(0,$args[2])
-Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList
-
-# Try resolving the Domain for 30 minutes
-$Counter = 0
-while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {
-    Write-Host "Waiting for DNS to resolve Domain Controller..."
-    Start-Sleep -Seconds 15
-    $Counter++
-}
-if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {
-    Write-Error "Unable to resolve Domain $($args[2])! Halting!"
-    $global:FunctionResult = "1"
-    return
-}
-
-# Join Domain
-Rename-Computer -NewName $args[1]
-Start-Sleep -Seconds 10
-Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart
-'@
+            $JoinDomainSBAsString = @(
+                '# Synchronize time with time servers'
+                '$null = W32tm /resync /rediscover /nowait'
+                ''
+                '# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)'
+                '$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop'
+                '$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress'
+                '$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP'
+                '$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex'
+                '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4'
+                '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
+                '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
+                '$UpdatedDNSServerList.Insert(0,$args[0])'
+                '$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList'
+                ''
+                '$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList'
+                '[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder'
+                '$UpdatedDNSSuffixList.Insert(0,$args[2])'
+                'Set-DnsClientGlobalSetting -SuffixSearchList $UpdatedDNSSuffixList'
+                ''
+                '# Try resolving the Domain for 30 minutes'
+                '$Counter = 0'
+                'while (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue) -and $Counter -le 120) {'
+                '    Write-Host "Waiting for DNS to resolve Domain Controller..."'
+                '    Start-Sleep -Seconds 15'
+                '    $Counter++'
+                '}'
+                'if (![bool]$(Resolve-DNSName $args[2] -ErrorAction SilentlyContinue)) {'
+                '    Write-Error "Unable to resolve Domain $($args[2])! Halting!"'
+                '    $global:FunctionResult = "1"'
+                '    return'
+                '}'
+                ''
+                '# Join Domain'
+                'Rename-Computer -NewName $args[1]'
+                'Start-Sleep -Seconds 10'
+                'Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,AccountCreate -Force -Restart'
+            )
             
-            $JoinDomainSB = [scriptblock]::Create($JoinDomainSBAsString)
+            try {
+                $JoinDomainSB = [scriptblock]::Create($($JoinDomainSBAsString -join "`n"))
+            }
+            catch {
+                Write-Error "Problem creating `$JoinDomainSB! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
     
             $InvCmdJoinDomainSplatParams = @{
                 ComputerName    = $args[0]
@@ -669,8 +689,8 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUkr9UOw7QL41V70LHk4RlvoyF
-# GOugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUIZNCkpeRY4kW1uf9h8a8BDDI
+# wcCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -727,11 +747,11 @@ Add-Computer -DomainName $args[2] -Credential $args[3] -Options JoinWithNewName,
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI/UZ1J/lPL5Davq
-# pRKBAIl3DKnaMA0GCSqGSIb3DQEBAQUABIIBAFm1ui2Xmu8xTZEKDyzMu689hnPL
-# CKIvH4b+8hM5RyEQdQvb2hKoKdS/+iaYM/hqvVmpdblAoFxMPDnC2iPnN9DyS3KI
-# l9WoysK+fIijSGVWMUhI4E7qZTtf/t3QpiLOuYSH9Obn97iQzsh0yOZpOCCIGYgk
-# jOaSg9wChPc65qEggnbgI1AOCE0Zs6JBw9rMVu1nx+KX7cusokfr8V0HxoupXHNu
-# PDF53mCtH+A9TS1/KIi2SARj4MtlIjxF4CrKkgUio5dVoWYfOGrbVbgrAembHDDY
-# ShzrRIIAicOJVK6BpctuAOWX4AbTJ2K+xVSezLoyKEqlTgS06iC1Aj1/a8c=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFF4xpQqFbtgZdw14
+# bS43S9qITymnMA0GCSqGSIb3DQEBAQUABIIBAHNBsqlytXPLYL7ChPGPOha92D8i
+# N5Ee9Ck3Lqx4AQvsN7AJCmqLFeoV5WF+vaiEjNL9CTJsksJZtZzcVS5/6Vk/8UKJ
+# jmtc80CITY00Ml+/xkRfDa5d3CrwMMdxgzxEYVFTByMArB4lj/yeB+8hB/zZSLV4
+# 9d55CCGmR+2UCBqofvfuoFKaYYltCAtPkW4xVnMExKEC2sqWyFttEVB9gbEUa0mh
+# VM/lUv06hfhW/nSB8Tt0PKDNJfjmiOpOgKYSOlwB4pC7U2+P2vUTpDx/g/ohwOGp
+# Cx7pJIJxlMVPUUiW2U4bQi+SqoOPylX005qloaZQi0KW7zCmbw9g9hxXv/4=
 # SIG # End signature block

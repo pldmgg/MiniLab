@@ -254,8 +254,14 @@ function New-RootCA {
         }
         catch {
             try {
-                $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                if ($PSVersionTable.PSEdition -ne "Core") {
+                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+                else {
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+
                 Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
                 Import-Module PSPKI -ErrorAction Stop
             }
@@ -304,7 +310,12 @@ function New-RootCA {
             $null = Enable-PSRemoting -Force -ErrorAction Stop
         }
         catch {
-            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+            $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+            if ($NICsWPublicProfile.Count -gt 0) {
+                foreach ($Nic in $NICsWPublicProfile) {
+                    Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                }
+            }
 
             try {
                 $null = Enable-PSRemoting -Force
@@ -629,7 +640,12 @@ function New-RootCA {
                 $null = Enable-PSRemoting -Force -ErrorAction Stop
             }
             catch {
-                $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+                $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+                if ($NICsWPublicProfile.Count -gt 0) {
+                    foreach ($Nic in $NICsWPublicProfile) {
+                        Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                    }
+                }
 
                 try {
                     $null = Enable-PSRemoting -Force
@@ -736,8 +752,14 @@ function New-RootCA {
     [array]$NeededModules = @(
         "PSPKI"
     )
-    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+    else {
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
 
     [System.Collections.ArrayList]$FailedModuleInstall = @()
     foreach ($ModuleResource in $NeededModules) {
@@ -830,8 +852,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUlc+TS6JvI51XqoQJ/xkUbwpk
-# ZlKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUpYntmwJelB/AnuyvEoSeQpDa
+# Vxugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -888,11 +910,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFF11V8OJH5T5I0+R
-# MH49oZ9TAZS8MA0GCSqGSIb3DQEBAQUABIIBADSutGoVIFxZPMF1z387HhIe5k8X
-# USTYR7Qq4ym7JlsiG7xbiH4bRRW1MawEG8FGOSlgi3gc6BWl108dmkmae0aVp3Dg
-# K2KWMUJutEF7LYgEigIWCdU51N69cj0MOMs93W2yzZ4Px73vo6Gmrg6kZs1v2B0h
-# XSyacYrQvRSM7+PSuaBLfh3x47bFwpKRmFbP1LxzhttIj3Lk+bToSQttmYga9iUL
-# STj9J4eEEmk6J5B4Im+A9hT6Ho2xyWlO1cyID8Ms3GIBuvr42CVk0S74h4jhPJeO
-# Ao7kCv2QQueQYLUwRBMmpdQNxbumM4tqCN/omDenP5H3hfxKh/XnCple338=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFK2sgUGAoclzLjXU
+# YsUR410QUv09MA0GCSqGSIb3DQEBAQUABIIBABCwSpEcbasKzJj5BY8j/C1RDpsQ
+# 8PFqrufOCUS9FUv0YDkprimucvQjptoBTHxGjafI1cwqB5pO/0ZnoRCYA52cAQTd
+# pJjvWQVdu62Bzb7EX0q92C95YwJdlEOO4OeULMNAS4R2f9/HLFUMn8bhjIAQyGez
+# 5cp3+dk+owvJg63NUTwAHlfYP3PoZCdTGLB+tRQZakOtBGDjuxT85iDXDwRKAA34
+# No6PspZsFtoJrvJhoXSrRdNlH5ybdaYSO/LzqXc/4eV9hLoEW3j6DY+MAgyn0YNl
+# DRUzD04omsxEH81ExUU3WL5tGiXaBLDYP5Si6B9vkM6HyovWQEP4WkJlknk=
 # SIG # End signature block

@@ -259,22 +259,40 @@ function Deploy-HyperVVagrantBoxManually {
             return
         }
     }
-
-    if ($PSVersionTable.PSEdition -eq "Core") {
-        if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
-            Install-Module WindowsCompatibility
-        }
-        if (![bool]$(Get-Module WindowsCompatibility)) {
-            Import-Module WindowsCompatibility
-        }
-
+    
+    if (![bool]$(Get-Module Hyper-V)) {
         try {
-            Import-WinModule Hyper-V
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                Import-WinModule Hyper-V -ErrorAction Stop
+            }
+            else {
+                Import-Module Hyper-V -ErrorAction Stop
+            }
         }
         catch {
-            Write-Error "Problem importing the Hyper-V Module via WindowsCompatibility Module! Halting!"
-            $global:FunctionResult = "1"
-            return
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                $HyperVModuleManifestPaths = Invoke-WinCommand -ScriptBlock {$(Get-Module -ListAvailable -Name Hyper-V).Path}
+            }
+            else {
+                # Using full path to Dism Module Manifest because sometimes there are issues with just 'Import-Module Dism'
+                $HyperVModuleManifestPaths = $(Get-Module -ListAvailable -Name Hyper-V).Path
+            }
+
+            foreach ($MMPath in $HyperVModuleManifestPaths) {
+                try {
+                    if ($PSVersionTable.PSEdition -eq "Core") {
+                        Import-WinModule $MMPath -ErrorAction Stop
+                        break
+                    }
+                    else {
+                        Import-Module $MMPath -ErrorAction Stop
+                        break
+                    }
+                }
+                catch {
+                    Write-Verbose "Unable to import $MMPath..."
+                }
+            }
         }
     }
 
@@ -314,7 +332,6 @@ function Deploy-HyperVVagrantBoxManually {
     $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
     $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
     $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
-    
 
     if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
         if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
@@ -391,10 +408,30 @@ function Deploy-HyperVVagrantBoxManually {
         
         # Extract the .box File
         Push-Location $DownloadedVMDir
-        while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
-            Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-            Start-Sleep -Seconds 5
+
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            GetWinPSInCore -ScriptBlock {
+                $FunctionsForSBUse | foreach {Invoke-Expression $_}
+
+                while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                    Start-Sleep -Seconds 5
+                }
+            }
+            <#
+            while ([bool]$(Invoke-WinCommand -ScriptBlock {GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue})) {
+                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                Start-Sleep -Seconds 5
+            }
+            #>
         }
+        else {
+            while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                Start-Sleep -Seconds 5
+            }
+        }
+
         try {
             $null = & $TarCmd -xzvf $BoxFilePath 2>&1
         }
@@ -565,8 +602,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU3d9rWpLFXzM/WFE3iO76pumm
-# L8agggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSfdf3U7VueAwE4AXbt9cQBjs
+# 46Wgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -623,11 +660,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIAM6Y/Yx+ZJ2J5Y
-# VcmR6ugWrriYMA0GCSqGSIb3DQEBAQUABIIBAFRvJT3I/+PIRTTkLqJEwdgqmNSI
-# gvrZwmdmDUTTIPyZas2mPBxpbHq09GgMlKmkd+lUN6jnUSwjS4jM3XHDMghmeWqe
-# T/MCS2g/Bm3IKIYE/uKd+w0XHIv4NWBhZfEBWZH+foHVx2cTcQcvcf0smZU1v+kc
-# 3wJCgc9LX0HKWKgbpZ41yp8ehsvWEA6Ihytmv847eOc2nahVSGKZdwRs1Ovv600E
-# ulrhXjfUl7gp2hDRaAhyrLQ7NglHcdwluSP2iD4XAewqCN5xnO5QrGg+D06emsHG
-# DCL3c2dYNx9T6KonePqau5b7D7yJq1Zb2i0j3C3zY26XH1kzpCSqj59B3Os=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFICGMIukJQfd2fV4
+# 0zFOJ8pT+wpSMA0GCSqGSIb3DQEBAQUABIIBAIsJe63r4geD4blfSbEdiOLFQshM
+# VnfS2LsL1TxnRqFrhbCs24WrDnXplmLvkgLIeTUxrevAXRO5BafimujOsOfqfEJr
+# 1bH48+kgXye7djtHWGBox1fQ5jvftUoyelQ3zM0dVJvUT5Un9ZrmDhw0NaSj2+iZ
+# LHQFZy3PqhjlQlJEpvre3WRmy3f/+zO+psHRgJqIS1t3k7Zj0xRg7KsfGZZYChOV
+# j/HSJlFyRn1ZS2MSlkH3Bf5I1CXo4GlYKGtybvQf6gzwG1m1dodhglOVL8E2Qfat
+# 1BoQKQKWnF/KZAhO+eJsooT/mL6ZQHFYZ3azP4+K9GeEIAF03dtwcPkOURk=
 # SIG # End signature block

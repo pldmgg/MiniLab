@@ -258,8 +258,14 @@ function New-SubordinateCA {
         }
         catch {
             try {
-                $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                if ($PSVersionTable.PSEdition -ne "Core") {
+                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+                else {
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+
                 Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
                 Import-Module PSPKI -ErrorAction Stop
             }
@@ -313,7 +319,12 @@ function New-SubordinateCA {
             $null = Enable-PSRemoting -Force -ErrorAction Stop
         }
         catch {
-            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+            $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+            if ($NICsWPublicProfile.Count -gt 0) {
+                foreach ($Nic in $NICsWPublicProfile) {
+                    Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                }
+            }
 
             try {
                 $null = Enable-PSRemoting -Force
@@ -645,32 +656,33 @@ function New-SubordinateCA {
         $PKIWebsiteCertFileOut = "$FileOutputDirectory\pki.$($RelevantSubCANetworkInfo.DomainName).cer"
         $PKIWebSiteCertInfFile = "$FileOutputDirectory\pki.$($RelevantSubCANetworkInfo.DomainName).inf"
         $PKIWebSiteCertRequestFile = "$FileOutputDirectory\pki.$($RelevantSubCANetworkInfo.DomainName).csr"
-        $inf = @"
-[Version]
-Signature="`$Windows NT`$"
 
-[NewRequest]
-FriendlyName = pki.$($RelevantSubCANetworkInfo.DomainName)
-Subject = "CN=pki.$($RelevantSubCANetworkInfo.DomainName)"
-KeyLength = 2048
-HashAlgorithm = SHA256
-Exportable = TRUE
-KeySpec = 1
-KeyUsage = 0xa0
-MachineKeySet = TRUE
-SMIME = FALSE
-PrivateKeyArchive = FALSE
-UserProtected = FALSE
-UseExistingKeySet = FALSE
-ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
-ProviderType = 12
-RequestType = PKCS10
-
-[Extensions]
-2.5.29.17 = "{text}"
-_continue_ = "dns=pki.$($RelevantSubCANetworkInfo.DomainName)&"
-_continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
-"@
+        $inf = @(
+            '[Version]'
+            'Signature="$Windows NT$"'
+            ''
+            '[NewRequest]'
+            "FriendlyName = pki.$($RelevantSubCANetworkInfo.DomainName)"
+            "Subject = `"CN=pki.$($RelevantSubCANetworkInfo.DomainName)`""
+            'KeyLength = 2048'
+            'HashAlgorithm = SHA256'
+            'Exportable = TRUE'
+            'KeySpec = 1'
+            'KeyUsage = 0xa0'
+            'MachineKeySet = TRUE'
+            'SMIME = FALSE'
+            'PrivateKeyArchive = FALSE'
+            'UserProtected = FALSE'
+            'UseExistingKeySet = FALSE'
+            'ProviderName = "Microsoft RSA SChannel Cryptographic Provider"'
+            'ProviderType = 12'
+            'RequestType = PKCS10'
+            ''
+            '[Extensions]'
+            '2.5.29.17 = "{text}"'
+            "_continue_ = `"dns=pki.$($RelevantSubCANetworkInfo.DomainName)&`""
+            "_continue_ = `"ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&`""
+        )
 
         $inf | Out-File $PKIWebSiteCertInfFile
         # NOTE: The generation of a Certificate Request File using the below "certreq.exe -new" command also adds the CSR to the 
@@ -902,7 +914,12 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
                 $null = Enable-PSRemoting -Force -ErrorAction Stop
             }
             catch {
-                $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+                $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+                if ($NICsWPublicProfile.Count -gt 0) {
+                    foreach ($Nic in $NICsWPublicProfile) {
+                        Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                    }
+                }
 
                 try {
                     $null = Enable-PSRemoting -Force
@@ -1010,8 +1027,13 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
     [array]$NeededModules = @(
         "PSPKI"
     )
-    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    if ($PSVersionTable.PSEdition -ne "Core") {
+        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+    else {
+        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
 
     [System.Collections.ArrayList]$FailedModuleInstall = @()
     foreach ($ModuleResource in $NeededModules) {
@@ -1097,8 +1119,13 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
         if (![bool]$(Get-Module -ListAvailable Invoke-CommandAs -ErrorAction SilentlyContinue)) {
             try {
                 Write-Host "Installing 'Invoke-CommandAs' PowerShell Module..."
-                $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                if ($PSVersionTable.PSEdition -ne "Core") {
+                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
+                else {
+                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                }
                 Install-Module Invoke-CommandAs -ErrorAction Stop
             }
             catch {
@@ -1150,56 +1177,49 @@ _continue_ = "ipaddress=$($RelevantSubCANetworkInfo.IPAddress)&"
             ${Function:GetDomainController}.Ast.Extent.Text | Out-File "$HOME\GetDomainController.ps1"
             ${Function:SetupSubCA}.Ast.Extent.Text | Out-File "$HOME\SetupSubCA.ps1"
             $using:NetworkInfoPSObjects | Export-CliXml "$HOME\NetworkInfoPSObjects.xml"
+
+            $ExecutionScript = @(
+                'Start-Transcript -Path "$HOME\NewSubCATask.log" -Append'
+                ''
+                '. "$HOME\GetDomainController.ps1"'
+                '. "$HOME\SetupSubCA.ps1"'
+                '$NetworkInfoPSObjects = Import-CliXML "$HOME\NetworkInfoPSObjects.xml"'
+                ''
+                "`$DomainAdminPwdSS = ConvertTo-SecureString '$using:DomainAdminPwd' -AsPlainText -Force"
+                "`$DomainAdminCredentials = [pscredential]::new('$using:DomainAdminAccount',`$DomainAdminPwdSS)"
+                ''
+                '$SetupSubCASplatParams = @{'
+                '    DomainAdminCredentials              = $DomainAdminCredentials'
+                '    NetworkInfoPSObjects                = $NetworkInfoPSObjects'
+                '    '
+                "    CAType                              = '$using:CAType'"
+                "    NewComputerTemplateCommonName       = '$using:NewComputerTemplateCommonName'"
+                "    NewWebServerTemplateCommonName      = '$using:NewWebServerTemplateCommonName'"
+                "    FileOutputDirectory                 = '$using:FileOutputDirectory'"
+                "    CryptoProvider                      = '$using:CryptoProvider'"
+                "    KeyLength                           = '$using:KeyLength'"
+                "    HashAlgorithm                       = '$using:HashAlgorithm'"
+                "    KeyAlgorithmValue                   = '$using:KeyAlgorithmValue'"
+                "    CDPUrl                              = '$using:CDPUrl'"
+                "    AIAUrl                              = '$using:AIAUrl'"
+                '}'
+                ''
+                '    SetupSubCA @SetupSubCASplatParams -OutVariable Output -ErrorAction SilentlyContinue -ErrorVariable NewSubCAErrs'
+                ''
+                '    $Output | Export-CliXml "$HOME\SetupSubCAOutput.xml"'
+                ''
+                '    if ($NewSubCAErrs) {'
+                '        Write-Warning "Ignored errors are as follows:"'
+                '        Write-Error ($NewSubCAErrs | Select-Object -Unique | Out-String)'
+                '    }'
+                ''
+                '    Stop-Transcript'
+                ''
+                '    # Delete this script file after it is finished running'
+                '    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force'
+                ''
+            )
             
-            $ExecutionScript = @'
-Start-Transcript -Path "$HOME\NewSubCATask.log" -Append
-
-. "$HOME\GetDomainController.ps1"
-. "$HOME\SetupSubCA.ps1"
-$NetworkInfoPSObjects = Import-CliXML "$HOME\NetworkInfoPSObjects.xml"
-
-'@ + @"
-
-`$DomainAdminPwdSS = ConvertTo-SecureString '$using:DomainAdminPwd' -AsPlainText -Force
-`$DomainAdminCredentials = [pscredential]::new("$using:DomainAdminAccount",`$DomainAdminPwdSS)
-
-"@ + @'
-
-$SetupSubCASplatParams = @{
-    DomainAdminCredentials              = $DomainAdminCredentials
-    NetworkInfoPSObjects                = $NetworkInfoPSObjects
-
-'@ + @"
-    
-    CAType                              = "$using:CAType"
-    NewComputerTemplateCommonName       = "$using:NewComputerTemplateCommonName"
-    NewWebServerTemplateCommonName      = "$using:NewWebServerTemplateCommonName"
-    FileOutputDirectory                 = "$using:FileOutputDirectory"
-    CryptoProvider                      = "$using:CryptoProvider"
-    KeyLength                           = "$using:KeyLength"
-    HashAlgorithm                       = "$using:HashAlgorithm"
-    KeyAlgorithmValue                   = "$using:KeyAlgorithmValue"
-    CDPUrl                              = "$using:CDPUrl"
-    AIAUrl                              = "$using:AIAUrl"
-}
-
-"@ + @'
-
-    SetupSubCA @SetupSubCASplatParams -OutVariable Output -ErrorAction SilentlyContinue -ErrorVariable NewSubCAErrs
-
-    $Output | Export-CliXml "$HOME\SetupSubCAOutput.xml"
-
-    if ($NewSubCAErrs) {
-        Write-Warning "Ignored errors are as follows:"
-        Write-Error ($NewSubCAErrs | Select-Object -Unique | Out-String)
-    }
-
-    Stop-Transcript
-
-    # Delete this script file after it is finished running
-    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force
-
-'@
             Set-Content -Path "$HOME\NewSubCAExecutionScript.ps1" -Value $ExecutionScript
 
             $Trigger = New-ScheduledTaskTrigger -Once -At $(Get-Date).AddSeconds(10)
@@ -1277,8 +1297,8 @@ $SetupSubCASplatParams = @{
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjxa9YSTZmceF/bZAHfK5fyuB
-# Rcygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUZlqNobZlfUw9MhPMPryOUVIE
+# jXigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1335,11 +1355,11 @@ $SetupSubCASplatParams = @{
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJm1uOZEsjXPJKDl
-# dbIgQgIFhic/MA0GCSqGSIb3DQEBAQUABIIBAKlZoHjSKaKgX1H57cipCkH1lZpB
-# Xk4zRR9ZHPsF3GKRpY1uNt1C2TIwXr7JwCiPXyNPrjq7i36BhRKM5uTKH4gb16nK
-# Nbw1nGUryl1+gktF3Gu4QeDIwV++Tux0sA2jS5WRUr3X/U5B3nNsUvuIB6c1Ui31
-# bjEMPo8UHCYPw9Pwv7y9yP0nf1qD+TTTeeiXpj5FykpUjBdYWGFFoCR5ixtCukWZ
-# RrJDoxTrzfuN13FYilAlGJJ2pJ9vy3B4uEPAlvzsxvOWDuTevEII9oV8HEpbdB4B
-# V9/YDdDOIPQ5pFZqe6ybTBoMGN8AImHX80V2Tfe3sBJxO6BnyS63bQo8WYk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBLjS4jkdvNTJ0j2
+# l3HXzKl1Yf+nMA0GCSqGSIb3DQEBAQUABIIBADkM7Le995PsFpas6QS6EAhQw1qh
+# OBlpo4NHts8QvEeJHA4fVFMDUSASYR/Q+OF4+1PGuKNDu4eoo99DdpsTM3pp5b+J
+# t14wNhZzOxVtzXja/OFrwPndoHi8G3bvaOpwuEwiOfAk1SoKKRbKxHXF3Q8vaYlz
+# G813qINoEMzSeF+OtvCFy7eTEa6g3fLoF8yyrJZvHSd4+P3BfJLD3F7OsCfXl4ri
+# Lely/flymoUq2vzdfD6mu41xtJoeraI9I572mW2iIDMneNWayYSTqtag1VHw08yk
+# od3xdLwcvCPMPdZVBOFO1I0vK4uyl4J5F2vDDoMmHXhJvLLC+8otbtPcfoA=
 # SIG # End signature block

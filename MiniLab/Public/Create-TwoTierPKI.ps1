@@ -367,14 +367,20 @@ function Create-TwoTierPKI {
         ${Function:GetFileLockProcess}.Ast.Extent.Text
         ${Function:GetNativePath}.Ast.Extent.Text
         ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+        ${Function:GetWinPSInCore}.Ast.Extent.Text
         ${Function:InstallFeatureDism}.Ast.Extent.Text
         ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+        ${Function:InvokePSCompatibility}.Ast.Extent.Text
         ${Function:NewUniqueString}.Ast.Extent.Text
         ${Function:PauseForWarning}.Ast.Extent.Text
         ${Function:ResolveHost}.Ast.Extent.Text
         ${Function:TestIsValidIPAddress}.Ast.Extent.Text
         ${Function:UnzipFile}.Ast.Extent.Text
+        ${Function:Create-Domain}.Ast.Extent.Text
+        ${Function:Create-RootCA}.Ast.Extent.Text
+        ${Function:Create-SubordinateCA}.Ast.Extent.Text
         ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+        ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
         ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
         ${Function:Generate-Certificate}.Ast.Extent.Text
         ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
@@ -382,11 +388,9 @@ function Create-TwoTierPKI {
         ${Function:Manage-HyperVVM}.Ast.Extent.Text
         ${Function:New-DomainController}.Ast.Extent.Text
         ${Function:New-RootCA}.Ast.Extent.Text
+        ${Function:New-Runspace}.Ast.Extent.Text
         ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
         ${Function:New-SubordinateCA}.Ast.Extent.Text
-        ${Function:Create-Domain}.Ast.Extent.Text
-        ${Function:Create-RootCA}.Ast.Extent.Text
-        ${Function:Create-SubordinateCA}.Ast.Extent.Text
     )
 
     $CreateDCSplatParams = @{
@@ -544,10 +548,30 @@ function Create-TwoTierPKI {
 
             # Extract the .box File
             Push-Location "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
-            while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
-                Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-                Start-Sleep -Seconds 5
+
+            if ($PSVersionTable.PSEdition -eq "Core") {
+                GetWinPSInCore -ScriptBlock {
+                    $FunctionsForSBUse | foreach {Invoke-Expression $_}
+
+                    while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                        Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                        Start-Sleep -Seconds 5
+                    }
+                }
+                <#
+                while ([bool]$(Invoke-WinCommand -ScriptBlock {GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue})) {
+                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                    Start-Sleep -Seconds 5
+                }
+                #>
             }
+            else {
+                while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
+                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
+                    Start-Sleep -Seconds 5
+                }
+            }
+            
             try {
                 $null = & $TarCmd -xzvf $BoxFilePath 2>&1
             }
@@ -751,7 +775,12 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
             $null = Enable-PSRemoting -Force -ErrorAction Stop
         }
         catch {
-            $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+            $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+            if ($NICsWPublicProfile.Count -gt 0) {
+                foreach ($Nic in $NICsWPublicProfile) {
+                    Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+                }
+            }
 
             try {
                 $null = Enable-PSRemoting -Force
@@ -975,8 +1004,8 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmPxmKg2jECtglKT9dXEVLrQm
-# LpOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUGKmSH/aqgU4wLvT19sMaJpDb
+# Fcmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1033,11 +1062,11 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAB1dLcog/wgkTms
-# h0h3axXSlZvEMA0GCSqGSIb3DQEBAQUABIIBAHluszfmYvw7aYKrAHq51YixODcT
-# TL+35Hd5FfS0nH92af2SjqCvxAokqtxTYOmHwWrA3xVnKJTsuZDZoMrADA7+ME3v
-# C3F5zyn05hbACj9TCU0hOZSMwCyHb9dpICXyNkSQBbeXO5exniE7ZRBxobPOBI1/
-# Lv8H0jyxMQKkhdyfEgali/S8IAl1eGprKhVZWkruNUZDtOXNOUQxnEAvaaTwZpK2
-# GQjDN1WcQB5SACGltJkkqZsfAP42UJQRBiFxAqFd0fFlxnwIUGZwRirUW5vwyyQL
-# HA7skEDklCdrMhlfb1+du7X3mXjxUqYiWoMYX393ruSmu4MoO5j7nGsa1d0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDPv/uG7vEvw4EeA
+# f3VDvin2r242MA0GCSqGSIb3DQEBAQUABIIBABIj1DKkuZzPcVn/39JuUplOYuLu
+# Nyr6xotVpozyUENJdK/OULA89Bh1ovqA3nLQDWvXB1PKkBu8yvq6350sgNi6U5IG
+# +j85axPehT0t25dtfRe8/I1FlaG5QaNgTcIypX8F+to0NSjvCSNsMjoV4HU0EyJk
+# BoEF9f28rc8IHdprcskEsYBQqqx4Lyr1WueR4Qgn6gT+J2isFkm9LdO8sj33VPkP
+# /3wXx1uEMubsFnQGrUIcERVUoJevnFvmHYcfQtUg6gSmdyOrH03zAc77x/0Dcp3w
+# +12px9QeP5x8Tl7dQiANfe0NdG3H1MFv90eMM/lsESbrzLB/QwXSPa0ysIg=
 # SIG # End signature block

@@ -214,32 +214,6 @@ function Create-Domain {
     }
     #>
 
-    $FunctionsForSBUse = @(
-        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text
-        ${Function:GetElevation}.Ast.Extent.Text
-        ${Function:GetFileLockProcess}.Ast.Extent.Text
-        ${Function:GetNativePath}.Ast.Extent.Text
-        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-        ${Function:InstallFeatureDism}.Ast.Extent.Text
-        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-        ${Function:NewUniqueString}.Ast.Extent.Text
-        ${Function:PauseForWarning}.Ast.Extent.Text
-        ${Function:ResolveHost}.Ast.Extent.Text
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-        ${Function:UnzipFile}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-        ${Function:Generate-Certificate}.Ast.Extent.Text
-        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-        ${Function:Manage-HyperVVM}.Ast.Extent.Text
-        ${Function:New-DomainController}.Ast.Extent.Text
-        ${Function:New-RootCA}.Ast.Extent.Text
-        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-        ${Function:New-SubordinateCA}.Ast.Extent.Text
-    )
-
     $FinalDomainName = $NewDomain
     $DomainShortName = $($FinalDomainName -split '\.')[0]
 
@@ -348,55 +322,62 @@ function Create-Domain {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        $NewVMDeploySBAsString = @"
-[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
-
-`$env:Path = '$env:Path'
-
-# Load the functions we packed up
-`$args | foreach { Invoke-Expression `$_ }
-
-`$DeployBoxSplatParams = @{
-    VagrantBox                  = '$Windows2016VagrantBox'
-    CPUs                        = 2
-    Memory                      = 4096
-    VagrantProvider             = "hyperv"
-    VMName                      = '$DomainShortName' + "DC1"
-    VMDestinationDirectory      = '$VMStorageDirectory'
-    SkipHyperVInstallCheck      = `$True
-    CopyDecompressedDirectory   = `$True
-}
-
-if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
-    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
-    }
-}
-if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
-    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
-    }
-}
-
-`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
-`$DeployBoxResult
-"@
-        $NewVMDeploySB = [scriptblock]::Create($NewVMDeploySBAsString)
+        $NewVMDeploySBAsString = @(
+            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
+            ''
+            "`$env:Path = '$env:Path'"
+            ''
+            '# Load the functions we packed up'
+            '$args | foreach { Invoke-Expression $_ }'
+            ''
+            '$DeployBoxSplatParams = @{'
+            "    VagrantBox                  = '$Windows2016VagrantBox'"
+            '    CPUs                        = 2'
+            '    Memory                      = 4096'
+            '    VagrantProvider             = "hyperv"'
+            "    VMName                      = '$DomainShortName' + 'DC1'"
+            "    VMDestinationDirectory      = '$VMStorageDirectory'"
+            '    SkipHyperVInstallCheck      = $True'
+            '    CopyDecompressedDirectory   = $True'
+            '}'
+            ''
+            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
+            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
+            '    }'
+            '}'
+            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
+            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
+            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
+            '    }'
+            '}'
+            ''
+            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
+            '$DeployBoxResult'
+        )
+        
+        try {
+            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
+        }
+        catch {
+            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
 
         if (!$IPofServerToBeDomainController) {
             $DomainShortName = $($NewDomain -split "\.")[0]
             Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
 
-            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $(Get-Job).Name
+            $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $RunspaceNames
 
             $NewDCVMDeployJobSplatParams = @{
-                Name            = $NewDCVMDeployJobName
+                RunspaceName    = $NewDCVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                Wait            = $True
             }
-            $NewDCVMDeployJobInfo = Start-Job @NewDCVMDeployJobSplatParams
-        
-            $NewDCVMDeployResult = Wait-Job -Job $NewDCVMDeployJobInfo | Receive-Job
+            $NewDCVMDeployResult = New-Runspace @NewDCVMDeployJobSplatParams
 
             while (![bool]$(Get-VM -Name "$DomainShortName`DC1" -ErrorAction SilentlyContinue)) {
                 Write-Host "Waiting for $DomainShortName`DC1 VM to be deployed..."
@@ -439,7 +420,13 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
     catch {
-        $null = Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Public'} | Set-NetConnectionProfile -NetworkCategory 'Private'
+        # In the below, 0 is 'Public'
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
 
         try {
             $null = Enable-PSRemoting -Force
@@ -565,10 +552,10 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
         $RenameComputerSB = [scriptblock]::Create($RenameComputerSBAsString)
 
         $InvCmdRenameComputerSplatParams = @{
-            ComputerName    = $args[0]
-            Credential      = $args[1]
+            ComputerName    = $IPofServerToBeDomainController
+            Credential      = $PSRemotingCredentials
             ScriptBlock     = $RenameComputerSB
-            ArgumentList    = $args[2],$args[1]
+            ArgumentList    = $DesiredHostNameDC,$PSRemotingCredentials
             ErrorAction     = "Stop"
         }
 
@@ -588,24 +575,18 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
     if ($RemoteHostNameDC -ne $DesiredHostNameDC) {
         Write-Host "Renaming '$IPofServerToBeDomainController' from '$RemoteHostNameDC' to '$DesiredHostNameDC'..."
         
-        $RenameDCJobName = NewUniqueString -PossibleNewUniqueString "RenameDC" -ArrayOfStrings $(Get-Job).Name
+        $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+        $RenameDCJobName = NewUniqueString -PossibleNewUniqueString "RenameDC" -ArrayOfStrings $RunspaceNames
 
-        $RenameDCArgList = @(
-            $IPofServerToBeDomainController
-            $PSRemotingCredentials
-            $DesiredHostNameDC
-        )
         $RenameDCJobSplatParams = @{
-            Name            = $RenameDCJobName
+            RunspaceName    = $RenameDCJobName
             Scriptblock     = $RenameComputerJobSB
-            ArgumentList    = $RenameDCArgList
+            Wait            = $True
         }
-        $RenameDCJobInfo = Start-Job @RenameDCJobSplatParams
+        $RenameDCJobInfo = New-Runspace @RenameDCJobSplatParams
     }
 
     if ($RenameDCJobInfo) {
-        $RenameDCResult = Wait-Job -Job $RenameDCJobInfo | Receive-Job
-
         Write-Host "Sleeping for 5 minutes to give '$IPofServerToBeDomainController' time to reboot after name change..."
         Start-Sleep -Seconds 300
     
@@ -660,16 +641,24 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 
     #region >> Make the Domain Controller
 
-    Write-Host "Creating the New Domain Controller..."
-    $NewDomainControllerSplatParams = @{
-        DesiredHostName                         = $DesiredHostNameDC
-        NewDomainName                           = $NewDomain
-        NewDomainAdminCredentials               = $DomainAdminCredentials
-        ServerIP                                = $IPofServerToBeDomainController
-        PSRemotingLocalAdminCredentials         = $PSRemotingCredentials
-        LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
+    try {
+        Write-Host "Creating the New Domain Controller..."
+        $NewDomainControllerSplatParams = @{
+            DesiredHostName                         = $DesiredHostNameDC
+            NewDomainName                           = $NewDomain
+            NewDomainAdminCredentials               = $DomainAdminCredentials
+            ServerIP                                = $IPofServerToBeDomainController
+            PSRemotingLocalAdminCredentials         = $PSRemotingCredentials
+            LocalAdministratorAccountCredentials    = $LocalAdministratorAccountCredentials
+            ErrorAction                             = "Stop"
+        }
+        $NewDomainControllerResults = New-DomainController @NewDomainControllerSplatParams
     }
-    $NewDomainControllerResults = New-DomainController @NewDomainControllerSplatParams
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
 
     if (![bool]$($NewDomainControllerResults -match "DC Installation Success")) {
         Write-Error "Unable to determine if creation of the New Domain Controller '$DesiredHostNameDC' at '$IPofServerToBeDomainController' was successfule! Halting!"
@@ -690,8 +679,8 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUqOnBvq03JiDm7o+6tmv3niyi
-# Rl6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWcFwNBNdzPuM7mN4arlzLGGW
+# COmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -748,11 +737,11 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAe7dKYwxdU6IRhB
-# FNxW+AyDgF+WMA0GCSqGSIb3DQEBAQUABIIBAMSJW1hOK4Yk1lOsMBgj91HjGtAK
-# No8g9+v3oZsXvzJjSRdbJ5JNrLshDUKNWtz4YtYUA1YpJov+KUbUiBFUHHzlZ42T
-# 9n4GREGn6ZqQUwRbEOodwkHlnaBd9pbgmQPr4jrbvdZWljfnIO17Rf0QW1ekN/V/
-# 8UiUOG6S770btBXO9/RgZ35Z5K9+yjHNSprKJ7qMWIYi02JIJwJ0M48WMXi5wnd2
-# BI/bkvAycfl4/PtBjNqgjmGYWjujNtgg7Q0FJj9UK8Zv5uy7mDiSEnATFHnTBzWj
-# aVd4/T1OEEQp81FsYF+cmVNAAJ3R4ycRIfuu1PGHZxbaTo6Is832odHIvgs=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLTwZ40bJluLHLGm
+# hMeaNmxp07sYMA0GCSqGSIb3DQEBAQUABIIBAHYICTs3ZKDG5rugjiayHynM5YeG
+# c+8ywQ4vdK22ouCmHcITh3Pf0uiNloo86ENij3lvREiew/IVgBx/ljw6OSCWtQcQ
+# ZX9i/dEXBvdcOeYgRM6iKrFbplNuv+UoZYIe5rv5WWQrgWB/1zurZVgXWnP/7RJc
+# bY5w5PvMIbOfcXOo5cN4ltSVeXU5xl6OU5wfL1IzFUxAXeTZzJzugvfeImwIv1+R
+# yxylOZkZBb0m0bKsy3XHsBqBEBP2fyXnG1Po0GvuNKxKieSNQoZz7KIIW91W+PC0
+# IcpU7m/MfsRVSRMD16H5Ro3VnW1T7rqQtf64kSyVMjhwmGt+dHNUfNtwO2k=
 # SIG # End signature block

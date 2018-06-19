@@ -88,7 +88,7 @@ function InvokePSCompatibility {
                 ExportedCommands    = $Functions + $Cmdlets
             }
         }
-        $ModInfoFromGetCommand = Get-Command
+        $ModInfoFromGetCommand = Get-Command -CommandType Cmdlet,Function,Workflow
 
         [System.Collections.ArrayList]$AutoFunctionsInfo = @()
 
@@ -163,8 +163,8 @@ function InvokePSCompatibility {
         }
 
         [pscustomobject]@{
-            WinPSModuleDependencies     = $NeededWinPSModules
-            PSCoreModuleDependencies    = $NeededPSCoreModules
+            WinPSModuleDependencies     = $($NeededWinPSModules | Where-Object {![string]::IsNullOrWhiteSpace($_.ModuleName)})
+            PSCoreModuleDependencies    = $($NeededPSCoreModules | Where-Object {![string]::IsNullOrWhiteSpace($_.ModuleName)})
         }
     }
 
@@ -206,45 +206,49 @@ function InvokePSCompatibility {
                 }
 
                 foreach ($WinPSModuleObject in $ModuleDependencies.WinPSModuleDependencies) {
-                    try {
-                        Import-WinModule $WinPSModuleObject.ModuleName -ErrorAction Stop
-                        $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
-                    }
-                    catch {
-                        $ModuleManifestPath = $WinPSModuleObject.ManifestFileItem.FullName
-                        if (!$ModuleManifestPath) {
-                            $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
-                            continue
-                        }
-
+                    if ($ModulesSuccessfullyLoaded.ModuleName -notcontains $WinPSModuleObject.ModuleName) {
                         try {
-                            Import-WinModule $ModuleManifestPath -ErrorAction Stop
+                            Import-WinModule $WinPSModuleObject.ModuleName -ErrorAction Stop
                             $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
                         }
                         catch {
-                            $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
+                            $ModuleManifestPath = $WinPSModuleObject.ManifestFileItem.FullName
+                            if (!$ModuleManifestPath) {
+                                $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
+                                continue
+                            }
+
+                            try {
+                                Import-WinModule $ModuleManifestPath -ErrorAction Stop
+                                $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
+                            }
+                            catch {
+                                $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
+                            }
                         }
                     }
                 }
 
                 foreach ($PSCoreModuleObject in $ModuleDependencies.PSCoreModuleDependencies) {
-                    try {
-                        Import-Module $PSCoreModuleObject.ModuleName -ErrorAction Stop
-                        $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
-                    }
-                    catch {
-                        $ModuleManifestPath = $PSCoreModuleObject.ManifestFileItem.FullName
-                        if (!$ModuleManifestPath) {
-                            $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
-                            continue
-                        }
-
+                    if ($ModulesSuccessfullyLoaded.ModuleName -notcontains $PSCoreModuleObject.ModuleName) {
                         try {
-                            Import-Module $ModuleManifestPath -ErrorAction Stop
+                            Import-Module $PSCoreModuleObject.ModuleName -ErrorAction Stop
                             $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
                         }
                         catch {
-                            $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
+                            $ModuleManifestPath = $PSCoreModuleObject.ManifestFileItem.FullName
+                            if (!$ModuleManifestPath) {
+                                $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
+                                continue
+                            }
+
+                            try {
+                                Import-Module $ModuleManifestPath -ErrorAction Stop
+                                $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
+                            }
+                            catch {
+                                $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
+                            }
                         }
                     }
                 }
@@ -387,8 +391,8 @@ function InvokePSCompatibility {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUCN344UeuFk2qBmro4JS06+Bz
-# 6q2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU78/f+Qvzh366d2b/+CL9c+9G
+# YLGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -445,11 +449,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHygTmYh8HLGiaKi
-# t5/e34sqaZqfMA0GCSqGSIb3DQEBAQUABIIBAFZznH8wpEMI6BLwjXwtTNKea8Xn
-# T6jLSEuWchRcS7r4QFsORTzFMWty2JqYVswfwKIVhxvY4kbbqdQxS4shzNaixg3Z
-# /hQnGNGqRNSGqSp4KtVXDiFptCTuy6HbPTKgQj3Akl6HLR3l5mgEXcjde0HOxpZQ
-# Q102gB/oi532chRfz6W0zBAMh5A6WtxmHFvKD2s8gMhOQFQSc/FooIVmtLd0Kd+n
-# h02XODgP849OjldOM7WLucCDyd67ZZX+JV4IFAXbimynONIgdJOsFHICj8LE8lj1
-# 18n6Z2YKGz4gcn/Rqjt4+09n1Xt4BHekROMDxaWZnz1pCBzC/7mltyU4HrU=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFF/C0PdJSs5ikeU1
+# qBh/CGufgU/dMA0GCSqGSIb3DQEBAQUABIIBABLLoPu+niZz/ac86V8umtX+FkR3
+# G8qfC7c1LeDRsZ8T3j5N41lL+VyHM+t3KcmbvYPG0LyIMRMEh1iFtQ0W4QzuwnN3
+# XL2Giwp4cJdP9GsWz0tclM95tBtlDVreJHyRxb/ORdeLJACZLg968g7uXBP6dDvw
+# CkXhu1zpnEzmoAmM9iJMgU7JLurw5pTxJYWYUj+5Q190sDOz+Ma0btK3WLosEP+z
+# 3oBe86kArRXUx60E5/7trrxIevaRJzcAiLYIZsFurRYZaamx3uxSxHGHcd97+gru
+# IxYYOxyZnRBLBtCVDYryp96M6bcIEsz8M0TswJEic9ljbJMLwQUqn5oOFOU=
 # SIG # End signature block

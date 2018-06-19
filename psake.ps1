@@ -161,6 +161,44 @@ if ($PSVersionTable.PSEdition -eq "Desktop") {
 
     Add-Content -Value $FunctionTextToAdd -Path "$env:BHModulePath\$env:BHProjectName.psm1"
 
+    # Finally, add array $FunctionsForSBuse in case we want to use this Module Remotely
+    $FunctionsForSBUseString = @'
+$FunctionsForSBUse = @(
+    ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+    ${Function:GetDomainController}.Ast.Extent.Text
+    ${Function:GetElevation}.Ast.Extent.Text
+    ${Function:GetFileLockProcess}.Ast.Extent.Text
+    ${Function:GetNativePath}.Ast.Extent.Text
+    ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
+    ${Function:GetWinPSInCore}.Ast.Extent.Text
+    ${Function:InstallFeatureDism}.Ast.Extent.Text
+    ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+    ${Function:InvokePSCompatibility}.Ast.Extent.Text
+    ${Function:NewUniqueString}.Ast.Extent.Text
+    ${Function:PauseForWarning}.Ast.Extent.Text
+    ${Function:ResolveHost}.Ast.Extent.Text
+    ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+    ${Function:UnzipFile}.Ast.Extent.Text
+    ${Function:Create-Domain}.Ast.Extent.Text
+    ${Function:Create-RootCA}.Ast.Extent.Text
+    ${Function:Create-SubordinateCA}.Ast.Extent.Text
+    ${Function:Create-TwoTierPKI}.Ast.Extent.Text
+    ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
+    ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+    ${Function:Generate-Certificate}.Ast.Extent.Text
+    ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+    ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+    ${Function:Manage-HyperVVM}.Ast.Extent.Text
+    ${Function:New-DomainController}.Ast.Extent.Text
+    ${Function:New-RootCA}.Ast.Extent.Text
+    ${Function:New-Runspace}.Ast.Extent.Text
+    ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
+    ${Function:New-SubordinateCA}.Ast.Extent.Text
+)
+'@
+
+    Add-Content -Value $FunctionsForSBUseString -Path "$env:BHModulePath\$env:BHProjectName.psm1"
+
     if ($Cert) {
         # At this point the .psm1 is finalized, so let's sign it
         try {
@@ -251,8 +289,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUvhDNTqIbbqlTiRRnm+gcz38n
-# i5Kgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUr2RUkWgkfb7PvVqcvUNhBgjT
+# coagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -309,11 +347,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPNPV1nb6IajMbp5
-# 5aydJFuncLDGMA0GCSqGSIb3DQEBAQUABIIBAAQZS1t7ZMeuOiZ7Bh83FgFLdV90
-# WywB8r2ovB65zUEaJyd+p6ci617Wg/iDwDhaB6hLilyfhvf8zGB53mx1YVbtU22s
-# NwQkh4EmojoQQ1bqhpeRSs6vyF5Az7ZXO6AZrlcWZnR6d4xbvJO1mmuhfE0C7hgm
-# MQdQPEcS5amcQ3NaviCdzu9HhIhrSYZjPkVpndvG+t/wYrgGVtgJLPagwvO7I3PC
-# BQZ7gSOEJgE1khj6YxvWkxYFI3vtHsk+g38tZr0ifJCVUi4sPvip/qyrtZu+Qytu
-# Wc2kvWcm+ldBMwo9CdbN2dF+QwV6re1p+1pH/g2RIDEXvx6YkUu0Lc1CvkE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLT9r3xu5Sq2XAdi
+# eVRPCkDIoMJgMA0GCSqGSIb3DQEBAQUABIIBAKI8c2wAofAHSjiiDWWBhWNpM71Q
+# JpRMLTgYs01e+XAhXss3y4iNW9Xk75VZbJdw++6tcEPl/mnzaISkiV+lQnHt5k6A
+# +aj6OcJYRQUJVwxM2dWwJFfhEzptVQPJHHTe8gHQlul7hmIkXjRdGWs+NOctXdsP
+# 0LZax8gAH5fPxa/Nm+ZShOSjSf0CFdehyvGsArl1N/2OoSgBB2xwzfmAfo0uejKe
+# Ou8KjOV+fWrwm6SB12UKFKPWvxq4fAIrSnpalAEmdDo5l0SazJe9bTQgN9B4oxGk
+# lrSpAd7EMD/xKXhzdJN5zfxKpoqfygqnyih6d9OCH1IJZWXG1UiIbafhHOQ=
 # SIG # End signature block
