@@ -322,6 +322,7 @@ function Create-Domain {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
+        <#
         $NewVMDeploySBAsString = @(
             '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
             ''
@@ -364,13 +365,47 @@ function Create-Domain {
             $global:FunctionResult = "1"
             return
         }
+        #>
+
+        $NewVMDeploySB = {
+            $DeployBoxSplatParams = @{
+                VagrantBox                  = $Windows2016VagrantBox
+                CPUs                        = 2
+                Memory                      = 4096
+                VagrantProvider             = "hyperv"
+                VMName                      = $DomainShortName + 'DC1'
+                VMDestinationDirectory      = $VMStorageDirectory
+                SkipHyperVInstallCheck      = $True
+                CopyDecompressedDirectory   = $True
+            }
+            
+            if ($DecompressedBoxDir) {
+                if ($(Get-Item $DecompressedBoxDir).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('DecompressedBoxDirectory',$DecompressedBoxDir)
+                }
+            }
+            if ($BoxFilePath) {
+                if (-not $(Get-Item $BoxFilePath).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('BoxFilePath',$BoxFilePath)
+                }
+            }
+            
+            Write-Host "Deploying Hyper-V Vagrant Box..."
+            $DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+            $DeployBoxResult
+        }
 
         if (!$IPofServerToBeDomainController) {
             $DomainShortName = $($NewDomain -split "\.")[0]
             Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
 
-            $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
-            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $RunspaceNames
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewDCVMDeployJobName = "NewDCVM"
+            }
 
             $NewDCVMDeployJobSplatParams = @{
                 RunspaceName    = $NewDCVMDeployJobName
@@ -679,8 +714,8 @@ function Create-Domain {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWcFwNBNdzPuM7mN4arlzLGGW
-# COmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUqhGYl6gT4MFpsEY925vGntMt
+# 0WKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -737,11 +772,11 @@ function Create-Domain {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLTwZ40bJluLHLGm
-# hMeaNmxp07sYMA0GCSqGSIb3DQEBAQUABIIBAHYICTs3ZKDG5rugjiayHynM5YeG
-# c+8ywQ4vdK22ouCmHcITh3Pf0uiNloo86ENij3lvREiew/IVgBx/ljw6OSCWtQcQ
-# ZX9i/dEXBvdcOeYgRM6iKrFbplNuv+UoZYIe5rv5WWQrgWB/1zurZVgXWnP/7RJc
-# bY5w5PvMIbOfcXOo5cN4ltSVeXU5xl6OU5wfL1IzFUxAXeTZzJzugvfeImwIv1+R
-# yxylOZkZBb0m0bKsy3XHsBqBEBP2fyXnG1Po0GvuNKxKieSNQoZz7KIIW91W+PC0
-# IcpU7m/MfsRVSRMD16H5Ro3VnW1T7rqQtf64kSyVMjhwmGt+dHNUfNtwO2k=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJMeMaKzGpcotUba
+# QHO7hN3r2E6jMA0GCSqGSIb3DQEBAQUABIIBAA8IalNDQAbulXL/f4OoTFMlWgyc
+# kDOIITIEY7n0mKI0v29a7V/saXi0vCtdDThCAunFAQL++u3FgkiZEsR2vfjGGkQX
+# QOAKgT7RsObQA8OrPOh8MP9wWIVTueA+sYAgZKjjUAKBGLgMDDOqn19pY0nSvMlS
+# DecT0AQNL8oXECbT5Lxy60THYlLAZ7GI/tQWqQ0DuhC3/iEI92En+zivZcjv+nnN
+# HVL39x2ktxzijssfnzKdcgyIy5iSXUkb0PEMfxHW2yJ0iQ7OIMQFpTNrZrjDKZvy
+# 60Fx+hzhrk/PyRgLtzoJwXIT8rioh0XWncnEDOiRinYwWb90KhzJqEgDhg8=
 # SIG # End signature block

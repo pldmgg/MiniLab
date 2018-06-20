@@ -388,6 +388,7 @@ function Create-Domain {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
+        <#
         $NewVMDeploySBAsString = @(
             '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
             ''
@@ -430,13 +431,47 @@ function Create-Domain {
             $global:FunctionResult = "1"
             return
         }
+        #>
+
+        $NewVMDeploySB = {
+            $DeployBoxSplatParams = @{
+                VagrantBox                  = $Windows2016VagrantBox
+                CPUs                        = 2
+                Memory                      = 4096
+                VagrantProvider             = "hyperv"
+                VMName                      = $DomainShortName + 'DC1'
+                VMDestinationDirectory      = $VMStorageDirectory
+                SkipHyperVInstallCheck      = $True
+                CopyDecompressedDirectory   = $True
+            }
+            
+            if ($DecompressedBoxDir) {
+                if ($(Get-Item $DecompressedBoxDir).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('DecompressedBoxDirectory',$DecompressedBoxDir)
+                }
+            }
+            if ($BoxFilePath) {
+                if (-not $(Get-Item $BoxFilePath).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('BoxFilePath',$BoxFilePath)
+                }
+            }
+            
+            Write-Host "Deploying Hyper-V Vagrant Box..."
+            $DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+            $DeployBoxResult
+        }
 
         if (!$IPofServerToBeDomainController) {
             $DomainShortName = $($NewDomain -split "\.")[0]
             Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
 
-            $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
-            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $RunspaceNames
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewDCVMDeployJobName = "NewDCVM"
+            }
 
             $NewDCVMDeployJobSplatParams = @{
                 RunspaceName    = $NewDCVMDeployJobName
@@ -3780,25 +3815,17 @@ function Deploy-HyperVVagrantBoxManually {
         # Extract the .box File
         Push-Location $DownloadedVMDir
 
+        Write-Host "Checking file lock of .box file..."
         if ($PSVersionTable.PSEdition -eq "Core") {
-            Write-Host "Checking file lock of .box file..."
-            
             # Make sure the PSSession Type Accelerator exists
-            Write-Host "Getting Type Accelerators..."
             $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
-            Write-Host "Done getting Type Accelerators."
             if ($TypeAccelerators.Name -notcontains "PSSession") {
-                Write-Host "Adding PSSession Type Accelerator..."
                 [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
             }
 
             $Module = Get-Module MiniLab
             # NOTE: The below $FunctionsForSBUse is loaded when the MiniLab Module is imported
-            Write-Host "Getting FunctionsForSBUse..."
             $ThisModuleFunctions = $script:FunctionsForSBUse
-            Write-Host "`$ThisModuleFunctions.Count is $($ThisModuleFunctions.Count)"
-            Write-Host "BoxFilePath is $BoxFilePath"
-            Write-Host "Check to see if `$ThisModuleFunctions contains GetFileLockProcess: $([bool]$($ThisModuleFunctions -match '^function GetFileLockProcess'))"
 
             $FileLockBool = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
                 $args | foreach {Invoke-Expression $_}
@@ -8676,6 +8703,7 @@ function New-DomainController {
 
     #region >> Prep
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here0"
     if (!$RemoteDSCDirectory) {
         $RemoteDSCDirectory = "C:\DSCConfigs"
     }
@@ -8707,6 +8735,7 @@ function New-DomainController {
         return
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here1"
     $CharacterIndexToSplitOn = [Math]::Round($(0..$($NewDomainAdminCredentials.UserName.Length) | Measure-Object -Average).Average)
     $NewDomainAdminFirstName = $NewDomainAdminCredentials.UserName.SubString(0,$CharacterIndexToSplitOn)
     $NewDomainAdminLastName = $NewDomainAdminCredentials.UserName.SubString($CharacterIndexToSplitOn,$($($NewDomainAdminCredentials.UserName.Length)-$CharacterIndexToSplitOn))
@@ -8723,12 +8752,14 @@ function New-DomainController {
         $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here2"
     $NeededDSCResources = @(
+        "PSDesiredStateConfiguration"
         "xPSDesiredStateConfiguration"
         "xActiveDirectory"
     )
     [System.Collections.ArrayList]$FailedDSCResourceInstall = @()
-    foreach ($DSCResource in $NeededDSCResources) {
+    foreach ($DSCResource in $($NeededDSCResources | Where-Object {$_ -ne "PSDesiredStateConfiguration"})) {
         try {
             if ($PSVersionTable.PSEdition -eq "Core") {
                 # Make sure the PSSession Type Accelerator exists
@@ -8737,10 +8768,12 @@ function New-DomainController {
                     [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
                 }
 
-                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {Install-Module $using:DSCResource}
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    Install-Module $args[0] -Force
+                } -ArgumentList $DSCResource
             }
             else {
-                $null = Install-Module $DSCResource -ErrorAction Stop
+                $null = Install-Module $DSCResource -Force -ErrorAction Stop
             }
         }
         catch {
@@ -8755,6 +8788,7 @@ function New-DomainController {
         return
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here3"
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
     [System.Collections.ArrayList]$Modules = @()
     foreach ($DSCResource in $NeededDSCResources) {
@@ -8766,26 +8800,32 @@ function New-DomainController {
             }
 
             $Module = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
-                Get-Module -ListAvailable $using:DSCResource | Where-Object {
+                $(Get-Module -ListAvailable $args[0] | Where-Object {
                     $_.ModuleBase -match "\\WindowsPowerShell\\"
-                } | Sort-Object -Property Version
-            }
+                } | Sort-Object -Property Version)[-1]
+            } -ArgumentList $DSCResource
         }
         else {
-            $Module = Get-Module -ListAvailable $DSCResource | Where-Object {
+            $Module = $(Get-Module -ListAvailable $DSCResource | Where-Object {
                 $_.ModuleBase -match "\\WindowsPowerShell\\"
-            } | Sort-Object -Property Version
+            } | Sort-Object -Property Version)[-1]
         }
         
-        $null = $DSCModulesToTransfer.Add($Module.ModuleBase)
+        if ($DSCResource -ne "PSDesiredStateConfiguration") {
+            $null = $DSCModulesToTransfer.Add($($($Module.ModuleBase -split $DSCResource)[0] + $DSCResource))
+        }
         $null = $Modules.Add($Module)
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here4"
     $PSDSCVersion = $($Modules | Where-Object {$_.Name -eq "PSDesiredStateConfiguration"}).Version.ToString()
     $xActiveDirectoryVersion = $($Modules | Where-Object {$_.Name -eq "xActiveDirectory"}).Version.ToString()
     $xPSDSCVersion = $($Modules | Where-Object {$_.Name -eq "xPSDesiredStateConfiguration"}).Version.ToString()
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "$PSDSCVersion`n$xActiveDirectoryVersion`n$xPSDSCVersion"
+
     # Make sure WinRM in Enabled and Running on $env:ComputerName
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereA"
     try {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
@@ -8808,6 +8848,7 @@ function New-DomainController {
         }
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereB"
     # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
     if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
         $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
@@ -8825,6 +8866,8 @@ function New-DomainController {
     }
     $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
     Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereC"
 
     #endregion >> Prep
 
@@ -8860,6 +8903,7 @@ function New-DomainController {
         $Counter++
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereD"
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
         $UserAccount = Get-LocalUser -Name "Administrator"
@@ -8881,6 +8925,7 @@ function New-DomainController {
         return
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereE"
     if ($RemoteHostName -ne $DesiredHostName) {
         $RenameComputerSB = {
             Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart -ErrorAction SilentlyContinue
@@ -8909,6 +8954,7 @@ function New-DomainController {
 
     #region >> Wait For HostName Change
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereF"
     Get-PSSession -Name "To$DesiredHostName" | Remove-PSSession
     
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions Post Name Change Reboot...
@@ -8937,6 +8983,7 @@ function New-DomainController {
     
     #region >> Prep DSC On the RemoteHost
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereG"
     try {
         # Copy the DSC PowerShell Modules to the Remote Host
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -9105,7 +9152,7 @@ function New-DomainController {
         '        [pscredential]$LocalAdministratorAccountCredentials'
         '    )'
         ''
-        "    Import-DscResource -ModuleName 'PSDesiredStateConfiguration' -ModuleVersion $PSDSCVersion"
+        "    #Import-DscResource -ModuleName 'PSDesiredStateConfiguration' -ModuleVersion $PSDSCVersion"
         "    Import-DscResource -ModuleName 'xPSDesiredStateConfiguration' -ModuleVersion $xPSDSCVersion"
         "    Import-DscResource -ModuleName 'xActiveDirectory' -ModuleVersion $xActiveDirectoryVersion"
         ''
@@ -9223,6 +9270,7 @@ function New-DomainController {
         return
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereH"
     $NewDomainControllerSB = {
         #### Apply the DSC Configuration ####
         # Load the NewDomainController DSC Configuration function
@@ -9288,6 +9336,7 @@ function New-DomainController {
         Start-DscConfiguration -Path $using:RemoteDSCDirectory -Force -Wait
     }
 
+    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereI"
     try {
         $NewDCDSCApplication = Invoke-Command -Session $(Get-PSSession -Name "To$DesiredHostName") -ScriptBlock $NewDomainControllerSB
     }
@@ -12403,8 +12452,8 @@ $FunctionsForSBUse = @(
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSQGXzuSuoeHLgkkoNz1cKoW7
-# Xn2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUyEUu7WWzxmSWovCL65YZFnJf
+# j0agggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12461,11 +12510,11 @@ $FunctionsForSBUse = @(
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBB8kdbNjU87+q4x
-# Q8XHnq4Ie2EXMA0GCSqGSIb3DQEBAQUABIIBAAe7nZW+NVCQJCBDOHwUgVsVrKAL
-# Lt9ih1kfEmFvR1u00rebNbTV795ZwLzjQ3BjMFBw9EFMYp7rYP8zfodznX1/uitW
-# Xu1zR/B3MU7yAxXjmc/+UzHOt4rwATJxfUvOWXSIiHvNbEa676breqiwjkVPNXJx
-# iBC606XhGsJfxE0+0hUSugFKlVvXUPQfc9lFjnroc5N5Z1TyoJPEc+aiu/TmoD4l
-# bwkdUvIs4hOerkJhCFNwEuD7DvfbMA8WEXNIoE+jXubZO2NKhPU1j16PfQGdRuF/
-# hQ4E3BxG4ogYHmnICTLIx6zneRNEjR/iWjVHWvN6/Od9aSAJ+1ZpfwSdwdQ=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDJZK75xhb6W1U6j
+# xlMzT7ZXZ394MA0GCSqGSIb3DQEBAQUABIIBAJ/7WOL+WsdcTPdvFu8ATx9j7Rfh
+# uXLGP8kj8hVS5noZEuSAr5QeMhG4aQAcjg5P6fnx5WFw5zou4uWaO3ZjLz2IzZ+p
+# ewml9nrSZN3RMoK2xBNWl2UD0o4447hfZDam7JM4o1P0n3eyJq8S4/Ozoxb6OONF
+# 9q/0/hSGlyFUjbzGJsVSqbwQggk7FOCjs0MCcIG85EtVCX79cjcFnOqj+NcFhRj3
+# 9bFeBHgwaD9bGalNpJ76R3p6RMKMIkpaYT3IQ32W1VDzZH2b64BeTcWnwtjxDWxx
+# KWCJeq8UVY97PuNEsG8aTv/XYnVO9x9jw+FQLghuKEnnoBnQiqwprQNZJj4=
 # SIG # End signature block
