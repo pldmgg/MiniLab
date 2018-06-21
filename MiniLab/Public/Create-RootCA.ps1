@@ -210,32 +210,6 @@ function Create-RootCA {
         return
     }
 
-    $FunctionsForSBUse = @(
-        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text
-        ${Function:GetElevation}.Ast.Extent.Text
-        ${Function:GetFileLockProcess}.Ast.Extent.Text
-        ${Function:GetNativePath}.Ast.Extent.Text
-        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-        ${Function:InstallFeatureDism}.Ast.Extent.Text
-        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-        ${Function:NewUniqueString}.Ast.Extent.Text
-        ${Function:PauseForWarning}.Ast.Extent.Text
-        ${Function:ResolveHost}.Ast.Extent.Text
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-        ${Function:UnzipFile}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-        ${Function:Generate-Certificate}.Ast.Extent.Text
-        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-        ${Function:Manage-HyperVVM}.Ast.Extent.Text
-        ${Function:New-DomainController}.Ast.Extent.Text
-        ${Function:New-RootCA}.Ast.Extent.Text
-        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-        ${Function:New-SubordinateCA}.Ast.Extent.Text
-    )
-
     $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
     $DomainShortName = $($FinalDomainName -split '\.')[0]
 
@@ -344,6 +318,7 @@ function Create-RootCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
+        <#
         $NewVMDeploySBAsString = @(
             '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
             ''
@@ -386,22 +361,56 @@ function Create-RootCA {
             $global:FunctionResult = "1"
             return
         }
+        #>
+
+        $NewVMDeploySB = {
+            $DeployBoxSplatParams = @{
+                VagrantBox                  = $Windows2016VagrantBox
+                CPUs                        = 2
+                Memory                      = 4096
+                VagrantProvider             = "hyperv"
+                VMName                      = $DomainShortName + 'RootCA'
+                VMDestinationDirectory      = $VMStorageDirectory
+                SkipHyperVInstallCheck      = $True
+                CopyDecompressedDirectory   = $True
+            }
+            
+            if ($DecompressedBoxDir) {
+                if ($(Get-Item $DecompressedBoxDir).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('DecompressedBoxDirectory',$DecompressedBoxDir)
+                }
+            }
+            if ($BoxFilePath) {
+                if (-not $(Get-Item $BoxFilePath).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('BoxFilePath',$BoxFilePath)
+                }
+            }
+            
+            Write-Host "Deploying Hyper-V Vagrant Box..."
+            $DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+            $DeployBoxResult
+        }
 
         if (!$IPofServerToBeRootCA) {
             $DomainShortName = $($ExistingDomain -split "\.")[0]
 
             Write-Host "Deploying New Root CA VM '$DomainShortName`RootCA'..."
             
-            $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $(Get-Job).Name
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewRootCAVMDeployJobName = "NewRootCAVM"
+            }
 
             $NewRootCAVMDeployJobSplatParams = @{
-                Name            = $NewRootCAVMDeployJobName
+                RunspaceName    = $NewRootCAVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                Wait            = $True
             }
-            $NewRootCAVMDeployJobInfo = Start-Job @NewRootCAVMDeployJobSplatParams
+            $NewRootCAVMDeployResult = New-Runspace @NewRootCAVMDeployJobSplatParams
 
-            $NewRootCAVMDeployResult = Wait-Job -Job $NewRootCAVMDeployJobInfo | Receive-Job
             $IPofServerToBeRootCA = $NewRootCAVMDeployResult.VMIPAddress
 
             while (![bool]$(Get-VM -Name "$DomainShortName`RootCA" -ErrorAction SilentlyContinue)) {
@@ -410,7 +419,7 @@ function Create-RootCA {
             }
 
             if (!$IPofServerToBeRootCA) {
-                $IPofServerToBeRootCA = $(Get-VM -Name "$DomainShortName`RootCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                $IPofServerToBeDomainController = $(Get-VMNetworkAdapter -VMName "$DomainShortName`RootCA").IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
             }
         }
 
@@ -529,7 +538,7 @@ function Create-RootCA {
 
     # Check if DC and RootCA should be the same server. If not, then need to join RootCA to Domain.
     if ($IPofDomainController -ne $IPofServerToBeRootCA) {
-        $JoinDomainJobSB = {
+        $JoinDomainRSJobSB = {
             $JoinDomainSBAsString = @(
                 '# Synchronize time with time servers'
                 '$null = W32tm /resync /rediscover /nowait'
@@ -579,10 +588,10 @@ function Create-RootCA {
             }
     
             $InvCmdJoinDomainSplatParams = @{
-                ComputerName    = $args[0]
-                Credential      = $args[1]
+                ComputerName    = $IPofServerToBeRootCA
+                Credential      = $PSRemotingCredentials
                 ScriptBlock     = $JoinDomainSB
-                ArgumentList    = $args[2],$args[3],$args[4],$args[5]
+                ArgumentList    = $IPofDomainController,$DesiredHostNameRootCA,$ExistingDomain,$DomainAdminCredentials
             }
             try {
                 Invoke-Command @InvCmdJoinDomainSplatParams
@@ -616,6 +625,7 @@ function Create-RootCA {
 
             $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $(Get-Job).Name
 
+            <#
             $JoinRootCAArgList = @(
                 $IPofServerToBeRootCA
                 $PSRemotingCredentials
@@ -624,14 +634,13 @@ function Create-RootCA {
                 $ExistingDomain
                 $DomainAdminCredentials
             )
+            #>
             $JoinRootCAJobSplatParams = @{
                 Name            = $JoinRootCAJobName
-                Scriptblock     = $JoinDomainJobSB
-                ArgumentList    = $JoinRootCAArgList
+                Scriptblock     = $JoinDomainRSJobSB
+                Wait            = $True
             }
-            $JoinRootCAJobInfo = Start-Job @JoinRootCAJobSplatParams
-            
-            $JoinRootCAResult = Wait-Job -Job $JoinRootCAJobInfo | Receive-Job
+            $JoinRootCAResult = New-Runspace @JoinRootCAJobSplatParams
 
             # Verify Root CA is Joined to Domain
             # Try to create a PSSession to the Root CA for 15 minutes, then give up
@@ -689,8 +698,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUIZNCkpeRY4kW1uf9h8a8BDDI
-# wcCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUm+TGuVsKHRQfPeJxvMJxw63Q
+# KOWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -747,11 +756,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFF4xpQqFbtgZdw14
-# bS43S9qITymnMA0GCSqGSIb3DQEBAQUABIIBAHNBsqlytXPLYL7ChPGPOha92D8i
-# N5Ee9Ck3Lqx4AQvsN7AJCmqLFeoV5WF+vaiEjNL9CTJsksJZtZzcVS5/6Vk/8UKJ
-# jmtc80CITY00Ml+/xkRfDa5d3CrwMMdxgzxEYVFTByMArB4lj/yeB+8hB/zZSLV4
-# 9d55CCGmR+2UCBqofvfuoFKaYYltCAtPkW4xVnMExKEC2sqWyFttEVB9gbEUa0mh
-# VM/lUv06hfhW/nSB8Tt0PKDNJfjmiOpOgKYSOlwB4pC7U2+P2vUTpDx/g/ohwOGp
-# Cx7pJIJxlMVPUUiW2U4bQi+SqoOPylX005qloaZQi0KW7zCmbw9g9hxXv/4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIAGyhllfn3Dpt4H
+# Yx+WWYbMNChnMA0GCSqGSIb3DQEBAQUABIIBAA8PwJrfSmNhJw1UnEk0bMSITgZ4
+# dCs60haNRndVX4xQk1xfHHBV1Y6ueTeyOZfn4RldKC0aJfRex8UXLEbi1fhDBu29
+# bBtrvrf4UcQ6h8yES6HT/6F2HHtFmefUUtjGLXTUjLDdTDEDYtM85tBblV2eAIpo
+# GsuRzojeq4ezGBK5b3wl41XooSbDveu/EuNJvegd+RcTHXPar2J3OmXPxaVYz3s6
+# sjRiD0IWD8sZSN2WrAlz+3dUU0iqvVSWBdoGGyYMFu3rR8wGZc5QQfcJBzkJR6jm
+# 6gNqpank5Y5hfE0AH1P2Au5ufMJrtn77SVf6qXWXWRNkKw1CxhkKQzbz308=
 # SIG # End signature block

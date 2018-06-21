@@ -1,321 +1,19 @@
 function InvokePSCompatibility {
     [CmdletBinding()]
     Param (
-        [Parameter(Mandatory=$True)]
-        [string]$PathToPS1OrPSM1,
+        # $InvocationMethod determines if the GetModuleDependencies function scans a file or loaded function
+        [Parameter(Mandatory=$False)]
+        [string]$InvocationMethod = $script:MyInvocation.MyCommand.Name, 
 
         [Parameter(Mandatory=$False)]
-        [string[]]$ModuleDependenciesThatMayNotBeInstalled
+        [string[]]$ModulesAvailableLocally,
+
+        [Parameter(Mandatory=$False)]
+        [string[]]$ModulesAvailableExternally,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$InstallModulesNotAvailableLocally = $True
     )
-
-    #region >> Helper Functions
-
-    function GetModuleDependencies {
-        [CmdletBinding(DefaultParameterSetName="LoadedFunction")]
-        Param (
-            [Parameter(
-                Mandatory=$True,
-                ParameterSetName="LoadedFunction"
-            )]
-            [string]$NameOfLoadedFunction,
-
-            [Parameter(
-                Mandatory=$True,
-                ParameterSetName="ScriptFile"    
-            )]
-            [string]$PathToScriptFile
-        )
-
-        if ($NameOfLoadedFunction) {
-            $LoadedFunctions = Get-ChildItem Function:\
-            if ($LoadedFunctions.Name -notcontains $NameOfLoadedFunction) {
-                Write-Error "The function '$NameOfLoadedFunction' is not currently loaded! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-
-            $FunctionOrScriptContent = Invoke-Expression $('${Function:' + $NameOfLoadedFunction + '}.Ast.Extent.Text')
-        }
-        if ($PathToScriptFile) {
-            if (!$(Test-Path $PathToScriptFile)) {
-                Write-Error "Unable to find path '$PathToScriptFile'! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-
-            $FunctionOrScriptContent = Get-Content $PathToScriptFile
-        }
-        <#
-        $ExplicitlyDefinedFunctionsInThisFunction = [Management.Automation.Language.Parser]::ParseInput($FunctionOrScriptContent, [ref]$null, [ref]$null).EndBlock.Statements.FindAll(
-            [Func[Management.Automation.Language.Ast,bool]]{$args[0] -is [Management.Automation.Language.FunctionDefinitionAst]},
-            $false
-        ).Name
-        #>
-
-        # All Potential PSModulePaths
-        $AllWindowsPSModulePaths = @(
-            "C:\Program Files\WindowsPowerShell\Modules"
-            "$HOME\Documents\WindowsPowerShell\Modules"
-            "$HOME\Documents\PowerShell\Modules"
-            "C:\Program Files\PowerShell\Modules"
-            "C:\Windows\System32\WindowsPowerShell\v1.0\Modules"
-            "C:\Windows\SysWOW64\WindowsPowerShell\v1.0\Modules"
-        )
-
-        $AllModuleManifestFileItems = foreach ($ModPath in $AllWindowsPSModulePaths) {
-            Get-ChildItem -Path $ModPath -Recurse -File -Filter "*.psd1"
-        }
-
-        $ModInfoFromManifests = foreach ($ManFileItem in $AllModuleManifestFileItems) {
-            try {
-                $ModManifestData = Import-PowerShellDataFile $ManFileItem.FullName -ErrorAction Stop
-            }
-            catch {
-                continue
-            }
-
-            $Functions = $ModManifestData.FunctionsToExport | Where-Object {
-                ![System.String]::IsNullOrWhiteSpace($_) -and $_ -ne '*'
-            }
-            $Cmdlets = $ModManifestData.CmdletsToExport | Where-Object {
-                ![System.String]::IsNullOrWhiteSpace($_) -and $_ -ne '*'
-            }
-
-            @{
-                ModuleName          = $ManFileItem.BaseName
-                ManifestFileItem    = $ManFileItem
-                ModuleManifestData  = $ModManifestData
-                ExportedCommands    = $Functions + $Cmdlets
-            }
-        }
-        $ModInfoFromGetCommand = Get-Command -CommandType Cmdlet,Function,Workflow
-
-        [System.Collections.ArrayList]$AutoFunctionsInfo = @()
-
-        foreach ($ModInfoObj in $ModInfoFromManifests) {
-            if ($AutoFunctionsInfo.ModuleName -notcontains $ModInfoObj.ModuleName) {
-                $PSObj = [pscustomobject]@{
-                    ModuleName          = $ModInfoObj.ModuleName
-                    ManifestFileItem    = $ModInfoObj.ManifestFileItem
-                    ExportedCommands    = $ModInfoObj.ExportedCommands
-                }
-                $null = $AutoFunctionsInfo.Add($PSObj)
-            }
-        }
-        foreach ($ModInfoObj in $ModInfoFromGetCommand) {
-            $PSObj = [pscustomobject]@{
-                ModuleName          = $ModInfoObj.ModuleName
-                ExportedCommands    = $ModInfoObj.Name
-            }
-            $null = $AutoFunctionsInfo.Add($PSObj)
-        }
-
-        $FunctionRegex = "([a-zA-Z]|[0-9])+-([a-zA-Z]|[0-9])+"
-        $LinesWithFunctions = $FunctionOrScriptContent -match $FunctionRegex | Where-Object {![bool]$($_ -match "[\s]+#")}
-        $FinalFunctionList = $($LinesWithFunctions | Select-String -Pattern $FunctionRegex -AllMatches).Matches.Value | Sort-Object | Get-Unique
-        
-        [System.Collections.ArrayList]$NeededWinPSModules = @()
-        [System.Collections.ArrayList]$NeededPSCoreModules = @()
-        foreach ($ModObj in $AutoFunctionsInfo) {
-            foreach ($Func in $FinalFunctionList) {
-                if ($ModObj.ExportedCommands -contains $Func) {
-                    if ($ModObj.ManifestFileItem.FullName -match "\\WindowsPowerShell\\") {
-                        if ($NeededWinPSModules.ManifestFileItem.FullName -notcontains $ModObj.ManifestFileItem.FullName -and
-                        $ModObj.ModuleName -notmatch "\.WinModule") {
-                            $PSObj = [pscustomobject]@{
-                                ModuleName          = $ModObj.ModuleName
-                                ManifestFileItem    = $ModObj.ManifestFileItem
-                            }
-                            $null = $NeededWinPSModules.Add($PSObj)
-                        }
-                    }
-                    elseif ($ModObj.ManifestFileItem.FullName -match "\\PowerShell\\") {
-                        if ($NeededPSCoreModules.ManifestFileItem.FullName -notcontains $ModObj.ManifestFileItem.FullName -and
-                        $ModObj.ModuleName -notmatch "\.WinModule") {
-                            $PSObj = [pscustomobject]@{
-                                ModuleName          = $ModObj.ModuleName
-                                ManifestFileItem    = $ModObj.ManifestFileItem
-                            }
-                            $null = $NeededPSCoreModules.Add($PSObj)
-                        }
-                    }
-                    elseif ($PSVersionTable.PSEdition -eq "Core") {
-                        if ($NeededPSCoreModules.ModuleName -notcontains $ModObj.ModuleName -and
-                        $ModObj.ModuleName -notmatch "\.WinModule") {
-                            $PSObj = [pscustomobject]@{
-                                ModuleName          = $ModObj.ModuleName
-                                ManifestFileItem    = $null
-                            }
-                            $null = $NeededPSCoreModules.Add($PSObj)
-                        }
-                    }
-                    else {
-                        if ($NeededWinPSModules.ModuleName -notcontains $ModObj.ModuleName) {
-                            $PSObj = [pscustomobject]@{
-                                ModuleName          = $ModObj.ModuleName
-                                ManifestFileItem    = $null
-                            }
-                            $null = $NeededWinPSModules.Add($PSObj)
-                        }
-                    }
-                }
-            }
-        }
-
-        [pscustomobject]@{
-            WinPSModuleDependencies     = $($NeededWinPSModules | Where-Object {![string]::IsNullOrWhiteSpace($_.ModuleName)})
-            PSCoreModuleDependencies    = $($NeededPSCoreModules | Where-Object {![string]::IsNullOrWhiteSpace($_.ModuleName)})
-        }
-    }
-
-    function LoadModuleDependencies {
-        [CmdletBinding()]
-        Param (
-            [Parameter(Mandatory=$True)]
-            $ModuleDependencies
-        )
-
-        $ModuleDependenciesProperties = $($ModuleDependencies | Get-Member).Name
-        if ($ModuleDependenciesProperties -notcontains "WinPSModuleDependencies" -and
-        $ModuleDependenciesProperties -notcontains "PSCoreModuleDependencies") {
-            $ErrMsg = "The object passed to the -ModuleDependencies parameter does not have Properties called" +
-            "'WinPSModuleDependencies' and 'PSCoreModuleDependencies'! Halting!"
-            Write-Error $ErrMsg
-            $global:FunctionResult = "1"
-            return
-        }
-
-        if ($ModuleDependencies.WinPSModuleDependencies.Count -gt 0 -or
-        $ModuleDependencies.PSCoreModuleDependencies.Count -gt 0) {
-            [System.Collections.ArrayList]$ModulesSuccessfullyLoaded = @()
-            [System.Collections.ArrayList]$ModulesFailedToLoad = @()
-
-            # If we're in PowerShell Core, we need to import all necessary WinPS Modules via Import-WinModule
-            # from the WindowsCompatibility Module
-            if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
-                if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
-                    try {
-                        Install-Module WindowsCompatibility -ErrorAction Stop
-                    }
-                    catch {
-                        Write-Error "Problem installing the Windows Compatibility Module! Halting!"
-                    }
-                }
-                if (![bool]$(Get-Module WindowsCompatibility)) {
-                    Import-Module WindowsCompatibility
-                }
-
-                foreach ($WinPSModuleObject in $ModuleDependencies.WinPSModuleDependencies) {
-                    if ($ModulesSuccessfullyLoaded.ModuleName -notcontains $WinPSModuleObject.ModuleName) {
-                        try {
-                            Write-Host "Importing Module $($WinPSModuleObject.ModuleName)..."
-                            Import-WinModule $WinPSModuleObject.ModuleName -ErrorAction Stop
-                            $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
-                        }
-                        catch {
-                            $ModuleManifestPath = $WinPSModuleObject.ManifestFileItem.FullName
-                            if (!$ModuleManifestPath) {
-                                $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
-                                continue
-                            }
-
-                            try {
-                                Write-Host "Importing Module $ModuleManifestPath..."
-                                Import-WinModule $ModuleManifestPath -ErrorAction Stop
-                                $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
-                            }
-                            catch {
-                                $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
-                            }
-                        }
-                    }
-                }
-
-                foreach ($PSCoreModuleObject in $ModuleDependencies.PSCoreModuleDependencies) {
-                    if ($ModulesSuccessfullyLoaded.ModuleName -notcontains $PSCoreModuleObject.ModuleName) {
-                        try {
-                            Write-Host "Importing Module $($PSCoreModuleObject.ModuleName)..."
-                            Import-Module $PSCoreModuleObject.ModuleName -ErrorAction Stop
-                            $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
-                        }
-                        catch {
-                            $ModuleManifestPath = $PSCoreModuleObject.ManifestFileItem.FullName
-                            if (!$ModuleManifestPath) {
-                                $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
-                                continue
-                            }
-
-                            try {
-                                Write-Host "Importing Module $ModuleManifestPath..."
-                                Import-Module $ModuleManifestPath -ErrorAction Stop
-                                $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
-                            }
-                            catch {
-                                $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
-                            }
-                        }
-                    }
-                }
-            }
-
-            if ($PSVersionTable.PSEdition -ne "Core") {
-                foreach ($WinPSModuleObject in $ModuleDependencies.WinPSModuleDependencies) {
-                    try {
-                        Write-Host "Importing Module $($WinPSModuleObject.ModuleName)..."
-                        Import-Module $WinPSModuleObject.ModuleName -Scope Global -ErrorAction Stop
-                        $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
-                    }
-                    catch {
-                        $ModuleManifestPath = $WinPSModuleObject.ManifestFileItem.FullName
-                        if (!$ModuleManifestPath) {
-                            $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
-                            continue
-                        }
-
-                        try {
-                            Write-Host "Importing Module $ModuleManifestPath..."
-                            Import-Module $ModuleManifestPath -Scope Global -ErrorAction Stop
-                            $null = $ModulesSuccessfullyLoaded.Add($WinPSModuleObject)
-                        }
-                        catch {
-                            $null = $ModulesFailedToLoad.Add($WinPSModuleObject)
-                        }
-                    }
-                }
-
-                foreach ($PSCoreModuleObject in $ModuleDependencies.PSCoreModuleDependencies) {
-                    try {
-                        Write-Host "Importing Module $($PSCoreModuleObject.ModuleName)..."
-                        Import-Module $PSCoreModuleObject.ModuleName -ErrorAction Stop
-                        $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
-                    }
-                    catch {
-                        $ModuleManifestPath = $PSCoreModuleObject.ManifestFileItem.FullName
-                        if (!$ModuleManifestPath) {
-                            $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
-                            continue
-                        }
-
-                        try {
-                            Write-Host "Importing Module $ModuleManifestPath..."
-                            Import-Module $ModuleManifestPath -ErrorAction Stop
-                            $null = $ModulesSuccessfullyLoaded.Add($PSCoreModuleObject)
-                        }
-                        catch {
-                            $null = $ModulesFailedToLoad.Add($PSCoreModuleObject)
-                        }
-                    }
-                }
-            }
-        }
-
-        [pscustomobject]@{
-            ModulesSuccessfullyLoaded   = $ModulesSuccessfullyLoaded
-            ModulesFailedToLoad         = $ModulesFailedToLoad
-        }
-    }
-
-    #endregion >> Helper Functions
 
     #region >> Prep
 
@@ -326,10 +24,23 @@ function InvokePSCompatibility {
         return
     }
 
-    if (!$(Test-Path $PathToPS1OrPSM1)) {
-        Write-Error "Unable to find path '$PathToPS1OrPSM1'! Halting!"
-        $global:FunctionResult = "1"
-        return
+    $AllWindowsPSModulePaths = @(
+        "C:\Program Files\WindowsPowerShell\Modules"
+        "$HOME\Documents\WindowsPowerShell\Modules"
+        "$HOME\Documents\PowerShell\Modules"
+        "C:\Program Files\PowerShell\Modules"
+        "C:\Windows\System32\WindowsPowerShell\v1.0\Modules"
+        "C:\Windows\SysWOW64\WindowsPowerShell\v1.0\Modules"
+    )
+
+    # Determine all current Locally Available Modules
+    $AllLocallyAvailableModules = foreach ($ModPath in $AllWindowsPSModulePaths) {
+        $ModuleBase = $(Get-ChildItem -Path $ModPath -Directory -Filter).FullName
+
+        [pscustomobject]@{
+            ModuleName          = $LocalModule
+            ManifestFileItem    = $(Get-ChildItem -Path $ModuleBase -Recurse -File -Filter "*.psd1")
+        }
     }
 
     if (![bool]$(Get-Module -ListAvailable WindowsCompatibility)) {
@@ -344,63 +55,414 @@ function InvokePSCompatibility {
         Import-Module WindowsCompatibility
     }
 
-    # Since there's currently no way to know if external Modules are actually compatible with PowerSHell Core
-    # until we try and load them, we just need to install them under both Windows PowerShell 5.1 and PowerShell
-    # Core CurrentUser $env:PSModulePath (i.e. $HOME\Documents\PowerShell and $HOME\Documents\WindowsPowerShell).
-    # The LoadModuleDependencies function below will figure out which one actually works
-    foreach ($ModuleName in $ModuleDependenciesThatMayNotBeInstalled) {
+    # Scan Script/Function/Module to get an initial list of Required Locally Available Modules
+    try {
+        # Below $RequiredLocallyAvailableModules is a PSCustomObject with properties WinPSModuleDependencies
+        # and PSCoreModuleDependencies - both of which are [System.Collections.ArrayList]
+
+        # If $InvocationMethod is a file, then GetModuleDependencies can use $PSCommandPath as the value
+        # for -PathToScriptFile
+
+        $ExplicitlyNeededModules = $ModulesAvailableLocally + $ModulesAvailableExternally
+
+        $GetModDepsSplatParams = @{}
+
+        if (![string]::IsNullOrWhitespace($InvocationMethod)) {
+            if ($InvocationMethod -match "\.ps") {
+                if (!$(Test-Path $PSCommandPath)) {
+                    Write-Error "The `$PSCommandPath '$PSCommandPath' was not found! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                $GetModDepsSplatParams.Add("PathToScriptFile",$PSCommandPath)
+            }
+            else {
+                $GetModDepsSplatParams.Add("NameOfLoadedFunction",$InvocationMethod)
+            }
+        }
+        if ($ExplicitlyNeededModules -ne $null) {
+            $GetModDepsSplatParams.Add("ExplicitlyNeededModules",$ExplicitlyNeededModules)
+        }
+
+        if ($GetModDepsSplatParams.Keys.Count -gt 0) {
+            $RequiredLocallyAvailableModulesScan = GetModuleDependencies @GetModDepsSplatParams
+        }
+    }
+    catch {
+        Write-Error $_
+        Write-Error "Problem with enumerating Module Dependencies using GetModuleDependencies! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (!$RequiredLocallyAvailableModulesScan) {
+        Write-Host "InvokePSCompatibility reports that no additional modules need to be loaded." -ForegroundColor Green
+        return
+    }
+
+    # Determine whether the Modules passed to $ModulesAvailableLocally are covered by
+    # $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies or
+    # $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies
+    # If not, add them
+    [System.Collections.ArrayList]$LocalModulesNotFoundLocally = @()
+    foreach ($LocalModule in $ModulesAvailableLocally) {
+        # Determine if $LocalModule is a PSCore or WinPS Module
+        $LocalModuleInfo = foreach ($ModPath in $AllWindowsPSModulePaths) {
+            $ModuleBase = $(Get-ChildItem -Path $ModPath -Directory -Filter $LocalModule).FullName
+
+            [pscustomobject]@{
+                ModuleName          = $LocalModule
+                ManifestFileItem    = $(Get-ChildItem -Path $ModuleBase -Recurse -File -Filter "*.psd1")
+            }
+        }
+
+        if ($LocalModuleDirectoryItems.Count -eq 0) {
+            $null = $LocalModulesNotFoundLocally.Add($LocalModule)
+            continue
+        }
+        
+        foreach ($ManifestItem in $LocalModuleInfo.ManifestFileItem) {
+            if ($ManifestItem.FullName -match "\\WindowsPowerShell\\") {
+                if ($RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.ManifestFileItem.FullName -notcontains
+                $LocalModuleInfo.ManifestFileItem.FullName
+                ) {
+                    $null = $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.Add($LocalModuleInfo)
+                }
+            }
+            if ($ManifestItem.FullName -match "\\PowerShell\\") {
+                if ($RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.ManifestFileItem.FullName -notcontains
+                $LocalModuleInfo.ManifestFileItem.FullName
+                ) {
+                    $null = $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.Add($LocalModuleInfo)
+                }
+            }
+        }
+    }
+
+    if ($LocalModulesNotFoundLocally.Count -gt 0) {
+        $WrnMsg = "The following Modules specified by the user as Locally Available were not found:" +
+        "`n$($LocalModulesNotFoundLocally -join "`n")"
+        Write-Warning $WrnMsg
+    }
+
+    if ($LocalModulesNotFoundLocally.Count -gt 0) {
+        # Since there's currently no way to know if external Modules are actually compatible with PowerShell Core
+        # until we try and load them, we just need to attempt to install them under both WinPS and PSCore
+        foreach ($ModuleName in $LocalModulesNotFoundLocally) {
+            try {
+                if (![bool]$(Get-Module -ListAvailable $ModuleName) -and $InstallModulesNotAvailableLocally) {
+                    Install-Module $ModuleName -Force -ErrorAction Stop -WarningAction SilentlyContinue
+                }
+
+                $ModObj = [pscustomobject]@{
+                    ModuleName          = $ModuleName
+                    ManifestFileItem    = $(Get-Item $(Get-Module -ListAvailable $ModuleName).Path)
+                }
+
+                $null = $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.Add($ModObj)
+            }
+            catch {
+                Write-Warning $($_ | Out-String)
+            }
+
+            try {
+                # Make sure the PSSession Type Accelerator exists
+                $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+                if ($TypeAccelerators.Name -notcontains "PSSession") {
+                    [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+                }
+
+                $ManifestFileItem = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    if (![bool]$(Get-Module -ListAvailable $args[0]) -and $args[1]) {
+                        Install-Module $args[0] -Force
+                    }
+                    $(Get-Item $(Get-Module -ListAvailable $args[0]).Path)
+                } -ArgumentList $ModuleName,$InstallModulesNotAvailableLocally -ErrorAction Stop -WarningAction SilentlyContinue
+
+                if ($ManifestFileItem) {
+                    $ModObj = [pscustomobject]@{
+                        ModuleName          = $ModuleName
+                        ManifestFileItem    = $ManifestFileItem
+                    }
+
+                    $null = $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.Add($ModObj)
+                }
+            }
+            catch {
+                Write-Warning $($_ | Out-String)
+            }
+        }
+    }
+
+    # Next, determine whether the Modules passed to $ModulesAvailableExternally are covered by
+    # $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies or
+    # $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies
+    # If not, install and add them
+    foreach ($ModuleName in $ModulesAvailableExternally) {
         try {
-            Install-Module $ModuleName -Scope CurrentUser -ErrorAction Stop
+            if (![bool]$(Get-Module -ListAvailable $ModuleName) -and $InstallModulesNotAvailableLocally) {
+                Install-Module $ModuleName -Force -ErrorAction Stop -WarningAction SilentlyContinue
+            }
+
+            $ModObj = [pscustomobject]@{
+                ModuleName          = $ModuleName
+                ManifestFileItem    = $(Get-Item $(Get-Module -ListAvailable $ModuleName).Path)
+            }
+
+            if ($RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.ManifestFileItem.FullName -notcontains
+            $ModObj.ManifestFileItem.FullName
+            ) {
+                $null = $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.Add($ModObj)
+            }
         }
         catch {
-            Write-Error $_
+            Write-Warning $($_ | Out-String)
         }
 
         try {
-            Invoke-WinCommand -ScriptBlock {Install-Module $args[0] -Scope CurrentUser} -ArgumentList $ModuleName -ErrorAction Stop
+            # Make sure the PSSession Type Accelerator exists
+            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+            if ($TypeAccelerators.Name -notcontains "PSSession") {
+                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+            }
+
+            $ManifestFileItem = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                if (![bool]$(Get-Module -ListAvailable $args[0]) -and $args[1]) {
+                    Install-Module $args[0] -Force
+                }
+                $(Get-Item $(Get-Module -ListAvailable $args[0]).Path)
+            } -ArgumentList $ModuleName,$InstallModulesNotAvailableLocally -ErrorAction Stop -WarningAction SilentlyContinue
+
+            if ($ManifestFileItem) {
+                $ModObj = [pscustomobject]@{
+                    ModuleName          = $ModuleName
+                    ManifestFileItem    = $ManifestFileItem
+                }
+
+                if ($RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.ManifestFileItem.FullName -notcontains
+                $ModObj.ManifestFileItem.FullName
+                ) {
+                    $null = $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.Add($ModObj)
+                }
+            }
         }
         catch {
-            Write-Error $_
+            Write-Warning $($_ | Out-String)
         }
     }
 
     #endregion >> Prep
 
-    try {
-        $ModuleDependencyInfo = GetModuleDependencies -PathToScriptFile $PathToPS1OrPSM1
-        $LoadModuleDependenciesResult = LoadModuleDependencies -ModuleDependencies $ModuleDependencyInfo
+
+    #region >> Main
+
+    # Now all required modules are available locally, so we can focus on importing them
+
+    [System.Collections.ArrayList]$SuccessfulModuleImports = @()
+    [System.Collections.ArrayList]$FailedModuleImports = @()
+    foreach ($ModObj in $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies) {
+        try {
+            Import-Module $ModObj.ModuleName -Scope Global -NoClobber -Force -ErrorAction Stop
+
+            $ModuleInfo = [pscustomobject]@{
+                ModulePSCompatibility   = "PSCore"
+                ModuleName              = $ModObj.ModuleName
+                ManifestFileItem        = $ModObj.ManifestFileItem
+            }
+            if ([bool]$(Get-Module $ModObj.ModuleName)) {
+                $null = $SuccessfulModuleImports.Add($ModuleInfo)
+            }
+        }
+        catch {
+            Write-Verbose "Problem importing module '$($ModObj.ModuleName)'...trying via Manifest File..."
+
+            try {
+                Import-Module $ModObj.ManifestFileItem.FullName -Scope Global -NoClobber -Force -ErrorAction Stop
+
+                $ModuleInfo = [pscustomobject]@{
+                    ModulePSCompatibility   = "PSCore"
+                    ModuleName              = $ModObj.ModuleName
+                    ManifestFileItem        = $ModObj.ManifestFileItem
+                }
+                if ([bool]$(Get-Module $ModObj.ModuleName)) {
+                    $null = $SuccessfulModuleImports.Add($ModuleInfo)
+                }
+            }
+            catch {
+                $ModuleInfo = [pscustomobject]@{
+                    ModulePSCompatibility   = "PSCore"
+                    ModuleName              = $ModObj.ModuleName
+                    ManifestFileItem        = $ModObj.ManifestFileItem
+                }
+                $null = $FailedModuleImports.Add($ModuleInfo)
+            }
+        }
     }
-    catch {
-        Write-Error $_
-        Write-Error "Problem with loading Module Dependencies for $($MyInvocation.MyCommand.Name)! Halting!"
-        $global:FunctionResult = "1"
-        return
+    foreach ($ModObj in $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies) {
+        try {
+            Remove-Variable -Name "CompatErr" -ErrorAction SilentlyContinue
+            $tempfile = [IO.Path]::Combine([IO.Path]::GetTempPath(), [IO.Path]::GetRandomFileName())
+            Import-WinModule $ModObj.ModuleName -NoClobber -Force -ErrorVariable CompatErr 2>$tempfile
+
+            if ($CompatErr.Count -gt 0) {
+                Remove-Module $ModObj.ModuleName -ErrorAction SilentlyContinue
+                Remove-Item $tempfile -Force -ErrorAction SilentlyContinue
+            }
+
+            # Make sure the PSSession Type Accelerator exists
+            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+            if ($TypeAccelerators.Name -notcontains "PSSession") {
+                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+            }
+            
+            Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                Import-Module $args[0] -Scope Global -NoClobber -Force
+            } -ArgumentList $ModObj.ModuleName -ErrorAction Stop
+
+            $ModuleInfo = [pscustomobject]@{
+                ModulePSCompatibility   = "WinPS"
+                ModuleName              = $ModObj.ModuleName
+                ManifestFileItem        = $ModObj.ManifestFileItem
+            }
+
+            $ModuleLoadedImplictly = [bool]$(Get-Module $ModObj.ModuleName)
+            $ModuleLoadedInPSSession = [bool]$(
+                Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    Get-Module $args[0]
+                } -ArgumentList $ModObj.ModuleName -ErrorAction SilentlyContinue
+            )
+
+            if ($ModuleLoadedImplictly -or $ModuleLoadedInPSSession) {
+                $null = $SuccessfulModuleImports.Add($ModuleInfo)
+            }
+        }
+        catch {
+            Write-Verbose "Problem importing module '$($ModObj.ModuleName)'...trying via Manifest File..."
+
+            try {
+                Remove-Variable -Name "CompatErr" -ErrorAction SilentlyContinue
+                $tempfile = [IO.Path]::Combine([IO.Path]::GetTempPath(), [IO.Path]::GetRandomFileName())
+                Import-WinModule $ModObj.ManifestFileItem.FullName -NoClobber -Force -ErrorVariable CompatErr 2>$tempfile
+
+                if ($CompatErr.Count -gt 0) {
+                    Remove-Module $ModObj.ModuleName -ErrorAction SilentlyContinue
+                    Remove-Item $tempfile -Force -ErrorAction SilentlyContinue
+                }
+
+                # Make sure the PSSession Type Accelerator exists
+                $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
+                if ($TypeAccelerators.Name -notcontains "PSSession") {
+                    [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
+                }
+                
+                Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    Import-Module $args[0] -Scope Global -NoClobber -Force
+                } -ArgumentList $ModObj.ManifestFileItem.FullName -ErrorAction Stop
+
+                $ModuleInfo = [pscustomobject]@{
+                    ModulePSCompatibility   = "WinPS"
+                    ModuleName              = $ModObj.ModuleName
+                    ManifestFileItem        = $ModObj.ManifestFileItem
+                }
+
+                $ModuleLoadedImplictly = [bool]$(Get-Module $ModObj.ModuleName)
+                $ModuleLoadedInPSSession = [bool]$(
+                    Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                        Get-Module $args[0]
+                    } -ArgumentList $ModObj.ModuleName -ErrorAction SilentlyContinue
+                )
+
+                if ($ModuleLoadedImplictly -or $ModuleLoadedInPSSession) {
+                    $null = $SuccessfulModuleImports.Add($ModuleInfo)
+                }
+            }
+            catch {
+                $ModuleInfo = [pscustomobject]@{
+                    ModulePSCompatibility   = "WinPS"
+                    ModuleName              = $ModObj.ModuleName
+                    ManifestFileItem        = $ModObj.ManifestFileItem
+                }
+                $null = $FailedModuleImports.Add($ModuleInfo)
+            }
+        }
     }
 
-    if ($LoadModuleDependenciesResult.ModulesFailedToLoad.Count -gt 0) {
-        $AcceptableUnloadedModules = @("Microsoft.PowerShell.Core","WindowsCompatibility")
+    if ($FailedModuleImports.Count -gt 0) {
+        if ($PSVersionTable.PSEdition -ne "Core") {
+            $AcceptableUnloadedModules = @("Microsoft.PowerShell.Core","WindowsCompatibility")
+        }
+        else {
+            $AcceptableUnloadedModules = @()
+        }
 
         [System.Collections.Arraylist]$UnacceptableUnloadedModules = @()
-        foreach ($ModName in $LoadModuleDependenciesResult.ModulesFailedToLoad.ModuleName) {
-            if ($AcceptableUnloadedModules -notcontains $ModName -and
-            $LoadModuleDependenciesResult.ModulesSuccessfullyLoaded.ModuleName -notcontains $ModName) {
-                $null = $UnacceptableUnloadedModules.Add($ModName)
+        foreach ($ModObj in $FailedModuleImports) {
+            if ($AcceptableUnloadedModules -notcontains $ModObj.ModuleName -and
+            $SuccessfulModuleImports.ModuleName -notcontains $ModObj.ModuleName
+            ) {
+                $null = $UnacceptableUnloadedModules.Add($ModObj)
             }
         }
 
         if ($UnacceptableUnloadedModules.Count -gt 0) {
-            Write-Warning "The following Modules were not able to be loaded:`n$($UnacceptableUnloadedModules -join "`n")"
+            Write-Warning "The following Modules were not able to be loaded:`n$($UnacceptableUnloadedModules.ModuleName -join "`n")"
+            Write-Warning "'$InvocationMethod' will probably not work with PowerShell Core..."
         }
     }
 
-    $LoadModuleDependenciesResult
+    $FinalSuccessfulModuleImports = foreach ($ModObj in $SuccessfulModuleImports) {
+        if ($ModObj.ModulePSCompatibility -eq "WinPS") {
+            $ModObj
+        }
+        
+        if ($ModObj.ModulePSCompatibility -eq "PSCore" -and $PSVersionTable.PSEdition -eq "Core" -and
+        [bool]$(Get-Module $ModObj.ModuleName)
+        ) {
+            $ModObj
+        }
+    }
+
+    # Uninstall the versions of Modules that don't work
+    $AllLocallyAvailableModules = foreach ($ModPath in $AllWindowsPSModulePaths) {
+        $ModuleBase = $(Get-ChildItem -Path $ModPath -Directory -Filter).FullName
+
+        [pscustomobject]@{
+            ModuleName          = $LocalModule
+            ManifestFileItem    = $(Get-ChildItem -Path $ModuleBase -Recurse -File -Filter "*.psd1")
+        }
+    }
+    foreach ($ModObj in $FinalSuccessfulModuleImports) {
+        $ModulesToUninstall = $AllLocallyAvailableModules | Where-Object {
+            $_.ModuleName -eq $ModObj.ModuleName -and
+            $_.ManifestFileItem.FullName -ne $ModObj.ManifestFileItem.FullName
+        }
+
+        foreach ($ModObj2 in $ModulesToUninstall) {
+            if ($ModObj2.ModuleManifestFileItem.FullName -match "\\PowerShell\\") {
+                Remove-Module $ModObj2.ModuleName -Force -ErrorAction SilentlyContinue
+                Uninstall-Module $ModObj2.ModuleName -Force -ErrorAction SilentlyContinue
+            }
+            if ($ModObj2.ModuleManifestFileItem.FullName -match "\\WindowsPowerShell\\") {
+                Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    Remove-Module $args[0] -Force -ErrorAction SilentlyContinue
+                    Uninstall-Module $args[0] -Force -ErrorAction SilentlyContinue
+                } -ArgumentList $ModObj2.ModuleName
+            }
+        }
+    }
+
+    [pscustomobject]@{
+        SuccessfulModuleImports         = $SuccessfulModuleImports
+        FailedModuleImports             = $FailedModuleImports
+        UnacceptableUnloadedModules     = $UnacceptableUnloadedModules
+    }
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUaWtV4pqakhMkF5EIoO2SkEzx
-# jJ+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUg0dU+sp0giDj1SkSaZ3eZsKm
+# bXGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -457,11 +519,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHflrKrsYzjjHwBK
-# +sF0V1WOXJcDMA0GCSqGSIb3DQEBAQUABIIBACRQ4ZJ826dB4duh7QrvTdoPlebZ
-# 8k4Xmu5gsEppngu6kF5oWSrp4VdHe71eYFv/9EdFOCOwY6Z6QHoR8OyziasUDcMP
-# GkVcrDqSXPbGQ8SSvRxnv7BTSkvWw7JUkyJVbPjLWnQ6FuK3KGWzFi3Ci2XeN5Xx
-# gyfbW/9pAP7RVDzWP15NxGfow35TgIvTmpvinUSCYohE6vKRwwy2iHiH77dEYpSx
-# iZDkNhsDJ1K2iC0FNe9ulknoal321goF6zX3kHPdo2TEnDQzge5qvdkGMiyn9lBX
-# dH3oepJ2rWobm42fg44zOmGETOQX2WLuZV+4/cK56YJx5OLwnylKO0k39tI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPKTvq5sTWvl6Jvt
+# lna3nfUUawlSMA0GCSqGSIb3DQEBAQUABIIBAD/Z7scT4etSa0p+qB3V989C74AG
+# j7GkIDZBFNrpP3sAQoCrw0MO2/1dwBOMc1FgTj4woQyl928ih0ZbrVOdDN2IM9jW
+# pu9pU9XM0kPXMjVrchh3STk1fAS+RKMoz3he5YKUS3c/Oi2gluI6KuPWswpxNP0T
+# eXDIWVpRZ+WhhgS04Aq+WKdWQ9XsnMA5qiHOu4K4cUChCYFpp9P7nttrxgKDhM7T
+# YnXEOw0/hXADKIP9TnvfcLfR5CiIFJoFdll3lDxzKx5cQeqSH/+vWGnBTh2mo87q
+# twUT11uiregoTOsJSvcIYYa4hrUHTp0nbCfEbZytpmx4iWSypxfUeg7aARA=
 # SIG # End signature block

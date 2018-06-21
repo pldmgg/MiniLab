@@ -86,22 +86,28 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
 }
 
-if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
-    $InvPSCompatSplatParams = @{
+$InvModDepSplatParams = @{
+    NeededExternallyAvailableModules    = $ModulesToInstallAndImport
+    InstallModulesNotAvailableLocally   = $True
+    ErrorAction                         = "SilentlyContinue"
+    WarningAction                       = "SilentlyContinue"
+}
+$LoadModuleDependenciesResult = InvokeModuleDependencies @InvModDepSplatParams
+
+$LoadModuleDependenciesResult | Export-CliXml "$HOME\LoadModDepsResult.xml" -Force
+
+if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
+    Write-Warning "The following Modules were not able to be loaded:`n$($LoadModuleDependenciesResult.UnacceptableUnloadedModules.ModuleName -join "`n")"
+
+    if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
 
 '@ + @"
 
-        PathToPS1OrPSM1 = "`$PSScriptRoot\$env:BHProjectName.psm1"
+        Write-Warning "'$env:BHProjectName' will probably not work with PowerShell Core..."
 
 "@ + @'
 
-        ErrorAction     = "SilentlyContinue"
     }
-    if ($ModulesToInstallAndImport) {
-        $InvPSCompatSplatParams.Add("ModuleDependenciesThatMayNotBeInstalled",$ModulesToInstallAndImport)
-    }
-
-    $LoadModuleDependencyResult = InvokePSCompatibility @InvPSCompatSplatParams
 }
 
 if ($PSVersionTable.PSEdition -eq "Desktop") {
@@ -169,11 +175,13 @@ $FunctionsForSBUse = @(
     ${Function:GetDomainController}.Ast.Extent.Text
     ${Function:GetElevation}.Ast.Extent.Text
     ${Function:GetFileLockProcess}.Ast.Extent.Text
+    ${Function:GetModuleDependencies}.Ast.Extent.Text
     ${Function:GetNativePath}.Ast.Extent.Text
     ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
     ${Function:GetWinPSInCore}.Ast.Extent.Text
     ${Function:InstallFeatureDism}.Ast.Extent.Text
     ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+    ${Function:InvokeModuleDependencies}.Ast.Extent.Text
     ${Function:InvokePSCompatibility}.Ast.Extent.Text
     ${Function:NewUniqueString}.Ast.Extent.Text
     ${Function:PauseForWarning}.Ast.Extent.Text
@@ -290,8 +298,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUpmlosLXf24PrEaSs4VofQngp
-# mWygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUuCiN5+gTzVUEwlqpiUZ8fGI/
+# Oqigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -348,11 +356,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFASM1KBwg0aUC5pt
-# bVXQVuekNEj6MA0GCSqGSIb3DQEBAQUABIIBAIfuZaXFO96N/qrOmf8VBMmofeYa
-# dJkwJcKcJHZM0BzZjycxCHM/wmqrjurWOu4fuKXow2Og6WsWmff8xT3DMIH7We7L
-# U71DQ8ZmQYa+y67jOAMVU9ZkNbE2pJsSM7yFgMy8UFeJtVjnc2HPbGmlLRtqvQh6
-# CmEsPifv/LwxNp1GmZl5zSxbmpNrVIRazXCjy/I97VwSGOERSDuLMtYe8xTcqbYD
-# YYi2wW6KdfgmR2b7U8jHh7e0Gn6ovbEVoO+boKXps5sp+eArOy0VBoj2cGUTrDdQ
-# +mxBxeOI2eKCyuI9nQzYAZCmXGL/JMar0Xyt7Nl+pcTF/OW5RyxnDhPgDoI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAgQlHl/T13QNarj
+# 0dauCpRQcSpQMA0GCSqGSIb3DQEBAQUABIIBAHvSPAbDUEe1kX4rhMH3tybcJty1
+# nGgcCBkzyF2y14PhKWWDNa1iws7tkZdyqvV1fG7LpIwIcsGSMCq9RqrO7LztDvG3
+# 2Rm3YGMu/hmyzorMeeutWpKC4rm7KTx6nV7ZzF7lJUpwPTH0605xwfaIEXVWefty
+# KGqIxOxkJZLzvdyTWixNybgQ+qzEe/xC1eng5DebWFUvXO0qxWwkDHfr5QIWgiTZ
+# ooNFdRUiyj1+ALKFgGI82/LQ5QrnSFz4v4qgilsyFgYhDirS7tA15aO4dwa82IQZ
+# JxkEacbDLR8t4+ICb8EnvYCnF1pa6vPTrGIcZddu41e6oMlDlaOzWjVTInw=
 # SIG # End signature block

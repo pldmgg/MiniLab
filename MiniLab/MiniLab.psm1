@@ -20,18 +20,24 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
 }
 
-if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
-    $InvPSCompatSplatParams = @{
+$InvModDepSplatParams = @{
+    NeededExternallyAvailableModules    = $ModulesToInstallAndImport
+    InstallModulesNotAvailableLocally   = $True
+    ErrorAction                         = "SilentlyContinue"
+    WarningAction                       = "SilentlyContinue"
+}
+$LoadModuleDependenciesResult = InvokeModuleDependencies @InvModDepSplatParams
 
-        PathToPS1OrPSM1 = "$PSScriptRoot\MiniLab.psm1"
+$LoadModuleDependenciesResult | Export-CliXml "$HOME\LoadModDepsResult.xml" -Force
 
-        ErrorAction     = "SilentlyContinue"
+if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
+    Write-Warning "The following Modules were not able to be loaded:`n$($LoadModuleDependenciesResult.UnacceptableUnloadedModules.ModuleName -join "`n")"
+
+    if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
+
+        Write-Warning "'MiniLab' will probably not work with PowerShell Core..."
+
     }
-    if ($ModulesToInstallAndImport) {
-        $InvPSCompatSplatParams.Add("ModuleDependenciesThatMayNotBeInstalled",$ModulesToInstallAndImport)
-    }
-
-    $LoadModuleDependencyResult = InvokePSCompatibility @InvPSCompatSplatParams
 }
 
 if ($PSVersionTable.PSEdition -eq "Desktop") {
@@ -480,14 +486,15 @@ function Create-Domain {
             }
             $NewDCVMDeployResult = New-Runspace @NewDCVMDeployJobSplatParams
 
+            $IPofServerToBeDomainController = $NewDCVMDeployResult.VMIPAddress
+
             while (![bool]$(Get-VM -Name "$DomainShortName`DC1" -ErrorAction SilentlyContinue)) {
                 Write-Host "Waiting for $DomainShortName`DC1 VM to be deployed..."
                 Start-Sleep -Seconds 15
             }
-
-            $IPofServerToBeDomainController = $NewDCVMDeployResult.VMIPAddress
+            
             if (!$IPofServerToBeDomainController) {
-                $IPofServerToBeDomainController = $(Get-VM -Name "$DomainShortName`DC1").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                $IPofServerToBeDomainController = $(Get-VMNetworkAdapter -VMName "$DomainShortName`DC1").IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
             }
         }
 
@@ -990,32 +997,6 @@ function Create-RootCA {
         return
     }
 
-    $FunctionsForSBUse = @(
-        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text
-        ${Function:GetElevation}.Ast.Extent.Text
-        ${Function:GetFileLockProcess}.Ast.Extent.Text
-        ${Function:GetNativePath}.Ast.Extent.Text
-        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-        ${Function:InstallFeatureDism}.Ast.Extent.Text
-        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-        ${Function:NewUniqueString}.Ast.Extent.Text
-        ${Function:PauseForWarning}.Ast.Extent.Text
-        ${Function:ResolveHost}.Ast.Extent.Text
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-        ${Function:UnzipFile}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-        ${Function:Generate-Certificate}.Ast.Extent.Text
-        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-        ${Function:Manage-HyperVVM}.Ast.Extent.Text
-        ${Function:New-DomainController}.Ast.Extent.Text
-        ${Function:New-RootCA}.Ast.Extent.Text
-        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-        ${Function:New-SubordinateCA}.Ast.Extent.Text
-    )
-
     $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
     $DomainShortName = $($FinalDomainName -split '\.')[0]
 
@@ -1124,6 +1105,7 @@ function Create-RootCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
+        <#
         $NewVMDeploySBAsString = @(
             '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
             ''
@@ -1166,22 +1148,56 @@ function Create-RootCA {
             $global:FunctionResult = "1"
             return
         }
+        #>
+
+        $NewVMDeploySB = {
+            $DeployBoxSplatParams = @{
+                VagrantBox                  = $Windows2016VagrantBox
+                CPUs                        = 2
+                Memory                      = 4096
+                VagrantProvider             = "hyperv"
+                VMName                      = $DomainShortName + 'RootCA'
+                VMDestinationDirectory      = $VMStorageDirectory
+                SkipHyperVInstallCheck      = $True
+                CopyDecompressedDirectory   = $True
+            }
+            
+            if ($DecompressedBoxDir) {
+                if ($(Get-Item $DecompressedBoxDir).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('DecompressedBoxDirectory',$DecompressedBoxDir)
+                }
+            }
+            if ($BoxFilePath) {
+                if (-not $(Get-Item $BoxFilePath).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('BoxFilePath',$BoxFilePath)
+                }
+            }
+            
+            Write-Host "Deploying Hyper-V Vagrant Box..."
+            $DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+            $DeployBoxResult
+        }
 
         if (!$IPofServerToBeRootCA) {
             $DomainShortName = $($ExistingDomain -split "\.")[0]
 
             Write-Host "Deploying New Root CA VM '$DomainShortName`RootCA'..."
             
-            $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $(Get-Job).Name
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewRootCAVMDeployJobName = "NewRootCAVM"
+            }
 
             $NewRootCAVMDeployJobSplatParams = @{
-                Name            = $NewRootCAVMDeployJobName
+                RunspaceName    = $NewRootCAVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                Wait            = $True
             }
-            $NewRootCAVMDeployJobInfo = Start-Job @NewRootCAVMDeployJobSplatParams
+            $NewRootCAVMDeployResult = New-Runspace @NewRootCAVMDeployJobSplatParams
 
-            $NewRootCAVMDeployResult = Wait-Job -Job $NewRootCAVMDeployJobInfo | Receive-Job
             $IPofServerToBeRootCA = $NewRootCAVMDeployResult.VMIPAddress
 
             while (![bool]$(Get-VM -Name "$DomainShortName`RootCA" -ErrorAction SilentlyContinue)) {
@@ -1190,7 +1206,7 @@ function Create-RootCA {
             }
 
             if (!$IPofServerToBeRootCA) {
-                $IPofServerToBeRootCA = $(Get-VM -Name "$DomainShortName`RootCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                $IPofServerToBeDomainController = $(Get-VMNetworkAdapter -VMName "$DomainShortName`RootCA").IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
             }
         }
 
@@ -1309,7 +1325,7 @@ function Create-RootCA {
 
     # Check if DC and RootCA should be the same server. If not, then need to join RootCA to Domain.
     if ($IPofDomainController -ne $IPofServerToBeRootCA) {
-        $JoinDomainJobSB = {
+        $JoinDomainRSJobSB = {
             $JoinDomainSBAsString = @(
                 '# Synchronize time with time servers'
                 '$null = W32tm /resync /rediscover /nowait'
@@ -1359,10 +1375,10 @@ function Create-RootCA {
             }
     
             $InvCmdJoinDomainSplatParams = @{
-                ComputerName    = $args[0]
-                Credential      = $args[1]
+                ComputerName    = $IPofServerToBeRootCA
+                Credential      = $PSRemotingCredentials
                 ScriptBlock     = $JoinDomainSB
-                ArgumentList    = $args[2],$args[3],$args[4],$args[5]
+                ArgumentList    = $IPofDomainController,$DesiredHostNameRootCA,$ExistingDomain,$DomainAdminCredentials
             }
             try {
                 Invoke-Command @InvCmdJoinDomainSplatParams
@@ -1396,6 +1412,7 @@ function Create-RootCA {
 
             $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $(Get-Job).Name
 
+            <#
             $JoinRootCAArgList = @(
                 $IPofServerToBeRootCA
                 $PSRemotingCredentials
@@ -1404,14 +1421,13 @@ function Create-RootCA {
                 $ExistingDomain
                 $DomainAdminCredentials
             )
+            #>
             $JoinRootCAJobSplatParams = @{
                 Name            = $JoinRootCAJobName
-                Scriptblock     = $JoinDomainJobSB
-                ArgumentList    = $JoinRootCAArgList
+                Scriptblock     = $JoinDomainRSJobSB
+                Wait            = $True
             }
-            $JoinRootCAJobInfo = Start-Job @JoinRootCAJobSplatParams
-            
-            $JoinRootCAResult = Wait-Job -Job $JoinRootCAJobInfo | Receive-Job
+            $JoinRootCAResult = New-Runspace @JoinRootCAJobSplatParams
 
             # Verify Root CA is Joined to Domain
             # Try to create a PSSession to the Root CA for 15 minutes, then give up
@@ -9611,6 +9627,71 @@ function New-RootCA {
 
         #region >> Prep
 
+        <#
+        # Make sure we have the PSPKI Module Installed and Imported
+        if ($PSVersionTable.PSEdition -ne "Core") {
+            $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        }
+        else {
+            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        }
+
+        $NeededExternalModules = @(
+            "PSPKI"
+        )
+        $NeededBuiltInModules = @(
+            "ServerManager"
+        )
+
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            $InvPSCompatSplatParams = @{
+                ModulesAvailableExternally  = $NeededExternalModules
+                ModulesAvailableLocally     = $NeededBuiltInModules
+                ErrorAction                 = "SilentlyContinue"
+                WarningAction               = "SilentlyContinue"
+            }
+            $LoadModuleDependenciesResult = InvokePSCompatibility @InvPSCompatSplatParams
+        }
+        else {
+            foreach ($ModuleName in $NeededExternalModules) {
+                # Install the Module
+                try {
+                    if (![bool]$(Get-Module -ListAvailable $ModuleName)) {
+                        $null = Install-Module $ModuleName -Force -ErrorAction Stop -WarningAction SilentlyContinue
+                    }
+                }
+                catch {
+                    Write-Error $_
+                    $global:FunctionResult = "1"
+                    return
+                }
+    
+                # Import the Module
+                try {
+                    Import-Module $ModuleName -ErrorAction Stop
+                }
+                catch {
+                    Write-Error $_
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+
+            foreach ($ModuleName in $NeededBuiltInModules) {
+                # Import the Module
+                try {
+                    Import-Module $ModuleName -ErrorAction Stop
+                }
+                catch {
+                    Write-Error "Problem importing the $ModuleName Module! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+        }
+        #>
+
         # Make sure we can find the Domain Controller(s)
         try {
             $DomainControllerInfo = GetDomainController -Domain $(Get-CimInstance win32_computersystem).Domain -WarningAction SilentlyContinue
@@ -9631,38 +9712,6 @@ function New-RootCA {
         }
         if (!$(Test-Path $FileOutputDirectory)) {
             $null = New-Item -ItemType Directory -Path $FileOutputDirectory 
-        }
-
-        try {
-            Import-Module PSPKI -ErrorAction Stop
-        }
-        catch {
-            try {
-                if ($PSVersionTable.PSEdition -ne "Core") {
-                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                else {
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-
-                Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
-                Import-Module PSPKI -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-        
-        try {
-            Import-Module ServerManager -ErrorAction Stop
-        }
-        catch {
-            Write-Error "Problem importing the ServerManager Module! Halting!"
-            $global:FunctionResult = "1"
-            return
         }
 
         $WindowsFeaturesToAdd = @(
@@ -9777,12 +9826,24 @@ function New-RootCA {
             $null = $LocalCDP | Add-CACrlDistributionPoint -Force
 
             # Remove pre-existing ldap/http CDPs, add custom CDP
-            $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
-            $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
+            if ($PSVersionTable.PSEdition -ne "Core") {
+                $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
+                $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
 
-            # Remove pre-existing ldap/http AIAs, add custom AIA
-            $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" -or $_.Uri -like "ldap*" } | Remove-CAAuthorityInformationAccess -Force
-            $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+                # Remove pre-existing ldap/http AIAs, add custom AIA
+                $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" -or $_.Uri -like "ldap*" } | Remove-CAAuthorityInformationAccess -Force
+                $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+            }
+            else {
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
+                    $null = Add-CACrlDistributionPoint -Uri $args[0] -AddToCertificateCdp -Force
+
+                    # Remove pre-existing ldap/http AIAs, add custom AIA
+                    $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" -or $_.Uri -like "ldap*" } | Remove-CAAuthorityInformationAccess -Force
+                    $null = Add-CAAuthorityInformationAccess -Uri $args[1] -AddToCertificateAIA -Force
+                } -ArgumentList $CDPUrl,$AIAUrl
+            }
 
             Write-Host "Done CDP and AIA cmdlets..."
 
@@ -9819,7 +9880,14 @@ function New-RootCA {
         Write-Host "Creating new Machine Certificate Template..."
 
         while (!$WebServTempl -or !$ComputerTempl) {
-            $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
+            if ($PSVersionTable.PSEdition -ne "Core") {
+                $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
+            }
+            else {
+                $DomainSplit = $(Get-CimInstance win32_computersystem).Domain -split "\."
+                $ConfigContext = "CN=Configuration," + $($(foreach ($DC in $DomainSplit) {"DC=$DC"}) -join ",")
+            }
+
             $LDAPLocation = "LDAP://CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigContext"
             $ADSI = New-Object System.DirectoryServices.DirectoryEntry($LDAPLocation,$DomainAdminCredentials.UserName,$($DomainAdminCredentials.GetNetworkCredential().Password),"Secure")
 
@@ -9920,8 +9988,16 @@ function New-RootCA {
 
         # Add the newly created custom Computer and WebServer Certificate Templates to List of Certificate Templates to Issue
         # For this to be (relatively) painless, we need the following PSPKI Module cmdlets
-        $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
-        $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+        if ($PSVersionTable.PSEdition -ne "Core") {
+            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
+            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+        }
+        else {
+            $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $args[0] | Set-CATemplate
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $args[1] | Set-CATemplate
+            } -ArgumentList $NewComputerTemplateCommonName,$NewWebServerTemplateCommonName
+        }
 
         # Export New Certificate Templates to NewCert-Templates Directory
         $ldifdeUserName = $($DomainAdminCredentials.UserName -split "\\")[-1]
@@ -12421,11 +12497,13 @@ $FunctionsForSBUse = @(
     ${Function:GetDomainController}.Ast.Extent.Text
     ${Function:GetElevation}.Ast.Extent.Text
     ${Function:GetFileLockProcess}.Ast.Extent.Text
+    ${Function:GetModuleDependencies}.Ast.Extent.Text
     ${Function:GetNativePath}.Ast.Extent.Text
     ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
     ${Function:GetWinPSInCore}.Ast.Extent.Text
     ${Function:InstallFeatureDism}.Ast.Extent.Text
     ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+    ${Function:InvokeModuleDependencies}.Ast.Extent.Text
     ${Function:InvokePSCompatibility}.Ast.Extent.Text
     ${Function:NewUniqueString}.Ast.Extent.Text
     ${Function:PauseForWarning}.Ast.Extent.Text
@@ -12452,8 +12530,8 @@ $FunctionsForSBUse = @(
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUyEUu7WWzxmSWovCL65YZFnJf
-# j0agggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPZasgGVe0c4VQBPO01pqMjRK
+# o9Ogggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12510,11 +12588,11 @@ $FunctionsForSBUse = @(
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDJZK75xhb6W1U6j
-# xlMzT7ZXZ394MA0GCSqGSIb3DQEBAQUABIIBAJ/7WOL+WsdcTPdvFu8ATx9j7Rfh
-# uXLGP8kj8hVS5noZEuSAr5QeMhG4aQAcjg5P6fnx5WFw5zou4uWaO3ZjLz2IzZ+p
-# ewml9nrSZN3RMoK2xBNWl2UD0o4447hfZDam7JM4o1P0n3eyJq8S4/Ozoxb6OONF
-# 9q/0/hSGlyFUjbzGJsVSqbwQggk7FOCjs0MCcIG85EtVCX79cjcFnOqj+NcFhRj3
-# 9bFeBHgwaD9bGalNpJ76R3p6RMKMIkpaYT3IQ32W1VDzZH2b64BeTcWnwtjxDWxx
-# KWCJeq8UVY97PuNEsG8aTv/XYnVO9x9jw+FQLghuKEnnoBnQiqwprQNZJj4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFERhcTrgHQb9Cxzy
+# 75/dEk6B9ffiMA0GCSqGSIb3DQEBAQUABIIBAAoDv6kI7hH2OSoiERF7Z5n09iTy
+# I0QlhHcbo7g/cAPpwnLwRVdOBPGAjtTnD7ZmVWduzZ2HWG0JmJHGVi1tUM83lm78
+# j6iDmfvD8/ttJ/v/7qvR5cMIpOA7Ld804BCL8VXLNcwE33mhAeLyrEdLT+JFTYnS
+# UuRQEA//6/0PyfKO07mnzs/BlW0dfgYPBb87sJMIxeq0BiJAdrHO09KTv14e4iAA
+# KeQplBSx+SN9deY4agzGgm70d6rn0Gn5g89itFRpr6WXabqS1z05xGAQfG4LLpgj
+# LRH6WCHx1SWns8l9Gjg1919rpCPntsH3IbPA2U/yJYEJNqyQ1/KmRxDT5rs=
 # SIG # End signature block

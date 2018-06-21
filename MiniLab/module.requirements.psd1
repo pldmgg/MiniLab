@@ -14,4 +14,8 @@
         DependencyType  = 'PSGalleryModule'
         Version         = 'Latest'
     }
+    'PSPKI' = @{
+        DependencyType  = 'PSGalleryModule'
+        Version         = 'Latest'
+    }
 }

@@ -227,6 +227,71 @@ function New-RootCA {
 
         #region >> Prep
 
+        <#
+        # Make sure we have the PSPKI Module Installed and Imported
+        if ($PSVersionTable.PSEdition -ne "Core") {
+            $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
+            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        }
+        else {
+            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        }
+
+        $NeededExternalModules = @(
+            "PSPKI"
+        )
+        $NeededBuiltInModules = @(
+            "ServerManager"
+        )
+
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            $InvPSCompatSplatParams = @{
+                ModulesAvailableExternally  = $NeededExternalModules
+                ModulesAvailableLocally     = $NeededBuiltInModules
+                ErrorAction                 = "SilentlyContinue"
+                WarningAction               = "SilentlyContinue"
+            }
+            $LoadModuleDependenciesResult = InvokePSCompatibility @InvPSCompatSplatParams
+        }
+        else {
+            foreach ($ModuleName in $NeededExternalModules) {
+                # Install the Module
+                try {
+                    if (![bool]$(Get-Module -ListAvailable $ModuleName)) {
+                        $null = Install-Module $ModuleName -Force -ErrorAction Stop -WarningAction SilentlyContinue
+                    }
+                }
+                catch {
+                    Write-Error $_
+                    $global:FunctionResult = "1"
+                    return
+                }
+    
+                # Import the Module
+                try {
+                    Import-Module $ModuleName -ErrorAction Stop
+                }
+                catch {
+                    Write-Error $_
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+
+            foreach ($ModuleName in $NeededBuiltInModules) {
+                # Import the Module
+                try {
+                    Import-Module $ModuleName -ErrorAction Stop
+                }
+                catch {
+                    Write-Error "Problem importing the $ModuleName Module! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+        }
+        #>
+
         # Make sure we can find the Domain Controller(s)
         try {
             $DomainControllerInfo = GetDomainController -Domain $(Get-CimInstance win32_computersystem).Domain -WarningAction SilentlyContinue
@@ -247,38 +312,6 @@ function New-RootCA {
         }
         if (!$(Test-Path $FileOutputDirectory)) {
             $null = New-Item -ItemType Directory -Path $FileOutputDirectory 
-        }
-
-        try {
-            Import-Module PSPKI -ErrorAction Stop
-        }
-        catch {
-            try {
-                if ($PSVersionTable.PSEdition -ne "Core") {
-                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                else {
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-
-                Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
-                Import-Module PSPKI -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-        
-        try {
-            Import-Module ServerManager -ErrorAction Stop
-        }
-        catch {
-            Write-Error "Problem importing the ServerManager Module! Halting!"
-            $global:FunctionResult = "1"
-            return
         }
 
         $WindowsFeaturesToAdd = @(
@@ -393,12 +426,24 @@ function New-RootCA {
             $null = $LocalCDP | Add-CACrlDistributionPoint -Force
 
             # Remove pre-existing ldap/http CDPs, add custom CDP
-            $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
-            $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
+            if ($PSVersionTable.PSEdition -ne "Core") {
+                $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
+                $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
 
-            # Remove pre-existing ldap/http AIAs, add custom AIA
-            $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" -or $_.Uri -like "ldap*" } | Remove-CAAuthorityInformationAccess -Force
-            $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+                # Remove pre-existing ldap/http AIAs, add custom AIA
+                $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" -or $_.Uri -like "ldap*" } | Remove-CAAuthorityInformationAccess -Force
+                $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+            }
+            else {
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
+                    $null = Add-CACrlDistributionPoint -Uri $args[0] -AddToCertificateCdp -Force
+
+                    # Remove pre-existing ldap/http AIAs, add custom AIA
+                    $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" -or $_.Uri -like "ldap*" } | Remove-CAAuthorityInformationAccess -Force
+                    $null = Add-CAAuthorityInformationAccess -Uri $args[1] -AddToCertificateAIA -Force
+                } -ArgumentList $CDPUrl,$AIAUrl
+            }
 
             Write-Host "Done CDP and AIA cmdlets..."
 
@@ -435,7 +480,14 @@ function New-RootCA {
         Write-Host "Creating new Machine Certificate Template..."
 
         while (!$WebServTempl -or !$ComputerTempl) {
-            $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
+            if ($PSVersionTable.PSEdition -ne "Core") {
+                $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
+            }
+            else {
+                $DomainSplit = $(Get-CimInstance win32_computersystem).Domain -split "\."
+                $ConfigContext = "CN=Configuration," + $($(foreach ($DC in $DomainSplit) {"DC=$DC"}) -join ",")
+            }
+
             $LDAPLocation = "LDAP://CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigContext"
             $ADSI = New-Object System.DirectoryServices.DirectoryEntry($LDAPLocation,$DomainAdminCredentials.UserName,$($DomainAdminCredentials.GetNetworkCredential().Password),"Secure")
 
@@ -536,8 +588,16 @@ function New-RootCA {
 
         # Add the newly created custom Computer and WebServer Certificate Templates to List of Certificate Templates to Issue
         # For this to be (relatively) painless, we need the following PSPKI Module cmdlets
-        $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
-        $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+        if ($PSVersionTable.PSEdition -ne "Core") {
+            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
+            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+        }
+        else {
+            $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $args[0] | Set-CATemplate
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $args[1] | Set-CATemplate
+            } -ArgumentList $NewComputerTemplateCommonName,$NewWebServerTemplateCommonName
+        }
 
         # Export New Certificate Templates to NewCert-Templates Directory
         $ldifdeUserName = $($DomainAdminCredentials.UserName -split "\\")[-1]
@@ -852,8 +912,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUpYntmwJelB/AnuyvEoSeQpDa
-# Vxugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUx5314HGp7N6XCh8TJFgnmBW5
+# WRCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -910,11 +970,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFK2sgUGAoclzLjXU
-# YsUR410QUv09MA0GCSqGSIb3DQEBAQUABIIBABCwSpEcbasKzJj5BY8j/C1RDpsQ
-# 8PFqrufOCUS9FUv0YDkprimucvQjptoBTHxGjafI1cwqB5pO/0ZnoRCYA52cAQTd
-# pJjvWQVdu62Bzb7EX0q92C95YwJdlEOO4OeULMNAS4R2f9/HLFUMn8bhjIAQyGez
-# 5cp3+dk+owvJg63NUTwAHlfYP3PoZCdTGLB+tRQZakOtBGDjuxT85iDXDwRKAA34
-# No6PspZsFtoJrvJhoXSrRdNlH5ybdaYSO/LzqXc/4eV9hLoEW3j6DY+MAgyn0YNl
-# DRUzD04omsxEH81ExUU3WL5tGiXaBLDYP5Si6B9vkM6HyovWQEP4WkJlknk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFkjHu3dgqlhJ8+e
+# qx7s2TqNlW3mMA0GCSqGSIb3DQEBAQUABIIBAJSnydLYmUeeiICxXqU6YIh9IgZH
+# w6lbbfWrAnDVjiW5DtQ4PNfdDXP3dnmuh0Z1bV6DHytxVa1RVZ9U30ntETyptB64
+# 1PfNcYKOasjx/uDwVpXg66k+qlQb4vhcYb2OmJ3SyYHLaiWH7i8/zuKbUAi3BewR
+# 4kmwvPk95IwtPLgGnDoqhQlrKdk4jOk5Tq3HuAXugMpbJ80cHvYNQ/YSLCDeQBm8
+# 3YfPBEJBDgEep+TU5/saqnTZiCvx0uJsQdQgHaVs8BK3NJDZzhcpNcRMW+XJEfU+
+# 7lOl4atXNNRQiKa7sXukEuUClmmmWrpTaFZuBFhhG8n92vsEIB83Upo7oEg=
 # SIG # End signature block
