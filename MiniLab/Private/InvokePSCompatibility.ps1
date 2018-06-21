@@ -69,12 +69,12 @@ function InvokePSCompatibility {
 
         if (![string]::IsNullOrWhitespace($InvocationMethod)) {
             if ($InvocationMethod -match "\.ps") {
-                if (!$(Test-Path $PSCommandPath)) {
-                    Write-Error "The `$PSCommandPath '$PSCommandPath' was not found! Halting!"
+                if (!$(Test-Path $script:PSCommandPath)) {
+                    Write-Error "The `$script:PSCommandPath '$script:PSCommandPath' was not found! Halting!"
                     $global:FunctionResult = "1"
                     return
                 }
-                $GetModDepsSplatParams.Add("PathToScriptFile",$PSCommandPath)
+                $GetModDepsSplatParams.Add("PathToScriptFile",$script:PSCommandPath)
             }
             else {
                 $GetModDepsSplatParams.Add("NameOfLoadedFunction",$InvocationMethod)
@@ -85,6 +85,7 @@ function InvokePSCompatibility {
         }
 
         if ($GetModDepsSplatParams.Keys.Count -gt 0) {
+            $GetModDepsSplatParams | Export-CliXml "$HOME\GetModDepsSplatParams.xml"
             $RequiredLocallyAvailableModulesScan = GetModuleDependencies @GetModDepsSplatParams
         }
     }
@@ -251,10 +252,13 @@ function InvokePSCompatibility {
         }
     }
 
+    $RequiredLocallyAvailableModulesScan | Export-CliXml "$HOME\ReqModScanPriorToFilter.xml"
+
     # Now all required modules are available locally, so let's filter to make sure we only try
     # to import the latest versions in case things are side-by-side install
     # Do for PSCoreModules...
-    foreach ($ModObj in $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies) {
+    $PSCoreModDeps = $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.clone()
+    foreach ($ModObj in $PSCoreModDeps) {
         $MatchingModObjs = $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies | Where-Object {
             $_.ModuleName -eq $ModObj.ModuleName
         }
@@ -280,21 +284,25 @@ function InvokePSCompatibility {
         }
 
         if ($AllVersions.Count -gt 1) {
-            $VersionsSorted = $AllVersions | Sort-Object
+            $VersionsSorted = $AllVersions | Sort-Object | Get-Unique
             $LatestVersion = $VersionsSorted[-1]
 
             $VersionsToRemove = $VersionsSorted[0..$($VersionsSorted.Count-2)]
 
             foreach ($Version in $($VersionsToRemove | foreach {$_.ToString()})) {
-                $ModObjToRemove = $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies | Where-Object {
+                [array]$ModObjsToRemove = $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies | Where-Object {
                     $_.ManifestFileItem.FullName -match "\\$Version\\" -and $_.ModuleName -eq $ModObj.ModuleName
                 }
-                $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.Remove($ModObjToRemove)
+
+                foreach ($obj in $ModObjsToRemove) {
+                    $RequiredLocallyAvailableModulesScan.PSCoreModuleDependencies.Remove($obj)
+                }
             }
         }
     }
     # Do for WinPSModules
-    foreach ($ModObj in $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies) {
+    $WinModDeps = $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.clone()
+    foreach ($ModObj in $WinModDeps) {
         $MatchingModObjs = $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies | Where-Object {
             $_.ModuleName -eq $ModObj.ModuleName
         }
@@ -319,16 +327,19 @@ function InvokePSCompatibility {
         }
 
         if ($AllVersions.Count -gt 1) {
-            $VersionsSorted = $AllVersions | Sort-Object
+            $VersionsSorted = $AllVersions | Sort-Object | Get-Unique
             $LatestVersion = $VersionsSorted[-1]
 
             $VersionsToRemove = $VersionsSorted[0..$($VersionsSorted.Count-2)]
 
             foreach ($Version in $($VersionsToRemove | foreach {$_.ToString()})) {
-                $ModObjToRemove = $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies | Where-Object {
+                [array]$ModObjsToRemove = $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies | Where-Object {
                     $_.ManifestFileItem.FullName -match "\\$Version\\" -and $_.ModuleName -eq $ModObj.ModuleName
                 }
-                $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.Remove($ModObjToRemove)
+
+                foreach ($obj in $ModObjsToRemove) {
+                    $RequiredLocallyAvailableModulesScan.WinPSModuleDependencies.Remove($obj)
+                }
             }
         }
     }
@@ -544,8 +555,8 @@ function InvokePSCompatibility {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU6DyCiqytp6IKeEQZGgpQmtRo
-# 3QGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0SPfa0M5QyDGGIYDc2TVBX3A
+# Tfygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -602,11 +613,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMS+AsLQ45LfqquS
-# rUlsyCGUaBxDMA0GCSqGSIb3DQEBAQUABIIBALLeJ89lHg8dfnvMNbMkq2eFLktq
-# n9QEh+r4kFV0QLbIKAeqrA9eD9Zd8STrwIRG93gPWVcLJs6UXxHigQ8X/ZZ3beqs
-# L5gsAwGLgvX0y/Zh2wPwTWOdAsD4fIK6m5L7OwqZs+2rAh5GAzY3eM/7+NTCJSr4
-# 6tvaEqbbHbhI7cff+/v8XkL9KNDvQTzBofXerMKV0YFUBnK7EVjFoB05ghjjy9T+
-# SIKMJ4w8iecXCFkUDjNUqMV9W8cd5QhPdVe7QaDqQO+t0qMw7e8HapNDjB3Gl3zH
-# 1RgCm/gBZpqu3SqywEAX+BwVW7y/G4FH83cQ8Bbe1gj4H9MCs8pDNUvCbP0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFuKImDl+t5VXFO9
+# QTI9VmbJ/ytgMA0GCSqGSIb3DQEBAQUABIIBAJr4XKceRFkUmP2w5puzYc7lrZj6
+# msh5UMxr+FdykMuf3tLz1hJBJsjMGlC0r5TLofQzzPgX7CCHAQx2cIm1FFeWlXYb
+# lHLW9aNbTsdwKMsOImr+sRSnV1s4+iBB4zVH4Si88rtDmg+BxpctfGIK/ZZfRJIP
+# iNm8FWg9zzg0c/oqYD8X6z6soJYZmKrdwuMOCAtcWDfdcPXC2cf97N2RlXBx1d6R
+# GaHF2o5e/Yf3mirXk8LZnPWo/eSifzVtjtwhnruTAfsGCokBqV+MsglvEYDcIWBV
+# GNE1uJxPCKQYNBbOPmE7ZeVY9NlCx/tzIStHfYzcWyYkZZjCyJWRMVoNdUo=
 # SIG # End signature block

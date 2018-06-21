@@ -20,15 +20,15 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
 }
 
+# NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
+# add it the the -NeededExternallyAvailableModules string array
 $InvModDepSplatParams = @{
     NeededExternallyAvailableModules    = $ModulesToInstallAndImport
     InstallModulesNotAvailableLocally   = $True
     ErrorAction                         = "SilentlyContinue"
     WarningAction                       = "SilentlyContinue"
 }
-$LoadModuleDependenciesResult = InvokeModuleDependencies @InvModDepSplatParams
-
-$LoadModuleDependenciesResult | Export-CliXml "$HOME\LoadModDepsResult.xml" -Force
+$ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
 
 if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
     Write-Warning "The following Modules were not able to be loaded:`n$($LoadModuleDependenciesResult.UnacceptableUnloadedModules.ModuleName -join "`n")"
@@ -37,32 +37,6 @@ if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
 
         Write-Warning "'MiniLab' will probably not work with PowerShell Core..."
 
-    }
-}
-
-if ($PSVersionTable.PSEdition -eq "Desktop") {
-    foreach ($ModuleName in $ModulesToInstallAndImport) {
-        if (![bool]$(Get-Module -ListAvailable $ModuleName -ErrorAction SilentlyContinue)) {
-            try {
-                Install-Module $ModuleName -Scope Global -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-        if (![bool]$(Get-Module $ModuleName -ErrorAction SilentlyContinue)) {
-            try {
-                Import-Module $ModuleName -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-        
     }
 }
 
@@ -8719,7 +8693,6 @@ function New-DomainController {
 
     #region >> Prep
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here0"
     if (!$RemoteDSCDirectory) {
         $RemoteDSCDirectory = "C:\DSCConfigs"
     }
@@ -8751,7 +8724,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here1"
     $CharacterIndexToSplitOn = [Math]::Round($(0..$($NewDomainAdminCredentials.UserName.Length) | Measure-Object -Average).Average)
     $NewDomainAdminFirstName = $NewDomainAdminCredentials.UserName.SubString(0,$CharacterIndexToSplitOn)
     $NewDomainAdminLastName = $NewDomainAdminCredentials.UserName.SubString($CharacterIndexToSplitOn,$($($NewDomainAdminCredentials.UserName.Length)-$CharacterIndexToSplitOn))
@@ -8768,7 +8740,6 @@ function New-DomainController {
         $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here2"
     $NeededDSCResources = @(
         "PSDesiredStateConfiguration"
         "xPSDesiredStateConfiguration"
@@ -8804,7 +8775,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here3"
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
     [System.Collections.ArrayList]$Modules = @()
     foreach ($DSCResource in $NeededDSCResources) {
@@ -8833,15 +8803,11 @@ function New-DomainController {
         $null = $Modules.Add($Module)
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here4"
     $PSDSCVersion = $($Modules | Where-Object {$_.Name -eq "PSDesiredStateConfiguration"}).Version.ToString()
     $xActiveDirectoryVersion = $($Modules | Where-Object {$_.Name -eq "xActiveDirectory"}).Version.ToString()
     $xPSDSCVersion = $($Modules | Where-Object {$_.Name -eq "xPSDesiredStateConfiguration"}).Version.ToString()
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "$PSDSCVersion`n$xActiveDirectoryVersion`n$xPSDSCVersion"
-
     # Make sure WinRM in Enabled and Running on $env:ComputerName
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereA"
     try {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
@@ -8864,7 +8830,6 @@ function New-DomainController {
         }
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereB"
     # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
     if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
         $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
@@ -8882,8 +8847,6 @@ function New-DomainController {
     }
     $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
     Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
-
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereC"
 
     #endregion >> Prep
 
@@ -8919,7 +8882,6 @@ function New-DomainController {
         $Counter++
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereD"
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
         $UserAccount = Get-LocalUser -Name "Administrator"
@@ -8941,7 +8903,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereE"
     if ($RemoteHostName -ne $DesiredHostName) {
         $RenameComputerSB = {
             Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart -ErrorAction SilentlyContinue
@@ -8970,7 +8931,6 @@ function New-DomainController {
 
     #region >> Wait For HostName Change
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereF"
     Get-PSSession -Name "To$DesiredHostName" | Remove-PSSession
     
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions Post Name Change Reboot...
@@ -8999,7 +8959,6 @@ function New-DomainController {
     
     #region >> Prep DSC On the RemoteHost
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereG"
     try {
         # Copy the DSC PowerShell Modules to the Remote Host
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -9286,7 +9245,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereH"
     $NewDomainControllerSB = {
         #### Apply the DSC Configuration ####
         # Load the NewDomainController DSC Configuration function
@@ -9351,8 +9309,7 @@ function New-DomainController {
         Write-Host "Applying NewDomainController Config..."
         Start-DscConfiguration -Path $using:RemoteDSCDirectory -Force -Wait
     }
-
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereI"
+    
     try {
         $NewDCDSCApplication = Invoke-Command -Session $(Get-PSSession -Name "To$DesiredHostName") -ScriptBlock $NewDomainControllerSB
     }
@@ -12530,8 +12487,8 @@ $FunctionsForSBUse = @(
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPZasgGVe0c4VQBPO01pqMjRK
-# o9Ogggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUNAN91R0GrRGrPStKppfM6N2
+# k0Cgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12588,11 +12545,11 @@ $FunctionsForSBUse = @(
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFERhcTrgHQb9Cxzy
-# 75/dEk6B9ffiMA0GCSqGSIb3DQEBAQUABIIBAAoDv6kI7hH2OSoiERF7Z5n09iTy
-# I0QlhHcbo7g/cAPpwnLwRVdOBPGAjtTnD7ZmVWduzZ2HWG0JmJHGVi1tUM83lm78
-# j6iDmfvD8/ttJ/v/7qvR5cMIpOA7Ld804BCL8VXLNcwE33mhAeLyrEdLT+JFTYnS
-# UuRQEA//6/0PyfKO07mnzs/BlW0dfgYPBb87sJMIxeq0BiJAdrHO09KTv14e4iAA
-# KeQplBSx+SN9deY4agzGgm70d6rn0Gn5g89itFRpr6WXabqS1z05xGAQfG4LLpgj
-# LRH6WCHx1SWns8l9Gjg1919rpCPntsH3IbPA2U/yJYEJNqyQ1/KmRxDT5rs=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGOeYZ7+EVZ1VVv1
+# 0ManxDFMla0jMA0GCSqGSIb3DQEBAQUABIIBALVfFZYC9TGgzhA9I3X8o3s6hnXi
+# pF7zzofebjL0nRhGtDm9ePO7EJoufw/XICX9nYnJuzZGR7ze9nseUeDQatVwfrWy
+# u4cJO9jCj00PxZjl2PibTvuhqm4c+2iEZgF20jLLLHKJqT4Y9qljYzmJnUHrjKaK
+# JnN40H7tPcIeB6JzleVoZtOj6gPXBJU+qrXdwzzTh6CTwPyWcIlflR2No0fgkpcY
+# Us1jYAuPsKgqG+QvLRQnvonHlb29KrAwmp+owlyX4BgDxbgmsE2QV3TnYtbj9sYX
+# XlZeCLd66Y43+MmSZ5h2fMz3V1/L4A4u/89hp/ZRmhYJy97PuiJGdaYoQ+k=
 # SIG # End signature block

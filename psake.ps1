@@ -86,15 +86,15 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
     $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
 }
 
+# NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
+# add it the the -NeededExternallyAvailableModules string array
 $InvModDepSplatParams = @{
     NeededExternallyAvailableModules    = $ModulesToInstallAndImport
     InstallModulesNotAvailableLocally   = $True
     ErrorAction                         = "SilentlyContinue"
     WarningAction                       = "SilentlyContinue"
 }
-$LoadModuleDependenciesResult = InvokeModuleDependencies @InvModDepSplatParams
-
-$LoadModuleDependenciesResult | Export-CliXml "$HOME\LoadModDepsResult.xml" -Force
+$ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
 
 if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
     Write-Warning "The following Modules were not able to be loaded:`n$($LoadModuleDependenciesResult.UnacceptableUnloadedModules.ModuleName -join "`n")"
@@ -107,32 +107,6 @@ if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
 
 "@ + @'
 
-    }
-}
-
-if ($PSVersionTable.PSEdition -eq "Desktop") {
-    foreach ($ModuleName in $ModulesToInstallAndImport) {
-        if (![bool]$(Get-Module -ListAvailable $ModuleName -ErrorAction SilentlyContinue)) {
-            try {
-                Install-Module $ModuleName -Scope Global -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-        if (![bool]$(Get-Module $ModuleName -ErrorAction SilentlyContinue)) {
-            try {
-                Import-Module $ModuleName -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-        
     }
 }
 
@@ -298,8 +272,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUuCiN5+gTzVUEwlqpiUZ8fGI/
-# Oqigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUPnOhTr8y7umMNo0H433Nfw2
+# NKWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -356,11 +330,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAgQlHl/T13QNarj
-# 0dauCpRQcSpQMA0GCSqGSIb3DQEBAQUABIIBAHvSPAbDUEe1kX4rhMH3tybcJty1
-# nGgcCBkzyF2y14PhKWWDNa1iws7tkZdyqvV1fG7LpIwIcsGSMCq9RqrO7LztDvG3
-# 2Rm3YGMu/hmyzorMeeutWpKC4rm7KTx6nV7ZzF7lJUpwPTH0605xwfaIEXVWefty
-# KGqIxOxkJZLzvdyTWixNybgQ+qzEe/xC1eng5DebWFUvXO0qxWwkDHfr5QIWgiTZ
-# ooNFdRUiyj1+ALKFgGI82/LQ5QrnSFz4v4qgilsyFgYhDirS7tA15aO4dwa82IQZ
-# JxkEacbDLR8t4+ICb8EnvYCnF1pa6vPTrGIcZddu41e6oMlDlaOzWjVTInw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEUHMolbBZakGZGo
+# uRiFK7S/mkbfMA0GCSqGSIb3DQEBAQUABIIBAFxeGpH3iiuEyo+4IUcsoPDJeoJU
+# R15juXlJbIf/pPxzV+tqtrZ6w/gvfUwegB3VSYkSclpoiZ7loGpB5U980bimXxms
+# /TMsHulL/jVd0ymvu3usb6vDdARfQ7A6sYtaZm3LCZU5Sw57kTTrH/Pr/uTOoPhQ
+# YDC1pnY/9GoVjPeg5D+KxGyWA2En7IMdRVnXPysSBSoXZvNZN3HQUkETvhB42IZX
+# MEfNFYA3XlZU2pQFg/0CHkna14lGION7t8gO7+tWPiO9makYlEJqfqtkpDWKQ46+
+# uKllOu9rw/Qoj7Wd1bEe4Ndyofz8dCDiKvrEAYx/DX0M2tfVXRUJAwm2VDI=
 # SIG # End signature block

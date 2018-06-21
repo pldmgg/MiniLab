@@ -125,7 +125,6 @@ function New-DomainController {
 
     #region >> Prep
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here0"
     if (!$RemoteDSCDirectory) {
         $RemoteDSCDirectory = "C:\DSCConfigs"
     }
@@ -157,7 +156,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here1"
     $CharacterIndexToSplitOn = [Math]::Round($(0..$($NewDomainAdminCredentials.UserName.Length) | Measure-Object -Average).Average)
     $NewDomainAdminFirstName = $NewDomainAdminCredentials.UserName.SubString(0,$CharacterIndexToSplitOn)
     $NewDomainAdminLastName = $NewDomainAdminCredentials.UserName.SubString($CharacterIndexToSplitOn,$($($NewDomainAdminCredentials.UserName.Length)-$CharacterIndexToSplitOn))
@@ -174,7 +172,6 @@ function New-DomainController {
         $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here2"
     $NeededDSCResources = @(
         "PSDesiredStateConfiguration"
         "xPSDesiredStateConfiguration"
@@ -210,7 +207,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here3"
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
     [System.Collections.ArrayList]$Modules = @()
     foreach ($DSCResource in $NeededDSCResources) {
@@ -239,15 +235,11 @@ function New-DomainController {
         $null = $Modules.Add($Module)
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "here4"
     $PSDSCVersion = $($Modules | Where-Object {$_.Name -eq "PSDesiredStateConfiguration"}).Version.ToString()
     $xActiveDirectoryVersion = $($Modules | Where-Object {$_.Name -eq "xActiveDirectory"}).Version.ToString()
     $xPSDSCVersion = $($Modules | Where-Object {$_.Name -eq "xPSDesiredStateConfiguration"}).Version.ToString()
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "$PSDSCVersion`n$xActiveDirectoryVersion`n$xPSDSCVersion"
-
     # Make sure WinRM in Enabled and Running on $env:ComputerName
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereA"
     try {
         $null = Enable-PSRemoting -Force -ErrorAction Stop
     }
@@ -270,7 +262,6 @@ function New-DomainController {
         }
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereB"
     # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
     if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
         $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
@@ -288,8 +279,6 @@ function New-DomainController {
     }
     $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
     Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
-
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereC"
 
     #endregion >> Prep
 
@@ -325,7 +314,6 @@ function New-DomainController {
         $Counter++
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereD"
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
         $UserAccount = Get-LocalUser -Name "Administrator"
@@ -347,7 +335,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereE"
     if ($RemoteHostName -ne $DesiredHostName) {
         $RenameComputerSB = {
             Rename-Computer -NewName $args[0] -LocalCredential $args[1] -Force -Restart -ErrorAction SilentlyContinue
@@ -376,7 +363,6 @@ function New-DomainController {
 
     #region >> Wait For HostName Change
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereF"
     Get-PSSession -Name "To$DesiredHostName" | Remove-PSSession
     
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions Post Name Change Reboot...
@@ -405,7 +391,6 @@ function New-DomainController {
     
     #region >> Prep DSC On the RemoteHost
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereG"
     try {
         # Copy the DSC PowerShell Modules to the Remote Host
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -692,7 +677,6 @@ function New-DomainController {
         return
     }
 
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereH"
     $NewDomainControllerSB = {
         #### Apply the DSC Configuration ####
         # Load the NewDomainController DSC Configuration function
@@ -757,8 +741,7 @@ function New-DomainController {
         Write-Host "Applying NewDomainController Config..."
         Start-DscConfiguration -Path $using:RemoteDSCDirectory -Force -Wait
     }
-
-    Add-Content -Path "$HOME\NewDCProgress.txt" -Value "hereI"
+    
     try {
         $NewDCDSCApplication = Invoke-Command -Session $(Get-PSSession -Name "To$DesiredHostName") -ScriptBlock $NewDomainControllerSB
     }
@@ -806,8 +789,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU675PZb8zTD5aikG+kkLn6qgD
-# 5M+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU52FCU/y5f3Uh103MQLDTDUGh
+# Y/mgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -864,11 +847,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKnJ6T64x7T4PXX/
-# Ro8GXWMetQAEMA0GCSqGSIb3DQEBAQUABIIBAG5ZoMNhPKRiPG5ipOaPajMOq2NT
-# /Cfk2DC1Pt1xn84tdVQoCW/j5qzIBHxr+91sPyjj//JQ6KXx2THsF+1GGUqexiYC
-# h2H2tdBQCfs1FukvmE7HLm7is6eGdPUOIsq0a1danTsmZoaHKdXfLBAuZ2FC7l5j
-# OvQH5NLBMhEYx5P8v1UJteYhb4dfyjtJhWaD6+rqYPbaCoISN2TuWwOhqebyrSSm
-# j8P8WbVo3rWqA82WnpKNuvQUUC/NNXpraJ3QvFBZ7f1/AY1WsOYGftouFX13M0jR
-# B7FI8QiH+1Yyw6CrAbIoMoTCAXvaVIa6kCOsmWitDzGLf5IJd9T2ST9dS/c=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPPw/SXBixroaOUj
+# tD5ydg4pXPHMMA0GCSqGSIb3DQEBAQUABIIBAHxfDxOOWpZr/2oj2xos1c4TCuaX
+# Wn6Zu0rImLHhLexoVtdARD8ka/96pZJttLJh+tpHkL5PtM+Q1oeCQnqIuCgXWVWU
+# bMNMlCocVo8lfdnOIpEnZepCrZanoRcf7ynPPNz0iF0G8FfJ4MzUx5k2AH21WdXQ
+# tsk1b1F8206EjEEE7I3lQIs07wFxKgpvpSRO5ieyfHsZHOLK8NX/c0QuUpJM067H
+# B9FvQqwm6idM+T7WEFuVu6H3lFsUnry90mX5Dz6m/OAnp+AToQLMzgnTidvKeeEq
+# SeEuZkrA9j1qxiQOSW7g6E3acR41Pc1Of2UAEXLEN3PDRziixYHx8s1WPn8=
 # SIG # End signature block
