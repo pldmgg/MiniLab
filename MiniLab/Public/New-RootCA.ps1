@@ -227,70 +227,15 @@ function New-RootCA {
 
         #region >> Prep
 
-        <#
-        # Make sure we have the PSPKI Module Installed and Imported
-        if ($PSVersionTable.PSEdition -ne "Core") {
-            $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        # Import any Module Dependencies
+        $RequiredModules = @("PSPKI","ServerManager")
+        
+        $InvModDepSplatParams = @{
+            RequiredModules                     = $RequiredModules
+            InstallModulesNotAvailableLocally   = $True
+            ErrorAction                         = "Stop"
         }
-        else {
-            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-        }
-
-        $NeededExternalModules = @(
-            "PSPKI"
-        )
-        $NeededBuiltInModules = @(
-            "ServerManager"
-        )
-
-        if ($PSVersionTable.PSEdition -eq "Core") {
-            $InvPSCompatSplatParams = @{
-                ModulesAvailableExternally  = $NeededExternalModules
-                ModulesAvailableLocally     = $NeededBuiltInModules
-                ErrorAction                 = "SilentlyContinue"
-                WarningAction               = "SilentlyContinue"
-            }
-            $LoadModuleDependenciesResult = InvokePSCompatibility @InvPSCompatSplatParams
-        }
-        else {
-            foreach ($ModuleName in $NeededExternalModules) {
-                # Install the Module
-                try {
-                    if (![bool]$(Get-Module -ListAvailable $ModuleName)) {
-                        $null = Install-Module $ModuleName -Force -ErrorAction Stop -WarningAction SilentlyContinue
-                    }
-                }
-                catch {
-                    Write-Error $_
-                    $global:FunctionResult = "1"
-                    return
-                }
-    
-                # Import the Module
-                try {
-                    Import-Module $ModuleName -ErrorAction Stop
-                }
-                catch {
-                    Write-Error $_
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-
-            foreach ($ModuleName in $NeededBuiltInModules) {
-                # Import the Module
-                try {
-                    Import-Module $ModuleName -ErrorAction Stop
-                }
-                catch {
-                    Write-Error "Problem importing the $ModuleName Module! Halting!"
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-        }
-        #>
+        $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
 
         # Make sure we can find the Domain Controller(s)
         try {
@@ -808,36 +753,6 @@ function New-RootCA {
         AIAUrl                              = $AIAUrl
     }
 
-    # Install any required PowerShell Modules...
-    [array]$NeededModules = @(
-        "PSPKI"
-    )
-
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-    else {
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-
-    [System.Collections.ArrayList]$FailedModuleInstall = @()
-    foreach ($ModuleResource in $NeededModules) {
-        try {
-            $null = Install-Module $ModuleResource -ErrorAction Stop
-        }
-        catch {
-            Write-Error $_
-            $null = $FailedModuleInstall.Add($ModuleResource)
-            continue
-        }
-    }
-    if ($FailedModuleInstall.Count -gt 0) {
-        Write-Error "Problem installing the following DSC Modules:`n$($FailedModuleInstall -join "`n")"
-        $global:FunctionResult = "1"
-        return
-    }
-
     #endregion >> Initial Prep
 
 
@@ -874,9 +789,20 @@ function New-RootCA {
         }
 
         # Transfer any required PowerShell Modules
+        $NeededModules = @("PSPKI")
         [array]$ModulesToTransfer = foreach ($ModuleResource in $NeededModules) {
-            $Module = Get-Module -ListAvailable $ModuleResource
-            "$($($Module.ModuleBase -split $ModuleResource)[0])\$ModuleResource"
+            $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {
+                $_.ModuleName -eq $ModuleResource -and $_.ModulePSCompatibility -eq "WinPS"
+            }
+            $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
+
+            if (!$ModMapObj) {
+                Write-Error "Unable to find appropriate Module to transfer to Remote Host! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+            
+            $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
         }
         
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -891,14 +817,14 @@ function New-RootCA {
             Copy-Item @CopyItemSplatParams
         }
 
-        $FunctionsForRemoteUse = @(
-            ${Function:GetDomainController}.Ast.Extent.Text
-            ${Function:SetupRootCA}.Ast.Extent.Text
-        )
+        # Initialize the Remote Environment
+        $FunctionsForRemoteUse = $script:FunctionsForSBUse
+        $FunctionsForRemoteUse.Add($(${Function:SetupRootCA}.Ast.Extent.Text))
         $Output = Invoke-Command -Session $RootCAPSSession -ScriptBlock {
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
+            $script:ModuleDependenciesMap = $args[0]
             SetupRootCA @using:SetupRootCASplatParams
-        }
+        } -ArgumentList $script:ModuleDependenciesMap
     }
     else {
         $Output = SetupRootCA @SetupRootCASplatParams
@@ -912,8 +838,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUx5314HGp7N6XCh8TJFgnmBW5
-# WRCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUTULSET4k+hcexxYlo/1wJcO7
+# LOugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -970,11 +896,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFkjHu3dgqlhJ8+e
-# qx7s2TqNlW3mMA0GCSqGSIb3DQEBAQUABIIBAJSnydLYmUeeiICxXqU6YIh9IgZH
-# w6lbbfWrAnDVjiW5DtQ4PNfdDXP3dnmuh0Z1bV6DHytxVa1RVZ9U30ntETyptB64
-# 1PfNcYKOasjx/uDwVpXg66k+qlQb4vhcYb2OmJ3SyYHLaiWH7i8/zuKbUAi3BewR
-# 4kmwvPk95IwtPLgGnDoqhQlrKdk4jOk5Tq3HuAXugMpbJ80cHvYNQ/YSLCDeQBm8
-# 3YfPBEJBDgEep+TU5/saqnTZiCvx0uJsQdQgHaVs8BK3NJDZzhcpNcRMW+XJEfU+
-# 7lOl4atXNNRQiKa7sXukEuUClmmmWrpTaFZuBFhhG8n92vsEIB83Upo7oEg=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGbaQb+CHg/fFGc/
+# fv2D9KJd2MxAMA0GCSqGSIb3DQEBAQUABIIBAFrrZkVDPfRer+lMX31imFf0b9da
+# KiBpdfIvSsMtWuVwds5lRnJz/0XblBSypbzCIgQLgFFr00zA88SNH34o8N9zhhjl
+# WLXiQhBOoueZITMlzr9XM/6s3yypkfRwNzSdjTaOkLa7iiU5AP7j6Ut+FTmgoTaB
+# Bar0bP8f3gCPaed/woGTtIW6aJh4t7hLGLIqb9VLUL8HDfX0M1TL53LBQlGvJuIf
+# tv6dJQ0dG+tKe+2j9A7XqkXzF6X+wiZr3Dj8+lRmx5C70cznF/Ugybz+hhHxYLos
+# 71IJ2v6dhDmFeIbYn3djFBMKzkm49EfevrspL9rTYD/1Vt2A8o41hdGXpdY=
 # SIG # End signature block

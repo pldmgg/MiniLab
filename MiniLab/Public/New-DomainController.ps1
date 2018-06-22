@@ -162,82 +162,41 @@ function New-DomainController {
 
     $NewBackupDomainAdminFirstName = $($NewDomainAdminCredentials.UserName -split "\\")[-1]
     $NewBackupDomainAdminLastName =  "backup"
-
-    # Get the needed DSC Resources in preparation for copying them to the Remote Host
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-    else {
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-
+    
     $NeededDSCResources = @(
         "PSDesiredStateConfiguration"
         "xPSDesiredStateConfiguration"
         "xActiveDirectory"
     )
-    [System.Collections.ArrayList]$FailedDSCResourceInstall = @()
-    foreach ($DSCResource in $($NeededDSCResources | Where-Object {$_ -ne "PSDesiredStateConfiguration"})) {
-        try {
-            if ($PSVersionTable.PSEdition -eq "Core") {
-                # Make sure the PSSession Type Accelerator exists
-                $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
-                if ($TypeAccelerators.Name -notcontains "PSSession") {
-                    [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
-                }
-
-                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
-                    Install-Module $args[0] -Force
-                } -ArgumentList $DSCResource
-            }
-            else {
-                $null = Install-Module $DSCResource -Force -ErrorAction Stop
-            }
-        }
-        catch {
-            Write-Error $_
-            $null = $FailedDSCResourceInstall.Add($DSCResource)
-            continue
-        }
-    }
-    if ($FailedDSCResourceInstall.Count -gt 0) {
-        Write-Error "Problem installing the following DSC Modules:`n$($FailedDSCResourceInstall -join "`n")"
-        $global:FunctionResult = "1"
-        return
-    }
-
+    
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
-    [System.Collections.ArrayList]$Modules = @()
     foreach ($DSCResource in $NeededDSCResources) {
-        if ($PSVersionTable.PSEdition -eq "Core") {
-            # Make sure the PSSession Type Accelerator exists
-            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
-            if ($TypeAccelerators.Name -notcontains "PSSession") {
-                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
-            }
+        # NOTE: Usually $Module.ModuleBase is the version number directory, and its parent is the
+        # directory that actually matches the Module Name. $ModuleBaseParent is the name of the
+        # directory that matches the name of the Module
+        $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $DSCResource}
+        $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
 
-            $Module = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
-                $(Get-Module -ListAvailable $args[0] | Where-Object {
-                    $_.ModuleBase -match "\\WindowsPowerShell\\"
-                } | Sort-Object -Property Version)[-1]
-            } -ArgumentList $DSCResource
-        }
-        else {
-            $Module = $(Get-Module -ListAvailable $DSCResource | Where-Object {
-                $_.ModuleBase -match "\\WindowsPowerShell\\"
-            } | Sort-Object -Property Version)[-1]
-        }
+        $ModuleBaseParent = $($ModMapObj.ManifestFileItem.FullName -split $DSCResource)[0] + $DSCResource
         
         if ($DSCResource -ne "PSDesiredStateConfiguration") {
-            $null = $DSCModulesToTransfer.Add($($($Module.ModuleBase -split $DSCResource)[0] + $DSCResource))
+            $null = $DSCModulesToTransfer.Add($ModuleBaseParent)
         }
-        $null = $Modules.Add($Module)
-    }
 
-    $PSDSCVersion = $($Modules | Where-Object {$_.Name -eq "PSDesiredStateConfiguration"}).Version.ToString()
-    $xActiveDirectoryVersion = $($Modules | Where-Object {$_.Name -eq "xActiveDirectory"}).Version.ToString()
-    $xPSDSCVersion = $($Modules | Where-Object {$_.Name -eq "xPSDesiredStateConfiguration"}).Version.ToString()
+        switch ($DSCResource) {
+            'PSDesiredStateConfiguration' {
+                $PSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+            }
+        
+            'xPSDesiredStateConfiguration' {
+                $xPSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+            }
+        
+            'xActiveDirectory' {
+                $xActiveDirectoryVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+            }
+        }
+    }
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
     try {
@@ -789,8 +748,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU52FCU/y5f3Uh103MQLDTDUGh
-# Y/mgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQULWlZQqYb72rLNBTXEWHccU4f
+# QE2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -847,11 +806,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPPw/SXBixroaOUj
-# tD5ydg4pXPHMMA0GCSqGSIb3DQEBAQUABIIBAHxfDxOOWpZr/2oj2xos1c4TCuaX
-# Wn6Zu0rImLHhLexoVtdARD8ka/96pZJttLJh+tpHkL5PtM+Q1oeCQnqIuCgXWVWU
-# bMNMlCocVo8lfdnOIpEnZepCrZanoRcf7ynPPNz0iF0G8FfJ4MzUx5k2AH21WdXQ
-# tsk1b1F8206EjEEE7I3lQIs07wFxKgpvpSRO5ieyfHsZHOLK8NX/c0QuUpJM067H
-# B9FvQqwm6idM+T7WEFuVu6H3lFsUnry90mX5Dz6m/OAnp+AToQLMzgnTidvKeeEq
-# SeEuZkrA9j1qxiQOSW7g6E3acR41Pc1Of2UAEXLEN3PDRziixYHx8s1WPn8=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFP7qH3iYLFMbBq8+
+# GqP2Ku5bXAroMA0GCSqGSIb3DQEBAQUABIIBAC8EOR9SZjqf8xCa/nsiAlb6m+MN
+# 8fahUAgoJOID0yyQ+rxBO29EUb5s71TCnodcbkDoiNCXTsRYkRUP397Wy7S37bhK
+# +t+htoUN1eycYKuL5SkmiK2zk+5XPUznd2hwRTtER2oQEZbr5yjhhI9DBmTQf4W3
+# WN8U2X2qk/nMhnQEOAKROJlxGSwGLFgASnhGQmkA4IdPWwTZVgy4U7M+O2WrfDNE
+# jmHYnbxEJMxB1VadAKP4ayoNoaZuEfd3bSKg4nSevtMfdY7khMkdlaPpOAG9sk9k
+# IVtzpaKcO+IwTYLgJ2u5GffJ2GJ8OhiWbxzhnygarJESVyt+NllwudOUmMA=
 # SIG # End signature block

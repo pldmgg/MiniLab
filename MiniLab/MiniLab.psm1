@@ -23,7 +23,7 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
 # NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
 # add it the the -NeededExternallyAvailableModules string array
 $InvModDepSplatParams = @{
-    NeededExternallyAvailableModules    = $ModulesToInstallAndImport
+    RequiredModules                     = $ModulesToInstallAndImport
     InstallModulesNotAvailableLocally   = $True
     ErrorAction                         = "SilentlyContinue"
     WarningAction                       = "SilentlyContinue"
@@ -8730,82 +8730,41 @@ function New-DomainController {
 
     $NewBackupDomainAdminFirstName = $($NewDomainAdminCredentials.UserName -split "\\")[-1]
     $NewBackupDomainAdminLastName =  "backup"
-
-    # Get the needed DSC Resources in preparation for copying them to the Remote Host
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-    else {
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-
+    
     $NeededDSCResources = @(
         "PSDesiredStateConfiguration"
         "xPSDesiredStateConfiguration"
         "xActiveDirectory"
     )
-    [System.Collections.ArrayList]$FailedDSCResourceInstall = @()
-    foreach ($DSCResource in $($NeededDSCResources | Where-Object {$_ -ne "PSDesiredStateConfiguration"})) {
-        try {
-            if ($PSVersionTable.PSEdition -eq "Core") {
-                # Make sure the PSSession Type Accelerator exists
-                $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
-                if ($TypeAccelerators.Name -notcontains "PSSession") {
-                    [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
-                }
-
-                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
-                    Install-Module $args[0] -Force
-                } -ArgumentList $DSCResource
-            }
-            else {
-                $null = Install-Module $DSCResource -Force -ErrorAction Stop
-            }
-        }
-        catch {
-            Write-Error $_
-            $null = $FailedDSCResourceInstall.Add($DSCResource)
-            continue
-        }
-    }
-    if ($FailedDSCResourceInstall.Count -gt 0) {
-        Write-Error "Problem installing the following DSC Modules:`n$($FailedDSCResourceInstall -join "`n")"
-        $global:FunctionResult = "1"
-        return
-    }
-
+    
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
-    [System.Collections.ArrayList]$Modules = @()
     foreach ($DSCResource in $NeededDSCResources) {
-        if ($PSVersionTable.PSEdition -eq "Core") {
-            # Make sure the PSSession Type Accelerator exists
-            $TypeAccelerators = [psobject].Assembly.GetType("System.Management.Automation.TypeAccelerators")::get
-            if ($TypeAccelerators.Name -notcontains "PSSession") {
-                [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
-            }
+        # NOTE: Usually $Module.ModuleBase is the version number directory, and its parent is the
+        # directory that actually matches the Module Name. $ModuleBaseParent is the name of the
+        # directory that matches the name of the Module
+        $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $DSCResource}
+        $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
 
-            $Module = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
-                $(Get-Module -ListAvailable $args[0] | Where-Object {
-                    $_.ModuleBase -match "\\WindowsPowerShell\\"
-                } | Sort-Object -Property Version)[-1]
-            } -ArgumentList $DSCResource
-        }
-        else {
-            $Module = $(Get-Module -ListAvailable $DSCResource | Where-Object {
-                $_.ModuleBase -match "\\WindowsPowerShell\\"
-            } | Sort-Object -Property Version)[-1]
-        }
+        $ModuleBaseParent = $($ModMapObj.ManifestFileItem.FullName -split $DSCResource)[0] + $DSCResource
         
         if ($DSCResource -ne "PSDesiredStateConfiguration") {
-            $null = $DSCModulesToTransfer.Add($($($Module.ModuleBase -split $DSCResource)[0] + $DSCResource))
+            $null = $DSCModulesToTransfer.Add($ModuleBaseParent)
         }
-        $null = $Modules.Add($Module)
-    }
 
-    $PSDSCVersion = $($Modules | Where-Object {$_.Name -eq "PSDesiredStateConfiguration"}).Version.ToString()
-    $xActiveDirectoryVersion = $($Modules | Where-Object {$_.Name -eq "xActiveDirectory"}).Version.ToString()
-    $xPSDSCVersion = $($Modules | Where-Object {$_.Name -eq "xPSDesiredStateConfiguration"}).Version.ToString()
+        switch ($DSCResource) {
+            'PSDesiredStateConfiguration' {
+                $PSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+            }
+        
+            'xPSDesiredStateConfiguration' {
+                $xPSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+            }
+        
+            'xActiveDirectory' {
+                $xActiveDirectoryVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+            }
+        }
+    }
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
     try {
@@ -9584,70 +9543,15 @@ function New-RootCA {
 
         #region >> Prep
 
-        <#
-        # Make sure we have the PSPKI Module Installed and Imported
-        if ($PSVersionTable.PSEdition -ne "Core") {
-            $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        # Import any Module Dependencies
+        $RequiredModules = @("PSPKI","ServerManager")
+        
+        $InvModDepSplatParams = @{
+            RequiredModules                     = $RequiredModules
+            InstallModulesNotAvailableLocally   = $True
+            ErrorAction                         = "Stop"
         }
-        else {
-            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-        }
-
-        $NeededExternalModules = @(
-            "PSPKI"
-        )
-        $NeededBuiltInModules = @(
-            "ServerManager"
-        )
-
-        if ($PSVersionTable.PSEdition -eq "Core") {
-            $InvPSCompatSplatParams = @{
-                ModulesAvailableExternally  = $NeededExternalModules
-                ModulesAvailableLocally     = $NeededBuiltInModules
-                ErrorAction                 = "SilentlyContinue"
-                WarningAction               = "SilentlyContinue"
-            }
-            $LoadModuleDependenciesResult = InvokePSCompatibility @InvPSCompatSplatParams
-        }
-        else {
-            foreach ($ModuleName in $NeededExternalModules) {
-                # Install the Module
-                try {
-                    if (![bool]$(Get-Module -ListAvailable $ModuleName)) {
-                        $null = Install-Module $ModuleName -Force -ErrorAction Stop -WarningAction SilentlyContinue
-                    }
-                }
-                catch {
-                    Write-Error $_
-                    $global:FunctionResult = "1"
-                    return
-                }
-    
-                # Import the Module
-                try {
-                    Import-Module $ModuleName -ErrorAction Stop
-                }
-                catch {
-                    Write-Error $_
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-
-            foreach ($ModuleName in $NeededBuiltInModules) {
-                # Import the Module
-                try {
-                    Import-Module $ModuleName -ErrorAction Stop
-                }
-                catch {
-                    Write-Error "Problem importing the $ModuleName Module! Halting!"
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-        }
-        #>
+        $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
 
         # Make sure we can find the Domain Controller(s)
         try {
@@ -10165,36 +10069,6 @@ function New-RootCA {
         AIAUrl                              = $AIAUrl
     }
 
-    # Install any required PowerShell Modules...
-    [array]$NeededModules = @(
-        "PSPKI"
-    )
-
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-    else {
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-
-    [System.Collections.ArrayList]$FailedModuleInstall = @()
-    foreach ($ModuleResource in $NeededModules) {
-        try {
-            $null = Install-Module $ModuleResource -ErrorAction Stop
-        }
-        catch {
-            Write-Error $_
-            $null = $FailedModuleInstall.Add($ModuleResource)
-            continue
-        }
-    }
-    if ($FailedModuleInstall.Count -gt 0) {
-        Write-Error "Problem installing the following DSC Modules:`n$($FailedModuleInstall -join "`n")"
-        $global:FunctionResult = "1"
-        return
-    }
-
     #endregion >> Initial Prep
 
 
@@ -10231,9 +10105,20 @@ function New-RootCA {
         }
 
         # Transfer any required PowerShell Modules
+        $NeededModules = @("PSPKI")
         [array]$ModulesToTransfer = foreach ($ModuleResource in $NeededModules) {
-            $Module = Get-Module -ListAvailable $ModuleResource
-            "$($($Module.ModuleBase -split $ModuleResource)[0])\$ModuleResource"
+            $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {
+                $_.ModuleName -eq $ModuleResource -and $_.ModulePSCompatibility -eq "WinPS"
+            }
+            $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
+
+            if (!$ModMapObj) {
+                Write-Error "Unable to find appropriate Module to transfer to Remote Host! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+            
+            $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
         }
         
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -10248,14 +10133,14 @@ function New-RootCA {
             Copy-Item @CopyItemSplatParams
         }
 
-        $FunctionsForRemoteUse = @(
-            ${Function:GetDomainController}.Ast.Extent.Text
-            ${Function:SetupRootCA}.Ast.Extent.Text
-        )
+        # Initialize the Remote Environment
+        $FunctionsForRemoteUse = $script:FunctionsForSBUse
+        $FunctionsForRemoteUse.Add($(${Function:SetupRootCA}.Ast.Extent.Text))
         $Output = Invoke-Command -Session $RootCAPSSession -ScriptBlock {
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
+            $script:ModuleDependenciesMap = $args[0]
             SetupRootCA @using:SetupRootCASplatParams
-        }
+        } -ArgumentList $script:ModuleDependenciesMap
     }
     else {
         $Output = SetupRootCA @SetupRootCASplatParams
@@ -12449,11 +12334,12 @@ function New-SubordinateCA {
 }
 
 
-$FunctionsForSBUse = @(
+[System.Collections.ArrayList]$FunctionsForSBUse = @(
     ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
     ${Function:GetDomainController}.Ast.Extent.Text
     ${Function:GetElevation}.Ast.Extent.Text
     ${Function:GetFileLockProcess}.Ast.Extent.Text
+    ${Function:GetModMapObject}.Ast.Extent.Text
     ${Function:GetModuleDependencies}.Ast.Extent.Text
     ${Function:GetNativePath}.Ast.Extent.Text
     ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
@@ -12487,8 +12373,8 @@ $FunctionsForSBUse = @(
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUNAN91R0GrRGrPStKppfM6N2
-# k0Cgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjc3J4kSirHGZMV6F2lm5nLbQ
+# ZgSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12545,11 +12431,11 @@ $FunctionsForSBUse = @(
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGOeYZ7+EVZ1VVv1
-# 0ManxDFMla0jMA0GCSqGSIb3DQEBAQUABIIBALVfFZYC9TGgzhA9I3X8o3s6hnXi
-# pF7zzofebjL0nRhGtDm9ePO7EJoufw/XICX9nYnJuzZGR7ze9nseUeDQatVwfrWy
-# u4cJO9jCj00PxZjl2PibTvuhqm4c+2iEZgF20jLLLHKJqT4Y9qljYzmJnUHrjKaK
-# JnN40H7tPcIeB6JzleVoZtOj6gPXBJU+qrXdwzzTh6CTwPyWcIlflR2No0fgkpcY
-# Us1jYAuPsKgqG+QvLRQnvonHlb29KrAwmp+owlyX4BgDxbgmsE2QV3TnYtbj9sYX
-# XlZeCLd66Y43+MmSZ5h2fMz3V1/L4A4u/89hp/ZRmhYJy97PuiJGdaYoQ+k=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFE4tZavLs2jC/e9o
+# r3pXCsgY1/W4MA0GCSqGSIb3DQEBAQUABIIBACDZPIUzSYrf2Jmzais9MIw9UKqh
+# blIGfqvzLwu4aNHWjAp5YXEwbfzs0X1Y/YMrNk08nKDRAPbV5IJvl3gPrtLQei5Q
+# uBlU35zYOO47C1ZrLm2rKV47zRiDHfIiCjXRwuheiH+Mz8h7LaVcdZBYMZKRUTqI
+# YB7pAfwaYnoFnvJ6BHsK7MQvMKIUE43fNCdLATMKilQKyoisgv9LRu/ZIELfQTky
+# lSQZGtYbFAfuMuNfODGl4IxHD1un+K4IXeQZtwkAXNylsbDQxpmL53voEgK472BT
+# 10MoJ/m6XsyRB1Q5ZPz4QFhEx4a2nU3oRM31Q8jxvZkVQ2UAAl6iiYnZMtU=
 # SIG # End signature block

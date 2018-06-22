@@ -18,4 +18,12 @@
         DependencyType  = 'PSGalleryModule'
         Version         = 'Latest'
     }
+    'xPSDesiredStateConfiguration' = @{
+        DependencyType  = 'PSGalleryModule'
+        Version         = 'Latest'
+    }
+    'xActiveDirectory' = @{
+        DependencyType  = 'PSGalleryModule'
+        Version         = 'Latest'
+    }
 }

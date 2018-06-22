@@ -89,7 +89,7 @@ if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
 # NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
 # add it the the -NeededExternallyAvailableModules string array
 $InvModDepSplatParams = @{
-    NeededExternallyAvailableModules    = $ModulesToInstallAndImport
+    RequiredModules                     = $ModulesToInstallAndImport
     InstallModulesNotAvailableLocally   = $True
     ErrorAction                         = "SilentlyContinue"
     WarningAction                       = "SilentlyContinue"
@@ -144,11 +144,12 @@ if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
 
     # Finally, add array $FunctionsForSBuse in case we want to use this Module Remotely
     $FunctionsForSBUseString = @'
-$FunctionsForSBUse = @(
+[System.Collections.ArrayList]$FunctionsForSBUse = @(
     ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
     ${Function:GetDomainController}.Ast.Extent.Text
     ${Function:GetElevation}.Ast.Extent.Text
     ${Function:GetFileLockProcess}.Ast.Extent.Text
+    ${Function:GetModMapObject}.Ast.Extent.Text
     ${Function:GetModuleDependencies}.Ast.Extent.Text
     ${Function:GetNativePath}.Ast.Extent.Text
     ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
@@ -272,8 +273,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUPnOhTr8y7umMNo0H433Nfw2
-# NKWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPvGpWaUzU5gGmfvnhMFXA+QD
+# F+Sgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -330,11 +331,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEUHMolbBZakGZGo
-# uRiFK7S/mkbfMA0GCSqGSIb3DQEBAQUABIIBAFxeGpH3iiuEyo+4IUcsoPDJeoJU
-# R15juXlJbIf/pPxzV+tqtrZ6w/gvfUwegB3VSYkSclpoiZ7loGpB5U980bimXxms
-# /TMsHulL/jVd0ymvu3usb6vDdARfQ7A6sYtaZm3LCZU5Sw57kTTrH/Pr/uTOoPhQ
-# YDC1pnY/9GoVjPeg5D+KxGyWA2En7IMdRVnXPysSBSoXZvNZN3HQUkETvhB42IZX
-# MEfNFYA3XlZU2pQFg/0CHkna14lGION7t8gO7+tWPiO9makYlEJqfqtkpDWKQ46+
-# uKllOu9rw/Qoj7Wd1bEe4Ndyofz8dCDiKvrEAYx/DX0M2tfVXRUJAwm2VDI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMfRMupGMv+pp6If
+# i8OdU9PPsxsZMA0GCSqGSIb3DQEBAQUABIIBALm6TXCc+4gzNky3JUE/kD9xoAao
+# EpvYy+qoBI1AUPcbr2mILy4R9kW03icdf16qlMaONH2O3/F23U+UzhT2Xlw7mVqc
+# +CBHZUUpzHptW1xVDa2f865MGTnMNmJkuC8bmzJi0ihgGWvvstP1SD9WeFefyMRO
+# xypYvPCC+8eCCUP1TmtXuRoYdkW+PW2eXbMiLj7pvMKy6oi9EK+DkgX4YFSt3OU+
+# lOFi18/2hhLrz2N7ozpUBcqAZd/6csPD0PHTWmOC/ltik5UXybUDZutr5WJ7zMgN
+# rI2mtu9LVIMpifi/QWMuyxEcD8UQ/s8q7OIharboYYe5DzcElDFZdDUTz+A=
 # SIG # End signature block

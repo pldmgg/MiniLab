@@ -1,98 +1,36 @@
-function InvokeModuleDependencies {
+function GetModMapObject {
     [CmdletBinding()]
     Param (
-        [Parameter(Mandatory=$False)]
-        [string[]]$RequiredModules,
-
-        [Parameter(Mandatory=$False)]
-        [switch]$InstallModulesNotAvailableLocally
+        [Parameter(Mandatory=$True)]
+        [pscustomobject[]]$PotentialModMapObject
     )
 
-    if ($InstallModulesNotAvailableLocally) {
-        if ($PSVersionTable.PSEdition -ne "Core") {
-            $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    if ($PotentialModMapObject.Count -gt 1) {
+        if ($PSVersionTable.PSEdition -eq "Core" -and $PotentialModMapObject.ModulePSCompatibility -contains "PSCore") {
+            $PotentialModMapObject = $PotentialModMapObject | Where-Object {$_.ModulePSCompatibility -eq "PSCore"}
         }
-        else {
-            $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        elseif ($PSVersionTable.PSEdition -eq "Core" -and $PotentialModMapObject.ModulePSCompatibility -contains "WinPS") {
+            $PotentialModMapObject = $PotentialModMapObject | Where-Object {$_.ModulePSCompatibility -eq "WinPS"}
         }
-    }
-
-    if ($PSVersionTable.PSEdition -eq "Core") {
-        $InvPSCompatSplatParams = @{
-            InvocationMethod                    = $(Get-Variable "MyInvocation" -Scope 1 -ValueOnly).MyCommand.Name
-            ErrorAction                         = "SilentlyContinue"
-            WarningAction                       = "SilentlyContinue"
+        elseif ($PSVersionTable.PSEdition -ne "Core" -and $PotentialModMapObject.ModulePSCompatibility -contains "WinPS") {
+            $PotentialModMapObject = $PotentialModMapObject | Where-Object {$_.ModulePSCompatibility -eq "WinPS"}
         }
-        if ($PSBoundParameters['InstallModulesNotAvailableLocally']) {
-            $InvPSCompatSplatParams.Add("InstallModulesNotAvailableLocally",$True)
-        }
-        if ($PSBoundParameters['RequiredModules']) {
-            $InvPSCompatSplatParams.Add("RequiredModules",$RequiredModules)
-        }
-
-        $Output = InvokePSCompatibility @InvPSCompatSplatParams
-    }
-    else {
-        [System.Collections.ArrayList]$SuccessfulModuleImports = @()
-        [System.Collections.ArrayList]$FailedModuleImports = @()
-
-        foreach ($ModuleName in $RequiredModules) {
-            $ModuleInfo = [pscustomobject]@{
-                ModulePSCompatibility   = "WinPS"
-                ModuleName              = $ModuleName
-            }
-
-            if (![bool]$(Get-Module -ListAvailable $ModuleName) -and $InstallModulesNotAvailableLocally) {
-                # Install the Module
-                try {
-                    $null = Install-Module $ModuleName -Force -ErrorAction Stop -WarningAction SilentlyContinue
-                }
-                catch {
-                    Write-Error $_
-                    $global:FunctionResult = "1"
-                    return
-                }
-            }
-
-            if (![bool]$(Get-Module -ListAvailable $ModuleName)) {
-                $ErrMsg = "The Module '$ModuleName' is not available on the localhost! Did you " +
-                "use the -InstallModulesNotAvailableLocally switch? Halting!"
-                Write-Error $ErrMsg
-                continue
-            }
-
-            $ManifestFileItem = Get-Item $(Get-Module -ListAvailable $ModuleName).Path
-            $ModuleInfo | Add-Member -Type NoteProperty -Name ManifestFileItem -Value $ManifestFileItem
-
-            # Import the Module
-            try {
-                Import-Module $ModuleName -Scope Global -ErrorAction Stop
-                $null = $SuccessfulModuleImports.Add($ModuleInfo)
-            }
-            catch {
-                Write-Warning "Problem importing the $ModuleName Module!"
-                $null = $FailedModuleImports.Add($ModuleInfo)
-            }
-        }
-
-        $UnacceptableUnloadedModules = $FailedModuleImports
-
-        $Output = [pscustomobject]@{
-            SuccessfulModuleImports         = $SuccessfulModuleImports
-            FailedModuleImports             = $FailedModuleImports
-            UnacceptableUnloadedModules     = $UnacceptableUnloadedModules
+        elseif ($PSVersionTable.PSEdition -ne "Core" -and $PotentialModMapObject.ModulePSCompatibility -contains "PSCore") {
+            $PotentialModMapObject = $PotentialModMapObject | Where-Object {$_.ModulePSCompatibility -eq "PSCore"}
         }
     }
+    if ($PotentialModMapObject.Count -gt 1) {
+        $PotentialModMapObject = $PotentialModMapObject[-1]
+    }
 
-    $Output
+    $PotentialModMapObject
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU6g8ZNpZpqqBIYm4v3g0/EqJO
-# hy2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5gjjXtlvPa9l7iFOaU7Prdlg
+# a7qgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -149,11 +87,11 @@ function InvokeModuleDependencies {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNhR5/bt3jEUGbWf
-# 10ckkGRksisVMA0GCSqGSIb3DQEBAQUABIIBAHBYygHIuTj7ekinZDhZalb5JnGr
-# Qra89zUSl3zeGfYSvhUVROyNvLhr9mGqj+pTLnIB5voUQHNs+9TC1/+U7S8s1w1q
-# 9oVrT7LAga9xJfNc5/RgXwso485z9UaUArSh7yqc537wLF1mpMXxvKTwAliFiwH1
-# AyMjCGVd25HdBq2xql6mQCD3ZH1XcHimEkOUZyAVmUGTluyzVZ1jb3TRvyWJvIU1
-# pdceuEychWgBNkbO5eW/Jb+7FJx0zZBILynJRQtGjnypTBTYBiKSabZUA2Mcav3v
-# YSFUk5HFzP0pheLRb11hODFX7XY/ffafC/uO/qUCCUc5tmL2yMhZiE22h1s=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFL/01+JW7V1uhUeF
+# bflwsr8d8E30MA0GCSqGSIb3DQEBAQUABIIBAHrXU368RmI01xKi0mHsBOsUvDGL
+# 6BqgdlEkDSQIAfPvEAjZlOUgHCA6ZDB6NqjlbNO2n8SScfOJFNJ/F0ZrV8jgxIIe
+# p8iPlqc6ScoDtx/9bA80adgsgwtrKg/dfP1W8KFXRfBRql0h05UQ3PYJFaQK7fA4
+# 8GHzDBD2ZKyH9O9x4kisDLaBgnPAgivZkt28fWsdbMwjgru+T+ox61FXJUy5ceH+
+# ly7F1miFFsFZF5Omk3aaqI0geVNiUAcSIF37LoRbugE5eax4Xns3sNmKtrk7bq9D
+# 4IcOgGXfvCf230/SNMBsBflvP24iJ0gQnWOjr1s2nXbr32lwSXMkvzZzY4k=
 # SIG # End signature block
