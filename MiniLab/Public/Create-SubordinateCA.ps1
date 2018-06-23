@@ -227,32 +227,6 @@ function Create-SubordinateCA {
         return
     }
 
-    $FunctionsForSBUse = @(
-        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text
-        ${Function:GetElevation}.Ast.Extent.Text
-        ${Function:GetFileLockProcess}.Ast.Extent.Text
-        ${Function:GetNativePath}.Ast.Extent.Text
-        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-        ${Function:InstallFeatureDism}.Ast.Extent.Text
-        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-        ${Function:NewUniqueString}.Ast.Extent.Text
-        ${Function:PauseForWarning}.Ast.Extent.Text
-        ${Function:ResolveHost}.Ast.Extent.Text
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-        ${Function:UnzipFile}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-        ${Function:Generate-Certificate}.Ast.Extent.Text
-        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-        ${Function:Manage-HyperVVM}.Ast.Extent.Text
-        ${Function:New-DomainController}.Ast.Extent.Text
-        ${Function:New-RootCA}.Ast.Extent.Text
-        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-        ${Function:New-SubordinateCA}.Ast.Extent.Text
-    )
-
     $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
     $DomainShortName = $($FinalDomainName -split '\.')[0]
 
@@ -361,47 +335,31 @@ function Create-SubordinateCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        $NewVMDeploySBAsString = @(
-            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
-            ''
-            "`$env:Path = '$env:Path'"
-            ''
-            '# Load the functions we packed up'
-            '$args | foreach { Invoke-Expression $_ }'
-            ''
-            '$DeployBoxSplatParams = @{'
-            "    VagrantBox                  = '$Windows2016VagrantBox'"
-            '    CPUs                        = 2'
-            '    Memory                      = 4096'
-            '    VagrantProvider             = "hyperv"'
-            "    VMName                      = '$DomainShortName' + 'SubCA'"
-            "    VMDestinationDirectory      = '$VMStorageDirectory'"
-            '    SkipHyperVInstallCheck      = $True'
-            '    CopyDecompressedDirectory   = $True'
-            '}'
-            ''
-            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
-            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
-            '    }'
-            '}'
-            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
-            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
-            '    }'
-            '}'
-            ''
-            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
-            '$DeployBoxResult'
-        )
-
-        try {
-            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
-        }
-        catch {
-            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
-            $global:FunctionResult = "1"
-            return
+        $NewVMDeploySB = {
+            $DeployBoxSplatParams = @{
+                VagrantBox                  = $Windows2016VagrantBox
+                CPUs                        = 2
+                Memory                      = 4096
+                VagrantProvider             = "hyperv"
+                VMName                      = $DomainShortName + 'SubCA'
+                VMDestinationDirectory      = $VMStorageDirectory
+                SkipHyperVInstallCheck      = $True
+            }
+            
+            if ($DecompressedBoxDir) {
+                if ($(Get-Item $DecompressedBoxDir).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('DecompressedBoxDirectory',$DecompressedBoxDir)
+                }
+            }
+            if ($BoxFilePath) {
+                if (-not $(Get-Item $BoxFilePath).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('BoxFilePath',$BoxFilePath)
+                }
+            }
+            
+            Write-Host "Deploying Hyper-V Vagrant Box..."
+            $DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+            $DeployBoxResult
         }
 
         if (!$IPofServerToBeSubCA) {
@@ -409,16 +367,21 @@ function Create-SubordinateCA {
 
             Write-Host "Deploying New Subordinate CA VM '$DomainShortName`SubCA'..."
 
-            $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $(Get-Job).Name
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewSubCAVMDeployJobName = "NewSubCAVM"
+            }
 
             $NewSubCAVMDeployJobSplatParams = @{
-                Name            = $NewSubCAVMDeployJobName
+                RunspaceName    = $NewSubCAVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                Wait            = $True
             }
-            $NewSubCAVMDeployJobInfo = Start-Job @NewSubCAVMDeployJobSplatParams
+            $NewRootCAVMDeployResult = New-Runspace @NewRootCAVMDeployJobSplatParams
 
-            $NewSubCAVMDeployResult = Wait-Job -Job $NewSUbCAVMDeployJobInfo | Receive-Job
             $IPofServerToBeSubCA = $NewSubCAVMDeployResult.VMIPAddress
 
             while (![bool]$(Get-VM -Name "$DomainShortName`SubCA" -ErrorAction SilentlyContinue)) {
@@ -544,7 +507,7 @@ function Create-SubordinateCA {
 
     #region >> Join the Servers to Domain And Rename If Necessary
 
-    $JoinDomainJobSB = {
+    $JoinDomainRSJobSB = {
         $JoinDomainSBAsString = @(
             '# Synchronize time with time servers'
             '$null = W32tm /resync /rediscover /nowait'
@@ -594,10 +557,10 @@ function Create-SubordinateCA {
         }
 
         $InvCmdJoinDomainSplatParams = @{
-            ComputerName    = $args[0]
-            Credential      = $args[1]
+            ComputerName    = $IPofServerToBeSubCA
+            Credential      = $PSRemotingCredentials
             ScriptBlock     = $JoinDomainSB
-            ArgumentList    = $args[2],$args[3],$args[4],$args[5]
+            ArgumentList    = $IPofDomainController,$DesiredHostNameSubCA,$ExistingDomain,$DomainAdminCredentials
         }
         try {
             Invoke-Command @InvCmdJoinDomainSplatParams
@@ -629,8 +592,10 @@ function Create-SubordinateCA {
         Write-Host "Joining the Sub CA to the Domain..."
         $DesiredHostNameSubCA = $DomainShortName + "SubCA"
 
-        $JoinSubCAJobName = NewUniqueString -PossibleNewUniqueString "JoinSubCA" -ArrayOfStrings $(Get-Job).Name
+        $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+        $JoinSubCAJobName = NewUniqueString -PossibleNewUniqueString "JoinSubCA" -ArrayOfStrings $RunspaceNames
 
+        <#
         $JoinSubCAArgList = @(
             $IPofServerToBeSubCA
             $PSRemotingCredentials
@@ -639,14 +604,13 @@ function Create-SubordinateCA {
             $ExistingDomain
             $DomainAdminCredentials
         )
+        #>
         $JoinSubCAJobSplatParams = @{
-            Name            = $JoinSubCAJobName
-            Scriptblock     = $JoinDomainJobSB
-            ArgumentList    = $JoinSubCAArgList
+            RunspaceName    = $JoinSubCAJobName
+            Scriptblock     = $JoinDomainRSJobSB
+            Wait            = $True
         }
-        $JoinSubCAJobInfo = Start-Job @JoinSubCAJobSplatParams
-        
-        $JoinSubCAResult = Wait-Job -Job $JoinSubCAJobInfo | Receive-Job
+        $JoinSubCAResult = New-Runspace @JoinRootCAJobSplatParams
 
         # Verify Sub CA is Joined to Domain
         # Try to create a PSSession to the Sub CA for 15 minutes, then give up
@@ -703,8 +667,8 @@ function Create-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUuzvWgCShb6ybHQEQBc7LgWdx
-# T8ygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmVuEQrBBVARJSsjo/7RZhKXF
+# wTOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -761,11 +725,11 @@ function Create-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJvBKdqLqXaMD6v0
-# wm4CgF4/AhCWMA0GCSqGSIb3DQEBAQUABIIBACPJofvpWi8CgBbl+HFbooEe/8XB
-# bAjz/P2MT/oj/MGEJ/cmk3qIadKLgow1dRszDLiVAbsaJFhf+KAIKp0aMmWcUe9N
-# QeQqvw0lqH9paVnaZnM8qvIggJwPqzsiVJ+YDRlnrtiE+LceIQHoFBxJS0Zw9/h1
-# ZBkGKG3ejAaw9VyOj9BoYn9irIGkagLaFad4Fi+L+1xHY9fT12P4qG2UiXS6aigr
-# m0/spYqY5T95qX5KAUNZmyJBLfCWs31KJNqpenIhf24Qe/nXAwYXpQHaGh9dMSDm
-# VvzENdxKY6Pg3pCOdO77GrkROfd13KF1kqTWrSNiWht0OSy1eEdtj/3zcAU=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBSIzRs1peajAklX
+# ndjE2E/oySv5MA0GCSqGSIb3DQEBAQUABIIBAK89ftsw4GmgKzFE9B6nHVh1gbtp
+# uGvsfoey47i+V500z1RHX9+9vYjpsKmljgaO3boBq/3JrONIBrtg+EiYRF3h7dx0
+# /eZ6S8V6zf3pjoNm3Xm5LGd2dkIdS7ba41JeTDM6WY5KycuPj/OIf09vcrMe0M0r
+# cKjP+x945jMJ9fr610NO8sZdZwO8N5rBeT/1gw3A90qF77fJlAWVKNfSYBY6DGlt
+# DLofBDO/rnHtKfDQnzgjFUHCeWmaWnUXWWfxNO4WPuk0NJRMwspyoPQyxAcg6KSa
+# 2NCAN1YWK6fTlJ+1/+fMUWmntWw4aiUpj0N7AJ482Rsq8W/778XM86AhpNs=
 # SIG # End signature block

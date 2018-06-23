@@ -231,6 +231,17 @@ function New-SubordinateCA {
 
         #region >> Prep
 
+        # Import any Module Dependencies
+        $RequiredModules = @("PSPKI","ServerManager","WebAdministration")
+        $InvModDepSplatParams = @{
+            RequiredModules                     = $RequiredModules
+            InstallModulesNotAvailableLocally   = $True
+            ErrorAction                         = "Stop"
+        }
+        $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+        $PSPKIModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "PSPKI"}
+        $ServerManagerModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "ServerManager"}
+
         # Make sure we can find the Domain Controller(s)
         try {
             $DomainControllerInfo = GetDomainController -Domain $(Get-CimInstance win32_computersystem).Domain -UseLogonServer -WarningAction SilentlyContinue
@@ -251,38 +262,6 @@ function New-SubordinateCA {
         }
         if (!$(Test-Path $FileOutputDirectory)) {
             $null = New-Item -ItemType Directory -Path $FileOutputDirectory 
-        }
-
-        try {
-            Import-Module PSPKI -ErrorAction Stop
-        }
-        catch {
-            try {
-                if ($PSVersionTable.PSEdition -ne "Core") {
-                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                else {
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-
-                Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
-                Import-Module PSPKI -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-
-        try {
-            Import-Module ServerManager -ErrorAction Stop
-        }
-        catch {
-            Write-Error "Problem importing the ServerManager Module! Halting!"
-            $global:FunctionResult = "1"
-            return
         }
 
         $WindowsFeaturesToAdd = @(
@@ -331,7 +310,7 @@ function New-SubordinateCA {
             }
             catch {
                 Write-Error $_
-                Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+                Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
                 $global:FunctionResult = "1"
                 return
             }
@@ -637,9 +616,18 @@ function New-SubordinateCA {
         #ldifde -i -k -f $($RootCASMBShareMount.Name + ':\' + $NewWebServerTemplateCommonName + '.ldf')
         
         try {
-            # Add New Cert Templates to List of Temps to Issue using the PSPKI Module
-            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
-            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+            if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
+                # Add New Cert Templates to List of Temps to Issue using the PSPKI Module
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+            }
+            else {
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    # Add New Cert Templates to List of Temps to Issue using the PSPKI Module
+                    $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
+                    $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+                } -ArgumentList $NewComputerTemplateCommonName,$NewWebServerTemplateCommonName
+            }
         }
         catch {
             Write-Error $_
@@ -761,13 +749,26 @@ function New-SubordinateCA {
             $null = certutil -f -setreg CA\\CRLOverlapPeriod "Days"
             $null = certutil -f -setreg CA\\CRLOverlapUnits 3
 
-            # Remove pre-existing http CDP, add custom CDP
-            $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http#*" } | Remove-CACrlDistributionPoint -Force
-            $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
+            if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
+                # Remove pre-existing http CDP, add custom CDP
+                $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http#*" } | Remove-CACrlDistributionPoint -Force
+                $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
 
-            # Remove pre-existing http AIA, add custom AIA
-            $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" } | Remove-CAAuthorityInformationAccess -Force
-            $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+                # Remove pre-existing http AIA, add custom AIA
+                $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" } | Remove-CAAuthorityInformationAccess -Force
+                $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+            }
+            else {
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    # Remove pre-existing http CDP, add custom CDP
+                    $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http#*" } | Remove-CACrlDistributionPoint -Force
+                    $null = Add-CACrlDistributionPoint -Uri $args[0] -AddToCertificateCdp -Force
+
+                    # Remove pre-existing http AIA, add custom AIA
+                    $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" } | Remove-CAAuthorityInformationAccess -Force
+                    $null = Add-CAAuthorityInformationAccess -Uri $args[1] -AddToCertificateAIA -Force
+                } -ArgumentList $CDPUrl,$AIAUrl
+            }
 
             # Enable all event auditing
             $null = certutil -f -setreg CA\\AuditFilter 127
@@ -799,7 +800,6 @@ function New-SubordinateCA {
         # Configure HTTPS Binding
         try {
             Write-Host "Configuring IIS https binding to use $PKIWebsiteCertFileOut..."
-            Import-Module WebAdministration
             Remove-Item IIS:\SslBindings\*
             $null = Get-ChildItem Cert:\LocalMachine\My | Where-Object {$_.Thumbprint -eq $PKIWebsiteCertThumbPrint} | New-Item IIS:\SslBindings\0.0.0.0!443
         }
@@ -1023,34 +1023,17 @@ function New-SubordinateCA {
         AIAUrl                              = $AIAUrl
     }
 
-    # Install any required PowerShell Modules...
-    [array]$NeededModules = @(
-        "PSPKI"
-    )
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    # Install any required PowerShell Modules
+    <#
+    # NOTE: This is handled by the MiniLab Module Import
+    $RequiredModules = @("PSPKI")
+    $InvModDepSplatParams = @{
+        RequiredModules                     = $RequiredModules
+        InstallModulesNotAvailableLocally   = $True
+        ErrorAction                         = "Stop"
     }
-    else {
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-
-    [System.Collections.ArrayList]$FailedModuleInstall = @()
-    foreach ($ModuleResource in $NeededModules) {
-        try {
-            $null = Install-Module $ModuleResource -ErrorAction Stop
-        }
-        catch {
-            Write-Error $_
-            $null = $FailedModuleInstall.Add($ModuleResource)
-            continue
-        }
-    }
-    if ($FailedModuleInstall.Count -gt 0) {
-        Write-Error "Problem installing the following DSC Modules:`n$($FailedModuleInstall -join "`n")"
-        $global:FunctionResult = "1"
-        return
-    }
+    $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+    #>
 
     #endregion >> Initial Prep
 
@@ -1087,10 +1070,28 @@ function New-SubordinateCA {
             return
         }
 
-        # Transfer any required PowerShell Modules
-        [array]$ModulesToTransfer = foreach ($ModuleResource in $NeededModules) {
-            $Module = Get-Module -ListAvailable $ModuleResource
-            "$($($Module.ModuleBase -split $ModuleResource)[0])\$ModuleResource"
+        # Transfer any Required Modules that were installed on $env:ComputerName from an external source
+        $NeededModules = @("PSPKI")
+        [System.Collections.ArrayList]$ModulesToTransfer = @()
+        foreach ($ModuleResource in $NeededModules) {
+            $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
+            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+                $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Install-Module $args[0]
+                    }
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Write-Error $("Problem installing" + $args[0])
+                    }
+                    $Module = Get-Module -ListAvailable $args[0]
+                    $($Module.ModuleBase -split $args[0])[0] + $args[0]
+                } -ArgumentList $ModuleResource
+            }
+            else {
+                $ModuleBase = $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
+            }
+            
+            $null = $ModulesToTransfer.Add($ModuleBase)
         }
 
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -1113,67 +1114,14 @@ function New-SubordinateCA {
             ${Function:SetupSubCA}.Ast.Extent.Text
         )
 
-        # Invoke-CommandAs Module looked promising, but doesn't actually work (it just hangs). Maybe in future updates...
-        # For more info, see: https://github.com/mkellerman/Invoke-CommandAs
-        <#
-        if (![bool]$(Get-Module -ListAvailable Invoke-CommandAs -ErrorAction SilentlyContinue)) {
-            try {
-                Write-Host "Installing 'Invoke-CommandAs' PowerShell Module..."
-                if ($PSVersionTable.PSEdition -ne "Core") {
-                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                else {
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                Install-Module Invoke-CommandAs -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-
-        try {
-            Write-Host "Importing 'Invoke-CommandAs' PowerShell Module..."
-            Import-Module Invoke-CommandAs -ErrorAction Stop
-        }
-        catch {
-            Write-Error $_
-            $global:FunctionResult = "1"
-            return
-        }
-
-        Invoke-CommandAs -Session $SubCAPSSession -ScriptBlock {
-            Start-Transcript -Path "C:\NewSubCATask.log" -Append
-            $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
-
-            $SetupSubCASplatParams = @{
-                DomainAdminCredentials              = $using:DomainAdminCredentials
-                NetworkInfoPSObjects                = $using:NetworkInfoPSObjects
-                CAType                              = $using:CAType
-                NewComputerTemplateCommonName       = $using:NewComputerTemplateCommonName
-                NewWebServerTemplateCommonName      = $using:NewWebServerTemplateCommonName
-                FileOutputDirectory                 = $using:FileOutputDirectory
-                CryptoProvider                      = $using:CryptoProvider
-                KeyLength                           = $using:KeyLength
-                HashAlgorithm                       = $using:HashAlgorithm
-                KeyAlgorithmValue                   = $using:KeyAlgorithmValue
-                CDPUrl                              = $using:CDPUrl
-                AIAUrl                              = $using:AIAUrl
-            }
-            
-            SetupSubCA @SetupSubCASplatParams
-            Stop-Transcript
-
-        } -As $DomainAdminCredentials
-        #>
-
+        # Initialize the Remote Environment
+        $FunctionsForRemoteUse = $script:FunctionsForSBUse
+        $FunctionsForRemoteUse.Add($(${Function:SetupSubCA}.Ast.Extent.Text))
         $DomainAdminAccount = $DomainAdminCredentials.UserName
         $DomainAdminPwd = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DomainAdminCredentials.Password))
         $Output = Invoke-Command -Session $SubCAPSSession -ScriptBlock {
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
+            $script:ModuleDependenciesMap = $args[0]
             ${Function:GetDomainController}.Ast.Extent.Text | Out-File "$HOME\GetDomainController.ps1"
             ${Function:SetupSubCA}.Ast.Extent.Text | Out-File "$HOME\SetupSubCA.ps1"
             $using:NetworkInfoPSObjects | Export-CliXml "$HOME\NetworkInfoPSObjects.xml"
@@ -1280,7 +1228,7 @@ function New-SubordinateCA {
                 [array]$FilesToReview = Get-ChildItem $HOME -File | Where-Object {$_.Extension -match '\.ps1|\.log|\.xml'}
                 $FilesToReview.FullName
             }
-        }
+        } -ArgumentList $script:ModuleDependenciesMap
     }
     else {
         Write-Host "This will take about 1 hour...go grab a coffee..."
@@ -1297,8 +1245,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUZlqNobZlfUw9MhPMPryOUVIE
-# jXigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUibZVE7omU1JNPwgsqHsoHRSs
+# yTigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1355,11 +1303,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBLjS4jkdvNTJ0j2
-# l3HXzKl1Yf+nMA0GCSqGSIb3DQEBAQUABIIBADkM7Le995PsFpas6QS6EAhQw1qh
-# OBlpo4NHts8QvEeJHA4fVFMDUSASYR/Q+OF4+1PGuKNDu4eoo99DdpsTM3pp5b+J
-# t14wNhZzOxVtzXja/OFrwPndoHi8G3bvaOpwuEwiOfAk1SoKKRbKxHXF3Q8vaYlz
-# G813qINoEMzSeF+OtvCFy7eTEa6g3fLoF8yyrJZvHSd4+P3BfJLD3F7OsCfXl4ri
-# Lely/flymoUq2vzdfD6mu41xtJoeraI9I572mW2iIDMneNWayYSTqtag1VHw08yk
-# od3xdLwcvCPMPdZVBOFO1I0vK4uyl4J5F2vDDoMmHXhJvLLC+8otbtPcfoA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJStoWB9Gel0Ulzp
+# gGaQN+7W0AUZMA0GCSqGSIb3DQEBAQUABIIBAA8Odeazd3wuKW2lx77v4WN2x28g
+# G3mtv7++wi2/ao4UZTXuIkV2ofhNZSrF7mOv+534i6NLDucdGbC49lmjMJjwsKcl
+# Yx5+EQg6Hz68jn8s5/nNUK9YqjXsXfFHzdTdHQxboYteIDuf53Z397LkWWOE09bF
+# 7m2L3UiKT+qAk9fjxJ2wmSiN5oG0LHvALdPDT0w+wv26gq5wAipapBkEt5Cp6Jec
+# MqNT7tn1OvcS9aJ9+iWz5dfoAHVTbesakNnM5jBoofjqHraLOmBXM0zchXw66eaq
+# PrrVC1A5a6gjjgOI2rAO9br1iS8lPaHtWNBnEkAEBq50lOKMFzHV2XR3gLM=
 # SIG # End signature block

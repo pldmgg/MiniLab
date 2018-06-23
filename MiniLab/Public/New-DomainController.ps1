@@ -174,8 +174,8 @@ function New-DomainController {
         # NOTE: Usually $Module.ModuleBase is the version number directory, and its parent is the
         # directory that actually matches the Module Name. $ModuleBaseParent is the name of the
         # directory that matches the name of the Module
-        $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $DSCResource}
-        $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
+        $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $DSCResource}
+        #$ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
 
         $ModuleBaseParent = $($ModMapObj.ManifestFileItem.FullName -split $DSCResource)[0] + $DSCResource
         
@@ -748,8 +748,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQULWlZQqYb72rLNBTXEWHccU4f
-# QE2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUj88nLiN1btg7tYCemLdGPOaY
+# zqugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -806,11 +806,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFP7qH3iYLFMbBq8+
-# GqP2Ku5bXAroMA0GCSqGSIb3DQEBAQUABIIBAC8EOR9SZjqf8xCa/nsiAlb6m+MN
-# 8fahUAgoJOID0yyQ+rxBO29EUb5s71TCnodcbkDoiNCXTsRYkRUP397Wy7S37bhK
-# +t+htoUN1eycYKuL5SkmiK2zk+5XPUznd2hwRTtER2oQEZbr5yjhhI9DBmTQf4W3
-# WN8U2X2qk/nMhnQEOAKROJlxGSwGLFgASnhGQmkA4IdPWwTZVgy4U7M+O2WrfDNE
-# jmHYnbxEJMxB1VadAKP4ayoNoaZuEfd3bSKg4nSevtMfdY7khMkdlaPpOAG9sk9k
-# IVtzpaKcO+IwTYLgJ2u5GffJ2GJ8OhiWbxzhnygarJESVyt+NllwudOUmMA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMUW3BaY//Zgj2rd
+# qqJUVB6d6BzyMA0GCSqGSIb3DQEBAQUABIIBACC/5fQgepp//pPqbUESgr5x1BHR
+# b5qQsZ219a4bUdNlvhgFlLZRrOnMQ8P9NQXTDq1g1GHg8rf1KfzCHC+Q/EmwLDRM
+# Vp7rprERa7hhCalB8ouAt308E746my3xKbnSiRqDeyamjblW6ZCy9hB3ZPRJTbU9
+# B3E9PvzTOnwLaFkd79BLrFK3JR37ff5CdpIWMaRFqjP1JqMj2zFVJos7VrdNPOgb
+# 58+L3krrYWC2miIZouZuGifMeSUUxqCTxIKTZ6p76w7QM1DIQZ7zETCO3YsboOT1
+# vtB6fTTtHwJPyyqLUfmv12GKbqv+oh/CUobfvoQtoPGa9sx67/tiMI+NU/g=
 # SIG # End signature block

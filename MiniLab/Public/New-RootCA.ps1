@@ -229,13 +229,14 @@ function New-RootCA {
 
         # Import any Module Dependencies
         $RequiredModules = @("PSPKI","ServerManager")
-        
         $InvModDepSplatParams = @{
             RequiredModules                     = $RequiredModules
             InstallModulesNotAvailableLocally   = $True
             ErrorAction                         = "Stop"
         }
         $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+        $PSPKIModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "PSPKI"}
+        $ServerManagerModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "ServerManager"}
 
         # Make sure we can find the Domain Controller(s)
         try {
@@ -364,14 +365,14 @@ function New-RootCA {
 
             Write-Host "Done initial certutil commands..."
 
-            # Update the Local CDP
-            $LocalCDP = (Get-CACrlDistributionPoint)[0]
-            $null = $LocalCDP | Remove-CACrlDistributionPoint -Force
-            $LocalCDP.PublishDeltaToServer = $false
-            $null = $LocalCDP | Add-CACrlDistributionPoint -Force
-
             # Remove pre-existing ldap/http CDPs, add custom CDP
-            if ($PSVersionTable.PSEdition -ne "Core") {
+            if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
+                # Update the Local CDP
+                $LocalCDP = (Get-CACrlDistributionPoint)[0]
+                $null = $LocalCDP | Remove-CACrlDistributionPoint -Force
+                $LocalCDP.PublishDeltaToServer = $false
+                $null = $LocalCDP | Add-CACrlDistributionPoint -Force
+
                 $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
                 $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
 
@@ -381,6 +382,12 @@ function New-RootCA {
             }
             else {
                 $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    # Update the Local CDP
+                    $LocalCDP = (Get-CACrlDistributionPoint)[0]
+                    $null = $LocalCDP | Remove-CACrlDistributionPoint -Force
+                    $LocalCDP.PublishDeltaToServer = $false
+                    $null = $LocalCDP | Add-CACrlDistributionPoint -Force
+
                     $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
                     $null = Add-CACrlDistributionPoint -Uri $args[0] -AddToCertificateCdp -Force
 
@@ -425,6 +432,7 @@ function New-RootCA {
         Write-Host "Creating new Machine Certificate Template..."
 
         while (!$WebServTempl -or !$ComputerTempl) {
+            # NOTE: ADSI type accelerator does not exist in PSCore
             if ($PSVersionTable.PSEdition -ne "Core") {
                 $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
             }
@@ -533,7 +541,7 @@ function New-RootCA {
 
         # Add the newly created custom Computer and WebServer Certificate Templates to List of Certificate Templates to Issue
         # For this to be (relatively) painless, we need the following PSPKI Module cmdlets
-        if ($PSVersionTable.PSEdition -ne "Core") {
+        if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
             $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
             $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
         }
@@ -753,6 +761,18 @@ function New-RootCA {
         AIAUrl                              = $AIAUrl
     }
 
+    # Install any required PowerShell Modules
+    <#
+    # NOTE: This is handled by the MiniLab Module Import
+    $RequiredModules = @("PSPKI")
+    $InvModDepSplatParams = @{
+        RequiredModules                     = $RequiredModules
+        InstallModulesNotAvailableLocally   = $True
+        ErrorAction                         = "Stop"
+    }
+    $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+    #>
+
     #endregion >> Initial Prep
 
 
@@ -788,21 +808,28 @@ function New-RootCA {
             return
         }
 
-        # Transfer any required PowerShell Modules
+        # Transfer any Required Modules that were installed on $env:ComputerName from an external source
         $NeededModules = @("PSPKI")
-        [array]$ModulesToTransfer = foreach ($ModuleResource in $NeededModules) {
-            $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {
-                $_.ModuleName -eq $ModuleResource -and $_.ModulePSCompatibility -eq "WinPS"
+        [System.Collections.ArrayList]$ModulesToTransfer = @()
+        foreach ($ModuleResource in $NeededModules) {
+            $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
+            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+                $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Install-Module $args[0]
+                    }
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Write-Error $("Problem installing" + $args[0])
+                    }
+                    $Module = Get-Module -ListAvailable $args[0]
+                    $($Module.ModuleBase -split $args[0])[0] + $args[0]
+                } -ArgumentList $ModuleResource
             }
-            $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
-
-            if (!$ModMapObj) {
-                Write-Error "Unable to find appropriate Module to transfer to Remote Host! Halting!"
-                $global:FunctionResult = "1"
-                return
+            else {
+                $ModuleBase = $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
             }
             
-            $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
+            $null = $ModulesToTransfer.Add($ModuleBase)
         }
         
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -838,8 +865,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUTULSET4k+hcexxYlo/1wJcO7
-# LOugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPLR75gWB5tVxrvA7/uWAhxcB
+# Fjugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -896,11 +923,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGbaQb+CHg/fFGc/
-# fv2D9KJd2MxAMA0GCSqGSIb3DQEBAQUABIIBAFrrZkVDPfRer+lMX31imFf0b9da
-# KiBpdfIvSsMtWuVwds5lRnJz/0XblBSypbzCIgQLgFFr00zA88SNH34o8N9zhhjl
-# WLXiQhBOoueZITMlzr9XM/6s3yypkfRwNzSdjTaOkLa7iiU5AP7j6Ut+FTmgoTaB
-# Bar0bP8f3gCPaed/woGTtIW6aJh4t7hLGLIqb9VLUL8HDfX0M1TL53LBQlGvJuIf
-# tv6dJQ0dG+tKe+2j9A7XqkXzF6X+wiZr3Dj8+lRmx5C70cznF/Ugybz+hhHxYLos
-# 71IJ2v6dhDmFeIbYn3djFBMKzkm49EfevrspL9rTYD/1Vt2A8o41hdGXpdY=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFN+dF41B05lEfcar
+# pMH2PEwlfE+JMA0GCSqGSIb3DQEBAQUABIIBAHIpgDI3Zib8EbpSSG21jYMnmwtt
+# DgfLT+zWl53JtmCdza7OP6mzZyyRjjIIHWaM1ldba2+Ph8qEXxl9n2JJtJnbfbFJ
+# zZe5N6us+Ww9EzHGAsUo32nrruxbGSu0y016moq4faHD9OvRU6TLsJCjPFflH/+5
+# aN1D0xks9Sco8CeGTZricNZoQCvVvngR0QVl2WJoMPan7JnwTW6m7ConX4+NiQE5
+# PKtaU2oW996kAb6CzhmR7rSvgjdVXmqa5ZvZ8YZAp9LDVe+WC5Pv4x8yYheFd/4D
+# h6w0Qd/YjaKsEGVbxVaKJAyGp8a9PvIcFU7g1CgsGPr23AunJprPGs9G+2Q=
 # SIG # End signature block

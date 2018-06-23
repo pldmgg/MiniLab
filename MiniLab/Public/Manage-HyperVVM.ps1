@@ -364,9 +364,23 @@ function Manage-HyperVVM {
             }
         }
         else {
+            # Create the Snapshot Directory if it doesn't already exist
+            $SnapShotDir = $($VhdPathOverride -split "Virtual Hard Disks")[0] + "Snapshots"
+            if (!$(Test-Path $SnapShotDir)) {
+                $null = New-Item -ItemType Directory -Path $SnapShotDir -Force
+            }
+
             Write-Output "Creating VM $VmName..."
             $vm = Hyper-V\New-VM -Name $VmName -Generation $VMGen -NoVHD
-            $null = Hyper-V\Set-VM -Name $VmName -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Production
+
+            $SetVMSplatParams = @{
+                Name                    = $VmName
+                AutomaticStartAction    = "Nothing"
+                AutomaticStopAction     = "ShutDown"
+                CheckpointType          = "Production"
+                SnapShotFileLocation    = $SnapShotDir
+            }
+            $null = Hyper-V\Set-VM @SetVMSplatParams
         }
 
         <#
@@ -651,8 +665,8 @@ function Manage-HyperVVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUz0hiOjE++2k3lVrvGz/7w8Jk
-# v6igggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUJEBd2FGOPgkqzN4eZEPMWWb
+# Q+mgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -709,11 +723,11 @@ function Manage-HyperVVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPOTs5vsUw6xxDwG
-# idwknZlLCGemMA0GCSqGSIb3DQEBAQUABIIBAJEhMZic1etW1GmkvIHRpLZ2jITv
-# SonXRr2xVp/a45hfOpiW2CSU4lf901zJTC/wy4UKofqW0aCXk+D7uuUv3DKjIFJH
-# YO3khnctr7eTbakVZM/h0gJGlkHuL+T3hIic5w5TVbFh3Ee/uxhgxddinTmStJJA
-# 1e2ftTsA3bAH2/AWNgGcsbjlDvFhi22D6+pdA4wWUw7oOxQgGmcahKeR2cl2Xsfy
-# FSQAZn/ohn6sua3nH6YwqLX/Bl8NXE4wbxWhEXHfMenX1pPLtdMA0xH4xV4GQcaz
-# aQY8//BfpCqhAYRI+W0EDnfgAyf1l9BsOj9qo6ebAKPIUtZjMjbrEkSKLAM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAVat6ITzrdskzjZ
+# o8owFbD74eTzMA0GCSqGSIb3DQEBAQUABIIBAE0lAP0ejHo9sE0sS7lNLjhGsSZC
+# 5JlrhAvtWK7uNB7JsA41ij5nMJgLdOs5mikes4ByZckmfnUxFCKoqqN+PUI1T71m
+# DYSyBi/kMGx33M8lCeqFyk0+hbt6Nje7QEesMFvYXzb1wTGRbz2k6/DPxhVayz3b
+# NIBOB3F/Ud0LlxX5u5fZLi730+DSaXy/naspUPCIYUaaOfcCNMJDoXErobAonmOV
+# UXUNlCBbGc+Se0WUCNqzJEQUph3XAedyKJjB2yNfzMizUUMbQVOU2nP2TI79hy0T
+# C5YRni0OWNcDb4D3earaoL7Cn4Owrr64dIv1kOaNvtjVV9XQU2HLnzPcA2o=
 # SIG # End signature block

@@ -376,7 +376,6 @@ function Create-Domain {
                 VMName                      = $DomainShortName + 'DC1'
                 VMDestinationDirectory      = $VMStorageDirectory
                 SkipHyperVInstallCheck      = $True
-                CopyDecompressedDirectory   = $True
             }
             
             if ($DecompressedBoxDir) {
@@ -715,8 +714,8 @@ function Create-Domain {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSTjPyc+WjrIDtsqiWm3ND8fJ
-# aNKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSvaYMowryv6H0VYFc01jOwc5
+# uIWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -773,11 +772,11 @@ function Create-Domain {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFD6YRWPEYp9/KaKy
-# haQfQBPtVVB4MA0GCSqGSIb3DQEBAQUABIIBAEt7UYGn73LtcTmON/2ZdWZhrLjo
-# MVwyMWHcZF33s2RFocrFN6zVWRChVClz2um4i1XPSXpog9RyoPMDB84VBiHcBrLH
-# gRJwt9h7LofGZhXFt5d3X2uH2pEn38oNQ4cx+E8ffPZvrBNNNN9iA7O9ocz1BcQp
-# Zq27oXNixwb2/qHNGWNiyvGdgCRFF4SU5Ntmf6eZk+cPI/4g13NbOK9ER0WFAr8f
-# FP+EwsIbbdeeSKk/AvLNhSd10gwhxKzX6yFa42ly5ZNW248gc9L+KIsJbZmwNVnw
-# bVkGka2+Iyc9McguObn4ESaC2u0wVaR5y/64Je985KL5iAV0qRE+ShfVMCI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNHpUlIQ4VQeMOvn
+# XJTLsVUPanjCMA0GCSqGSIb3DQEBAQUABIIBAF7vor76dAVeazB5ldswwR+azOF7
+# E6HlOEEpbYghazHV1xQQTr4Xdm/YePMD67j7XvjuNlbKidmT1kRPU3asekpaX2u3
+# qog87KM5vY34x05nW5r3pMcw7X+m19m4K+R9TLlwedbr/QzhovUPLTbxCN/4WOJs
+# cV1j6rvSf8bVcnSI5Qhjf0m5JRKXcz33Qf8Jvy1vLlTdQpaQf00HUEWRnLvkhdPF
+# gq3dXxfW6Hj1zlE+Qyz5+zyeFi1UMGvs921sRRtr7FtWBdg2K8a9bTdxvIevVbzK
+# ZntnIOfYYxMDcJU9tohcJoJiqCxhnsYvqLs+adYYAeIVDYk5cntz5R85hVg=
 # SIG # End signature block

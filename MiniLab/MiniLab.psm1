@@ -422,7 +422,6 @@ function Create-Domain {
                 VMName                      = $DomainShortName + 'DC1'
                 VMDestinationDirectory      = $VMStorageDirectory
                 SkipHyperVInstallCheck      = $True
-                CopyDecompressedDirectory   = $True
             }
             
             if ($DecompressedBoxDir) {
@@ -1079,51 +1078,6 @@ function Create-RootCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        <#
-        $NewVMDeploySBAsString = @(
-            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
-            ''
-            "`$env:Path = '$env:Path'"
-            ''
-            '# Load the functions we packed up'
-            '$args | foreach { Invoke-Expression $_ }'
-            ''
-            '$DeployBoxSplatParams = @{'
-            "    VagrantBox                  = '$Windows2016VagrantBox'"
-            '    CPUs                        = 2'
-            '    Memory                      = 4096'
-            '    VagrantProvider             = "hyperv"'
-            "    VMName                      = '$DomainShortName' + 'RootCA'"
-            "    VMDestinationDirectory      = '$VMStorageDirectory'"
-            '    SkipHyperVInstallCheck      = $True'
-            '    CopyDecompressedDirectory   = $True'
-            '}'
-            ''
-            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
-            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
-            '    }'
-            '}'
-            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
-            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
-            '    }'
-            '}'
-            ''
-            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
-            '$DeployBoxResult'
-        )
-
-        try {
-            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
-        }
-        catch {
-            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-        #>
-
         $NewVMDeploySB = {
             $DeployBoxSplatParams = @{
                 VagrantBox                  = $Windows2016VagrantBox
@@ -1133,7 +1087,6 @@ function Create-RootCA {
                 VMName                      = $DomainShortName + 'RootCA'
                 VMDestinationDirectory      = $VMStorageDirectory
                 SkipHyperVInstallCheck      = $True
-                CopyDecompressedDirectory   = $True
             }
             
             if ($DecompressedBoxDir) {
@@ -1384,7 +1337,8 @@ function Create-RootCA {
             Write-Host "Joining the Root CA to the Domain..."
             $DesiredHostNameRootCA = $DomainShortName + "RootCA"
 
-            $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $(Get-Job).Name
+            $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+            $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $RunspaceNames
 
             <#
             $JoinRootCAArgList = @(
@@ -1397,7 +1351,7 @@ function Create-RootCA {
             )
             #>
             $JoinRootCAJobSplatParams = @{
-                Name            = $JoinRootCAJobName
+                RunspaceName    = $JoinRootCAJobName
                 Scriptblock     = $JoinDomainRSJobSB
                 Wait            = $True
             }
@@ -1686,32 +1640,6 @@ function Create-SubordinateCA {
         return
     }
 
-    $FunctionsForSBUse = @(
-        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text
-        ${Function:GetElevation}.Ast.Extent.Text
-        ${Function:GetFileLockProcess}.Ast.Extent.Text
-        ${Function:GetNativePath}.Ast.Extent.Text
-        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-        ${Function:InstallFeatureDism}.Ast.Extent.Text
-        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-        ${Function:NewUniqueString}.Ast.Extent.Text
-        ${Function:PauseForWarning}.Ast.Extent.Text
-        ${Function:ResolveHost}.Ast.Extent.Text
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-        ${Function:UnzipFile}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-        ${Function:Generate-Certificate}.Ast.Extent.Text
-        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-        ${Function:Manage-HyperVVM}.Ast.Extent.Text
-        ${Function:New-DomainController}.Ast.Extent.Text
-        ${Function:New-RootCA}.Ast.Extent.Text
-        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-        ${Function:New-SubordinateCA}.Ast.Extent.Text
-    )
-
     $FinalDomainName = if ($NewDomain) {$NewDomain} else {$ExistingDomain}
     $DomainShortName = $($FinalDomainName -split '\.')[0]
 
@@ -1820,47 +1748,31 @@ function Create-SubordinateCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        $NewVMDeploySBAsString = @(
-            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
-            ''
-            "`$env:Path = '$env:Path'"
-            ''
-            '# Load the functions we packed up'
-            '$args | foreach { Invoke-Expression $_ }'
-            ''
-            '$DeployBoxSplatParams = @{'
-            "    VagrantBox                  = '$Windows2016VagrantBox'"
-            '    CPUs                        = 2'
-            '    Memory                      = 4096'
-            '    VagrantProvider             = "hyperv"'
-            "    VMName                      = '$DomainShortName' + 'SubCA'"
-            "    VMDestinationDirectory      = '$VMStorageDirectory'"
-            '    SkipHyperVInstallCheck      = $True'
-            '    CopyDecompressedDirectory   = $True'
-            '}'
-            ''
-            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
-            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
-            '    }'
-            '}'
-            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
-            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
-            '    }'
-            '}'
-            ''
-            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
-            '$DeployBoxResult'
-        )
-
-        try {
-            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
-        }
-        catch {
-            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
-            $global:FunctionResult = "1"
-            return
+        $NewVMDeploySB = {
+            $DeployBoxSplatParams = @{
+                VagrantBox                  = $Windows2016VagrantBox
+                CPUs                        = 2
+                Memory                      = 4096
+                VagrantProvider             = "hyperv"
+                VMName                      = $DomainShortName + 'SubCA'
+                VMDestinationDirectory      = $VMStorageDirectory
+                SkipHyperVInstallCheck      = $True
+            }
+            
+            if ($DecompressedBoxDir) {
+                if ($(Get-Item $DecompressedBoxDir).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('DecompressedBoxDirectory',$DecompressedBoxDir)
+                }
+            }
+            if ($BoxFilePath) {
+                if (-not $(Get-Item $BoxFilePath).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('BoxFilePath',$BoxFilePath)
+                }
+            }
+            
+            Write-Host "Deploying Hyper-V Vagrant Box..."
+            $DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+            $DeployBoxResult
         }
 
         if (!$IPofServerToBeSubCA) {
@@ -1868,16 +1780,21 @@ function Create-SubordinateCA {
 
             Write-Host "Deploying New Subordinate CA VM '$DomainShortName`SubCA'..."
 
-            $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $(Get-Job).Name
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewSubCAVMDeployJobName = "NewSubCAVM"
+            }
 
             $NewSubCAVMDeployJobSplatParams = @{
-                Name            = $NewSubCAVMDeployJobName
+                RunspaceName    = $NewSubCAVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                Wait            = $True
             }
-            $NewSubCAVMDeployJobInfo = Start-Job @NewSubCAVMDeployJobSplatParams
+            $NewRootCAVMDeployResult = New-Runspace @NewRootCAVMDeployJobSplatParams
 
-            $NewSubCAVMDeployResult = Wait-Job -Job $NewSUbCAVMDeployJobInfo | Receive-Job
             $IPofServerToBeSubCA = $NewSubCAVMDeployResult.VMIPAddress
 
             while (![bool]$(Get-VM -Name "$DomainShortName`SubCA" -ErrorAction SilentlyContinue)) {
@@ -2003,7 +1920,7 @@ function Create-SubordinateCA {
 
     #region >> Join the Servers to Domain And Rename If Necessary
 
-    $JoinDomainJobSB = {
+    $JoinDomainRSJobSB = {
         $JoinDomainSBAsString = @(
             '# Synchronize time with time servers'
             '$null = W32tm /resync /rediscover /nowait'
@@ -2053,10 +1970,10 @@ function Create-SubordinateCA {
         }
 
         $InvCmdJoinDomainSplatParams = @{
-            ComputerName    = $args[0]
-            Credential      = $args[1]
+            ComputerName    = $IPofServerToBeSubCA
+            Credential      = $PSRemotingCredentials
             ScriptBlock     = $JoinDomainSB
-            ArgumentList    = $args[2],$args[3],$args[4],$args[5]
+            ArgumentList    = $IPofDomainController,$DesiredHostNameSubCA,$ExistingDomain,$DomainAdminCredentials
         }
         try {
             Invoke-Command @InvCmdJoinDomainSplatParams
@@ -2088,8 +2005,10 @@ function Create-SubordinateCA {
         Write-Host "Joining the Sub CA to the Domain..."
         $DesiredHostNameSubCA = $DomainShortName + "SubCA"
 
-        $JoinSubCAJobName = NewUniqueString -PossibleNewUniqueString "JoinSubCA" -ArrayOfStrings $(Get-Job).Name
+        $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+        $JoinSubCAJobName = NewUniqueString -PossibleNewUniqueString "JoinSubCA" -ArrayOfStrings $RunspaceNames
 
+        <#
         $JoinSubCAArgList = @(
             $IPofServerToBeSubCA
             $PSRemotingCredentials
@@ -2098,14 +2017,13 @@ function Create-SubordinateCA {
             $ExistingDomain
             $DomainAdminCredentials
         )
+        #>
         $JoinSubCAJobSplatParams = @{
-            Name            = $JoinSubCAJobName
-            Scriptblock     = $JoinDomainJobSB
-            ArgumentList    = $JoinSubCAArgList
+            RunspaceName    = $JoinSubCAJobName
+            Scriptblock     = $JoinDomainRSJobSB
+            Wait            = $True
         }
-        $JoinSubCAJobInfo = Start-Job @JoinSubCAJobSplatParams
-        
-        $JoinSubCAResult = Wait-Job -Job $JoinSubCAJobInfo | Receive-Job
+        $JoinSubCAResult = New-Runspace @JoinRootCAJobSplatParams
 
         # Verify Sub CA is Joined to Domain
         # Try to create a PSSession to the Sub CA for 15 minutes, then give up
@@ -8281,9 +8199,23 @@ function Manage-HyperVVM {
             }
         }
         else {
+            # Create the Snapshot Directory if it doesn't already exist
+            $SnapShotDir = $($VhdPathOverride -split "Virtual Hard Disks")[0] + "Snapshots"
+            if (!$(Test-Path $SnapShotDir)) {
+                $null = New-Item -ItemType Directory -Path $SnapShotDir -Force
+            }
+
             Write-Output "Creating VM $VmName..."
             $vm = Hyper-V\New-VM -Name $VmName -Generation $VMGen -NoVHD
-            $null = Hyper-V\Set-VM -Name $VmName -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Production
+
+            $SetVMSplatParams = @{
+                Name                    = $VmName
+                AutomaticStartAction    = "Nothing"
+                AutomaticStopAction     = "ShutDown"
+                CheckpointType          = "Production"
+                SnapShotFileLocation    = $SnapShotDir
+            }
+            $null = Hyper-V\Set-VM @SetVMSplatParams
         }
 
         <#
@@ -8742,8 +8674,8 @@ function New-DomainController {
         # NOTE: Usually $Module.ModuleBase is the version number directory, and its parent is the
         # directory that actually matches the Module Name. $ModuleBaseParent is the name of the
         # directory that matches the name of the Module
-        $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $DSCResource}
-        $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
+        $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $DSCResource}
+        #$ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
 
         $ModuleBaseParent = $($ModMapObj.ManifestFileItem.FullName -split $DSCResource)[0] + $DSCResource
         
@@ -9545,13 +9477,14 @@ function New-RootCA {
 
         # Import any Module Dependencies
         $RequiredModules = @("PSPKI","ServerManager")
-        
         $InvModDepSplatParams = @{
             RequiredModules                     = $RequiredModules
             InstallModulesNotAvailableLocally   = $True
             ErrorAction                         = "Stop"
         }
         $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+        $PSPKIModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "PSPKI"}
+        $ServerManagerModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "ServerManager"}
 
         # Make sure we can find the Domain Controller(s)
         try {
@@ -9680,14 +9613,14 @@ function New-RootCA {
 
             Write-Host "Done initial certutil commands..."
 
-            # Update the Local CDP
-            $LocalCDP = (Get-CACrlDistributionPoint)[0]
-            $null = $LocalCDP | Remove-CACrlDistributionPoint -Force
-            $LocalCDP.PublishDeltaToServer = $false
-            $null = $LocalCDP | Add-CACrlDistributionPoint -Force
-
             # Remove pre-existing ldap/http CDPs, add custom CDP
-            if ($PSVersionTable.PSEdition -ne "Core") {
+            if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
+                # Update the Local CDP
+                $LocalCDP = (Get-CACrlDistributionPoint)[0]
+                $null = $LocalCDP | Remove-CACrlDistributionPoint -Force
+                $LocalCDP.PublishDeltaToServer = $false
+                $null = $LocalCDP | Add-CACrlDistributionPoint -Force
+
                 $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
                 $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
 
@@ -9697,6 +9630,12 @@ function New-RootCA {
             }
             else {
                 $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    # Update the Local CDP
+                    $LocalCDP = (Get-CACrlDistributionPoint)[0]
+                    $null = $LocalCDP | Remove-CACrlDistributionPoint -Force
+                    $LocalCDP.PublishDeltaToServer = $false
+                    $null = $LocalCDP | Add-CACrlDistributionPoint -Force
+
                     $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http*" -or $_.Uri -like "ldap*" } | Remove-CACrlDistributionPoint -Force
                     $null = Add-CACrlDistributionPoint -Uri $args[0] -AddToCertificateCdp -Force
 
@@ -9741,6 +9680,7 @@ function New-RootCA {
         Write-Host "Creating new Machine Certificate Template..."
 
         while (!$WebServTempl -or !$ComputerTempl) {
+            # NOTE: ADSI type accelerator does not exist in PSCore
             if ($PSVersionTable.PSEdition -ne "Core") {
                 $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
             }
@@ -9849,7 +9789,7 @@ function New-RootCA {
 
         # Add the newly created custom Computer and WebServer Certificate Templates to List of Certificate Templates to Issue
         # For this to be (relatively) painless, we need the following PSPKI Module cmdlets
-        if ($PSVersionTable.PSEdition -ne "Core") {
+        if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
             $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
             $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
         }
@@ -10069,6 +10009,18 @@ function New-RootCA {
         AIAUrl                              = $AIAUrl
     }
 
+    # Install any required PowerShell Modules
+    <#
+    # NOTE: This is handled by the MiniLab Module Import
+    $RequiredModules = @("PSPKI")
+    $InvModDepSplatParams = @{
+        RequiredModules                     = $RequiredModules
+        InstallModulesNotAvailableLocally   = $True
+        ErrorAction                         = "Stop"
+    }
+    $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+    #>
+
     #endregion >> Initial Prep
 
 
@@ -10104,21 +10056,28 @@ function New-RootCA {
             return
         }
 
-        # Transfer any required PowerShell Modules
+        # Transfer any Required Modules that were installed on $env:ComputerName from an external source
         $NeededModules = @("PSPKI")
-        [array]$ModulesToTransfer = foreach ($ModuleResource in $NeededModules) {
-            $PotentialModMapObject = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {
-                $_.ModuleName -eq $ModuleResource -and $_.ModulePSCompatibility -eq "WinPS"
+        [System.Collections.ArrayList]$ModulesToTransfer = @()
+        foreach ($ModuleResource in $NeededModules) {
+            $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
+            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+                $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Install-Module $args[0]
+                    }
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Write-Error $("Problem installing" + $args[0])
+                    }
+                    $Module = Get-Module -ListAvailable $args[0]
+                    $($Module.ModuleBase -split $args[0])[0] + $args[0]
+                } -ArgumentList $ModuleResource
             }
-            $ModMapObj = GetModMapObject -PotentialModMapObject $PotentialModMapObject
-
-            if (!$ModMapObj) {
-                Write-Error "Unable to find appropriate Module to transfer to Remote Host! Halting!"
-                $global:FunctionResult = "1"
-                return
+            else {
+                $ModuleBase = $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
             }
             
-            $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
+            $null = $ModulesToTransfer.Add($ModuleBase)
         }
         
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -11270,6 +11229,17 @@ function New-SubordinateCA {
 
         #region >> Prep
 
+        # Import any Module Dependencies
+        $RequiredModules = @("PSPKI","ServerManager","WebAdministration")
+        $InvModDepSplatParams = @{
+            RequiredModules                     = $RequiredModules
+            InstallModulesNotAvailableLocally   = $True
+            ErrorAction                         = "Stop"
+        }
+        $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+        $PSPKIModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "PSPKI"}
+        $ServerManagerModuleVerCheck = $ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq "ServerManager"}
+
         # Make sure we can find the Domain Controller(s)
         try {
             $DomainControllerInfo = GetDomainController -Domain $(Get-CimInstance win32_computersystem).Domain -UseLogonServer -WarningAction SilentlyContinue
@@ -11290,38 +11260,6 @@ function New-SubordinateCA {
         }
         if (!$(Test-Path $FileOutputDirectory)) {
             $null = New-Item -ItemType Directory -Path $FileOutputDirectory 
-        }
-
-        try {
-            Import-Module PSPKI -ErrorAction Stop
-        }
-        catch {
-            try {
-                if ($PSVersionTable.PSEdition -ne "Core") {
-                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                else {
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-
-                Install-Module PSPKI -ErrorAction Stop -WarningAction SilentlyContinue
-                Import-Module PSPKI -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-
-        try {
-            Import-Module ServerManager -ErrorAction Stop
-        }
-        catch {
-            Write-Error "Problem importing the ServerManager Module! Halting!"
-            $global:FunctionResult = "1"
-            return
         }
 
         $WindowsFeaturesToAdd = @(
@@ -11370,7 +11308,7 @@ function New-SubordinateCA {
             }
             catch {
                 Write-Error $_
-                Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+                Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
                 $global:FunctionResult = "1"
                 return
             }
@@ -11676,9 +11614,18 @@ function New-SubordinateCA {
         #ldifde -i -k -f $($RootCASMBShareMount.Name + ':\' + $NewWebServerTemplateCommonName + '.ldf')
         
         try {
-            # Add New Cert Templates to List of Temps to Issue using the PSPKI Module
-            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
-            $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+            if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
+                # Add New Cert Templates to List of Temps to Issue using the PSPKI Module
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
+                $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+            }
+            else {
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    # Add New Cert Templates to List of Temps to Issue using the PSPKI Module
+                    $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewComputerTemplateCommonName | Set-CATemplate
+                    $null = Get-CertificationAuthority -Name $env:ComputerName | Get-CATemplate | Add-CATemplate -Name $NewWebServerTemplateCommonName | Set-CATemplate
+                } -ArgumentList $NewComputerTemplateCommonName,$NewWebServerTemplateCommonName
+            }
         }
         catch {
             Write-Error $_
@@ -11800,13 +11747,26 @@ function New-SubordinateCA {
             $null = certutil -f -setreg CA\\CRLOverlapPeriod "Days"
             $null = certutil -f -setreg CA\\CRLOverlapUnits 3
 
-            # Remove pre-existing http CDP, add custom CDP
-            $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http#*" } | Remove-CACrlDistributionPoint -Force
-            $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
+            if ($PSPKIModuleVerCheck.ModulePSCompatibility -eq "WinPS") {
+                # Remove pre-existing http CDP, add custom CDP
+                $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http#*" } | Remove-CACrlDistributionPoint -Force
+                $null = Add-CACrlDistributionPoint -Uri $CDPUrl -AddToCertificateCdp -Force
 
-            # Remove pre-existing http AIA, add custom AIA
-            $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" } | Remove-CAAuthorityInformationAccess -Force
-            $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+                # Remove pre-existing http AIA, add custom AIA
+                $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" } | Remove-CAAuthorityInformationAccess -Force
+                $null = Add-CAAuthorityInformationAccess -Uri $AIAUrl -AddToCertificateAIA -Force
+            }
+            else {
+                $null = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    # Remove pre-existing http CDP, add custom CDP
+                    $null = Get-CACrlDistributionPoint | Where-Object { $_.URI -like "http#*" } | Remove-CACrlDistributionPoint -Force
+                    $null = Add-CACrlDistributionPoint -Uri $args[0] -AddToCertificateCdp -Force
+
+                    # Remove pre-existing http AIA, add custom AIA
+                    $null = Get-CAAuthorityInformationAccess | Where-Object { $_.Uri -like "http*" } | Remove-CAAuthorityInformationAccess -Force
+                    $null = Add-CAAuthorityInformationAccess -Uri $args[1] -AddToCertificateAIA -Force
+                } -ArgumentList $CDPUrl,$AIAUrl
+            }
 
             # Enable all event auditing
             $null = certutil -f -setreg CA\\AuditFilter 127
@@ -11838,7 +11798,6 @@ function New-SubordinateCA {
         # Configure HTTPS Binding
         try {
             Write-Host "Configuring IIS https binding to use $PKIWebsiteCertFileOut..."
-            Import-Module WebAdministration
             Remove-Item IIS:\SslBindings\*
             $null = Get-ChildItem Cert:\LocalMachine\My | Where-Object {$_.Thumbprint -eq $PKIWebsiteCertThumbPrint} | New-Item IIS:\SslBindings\0.0.0.0!443
         }
@@ -12062,34 +12021,17 @@ function New-SubordinateCA {
         AIAUrl                              = $AIAUrl
     }
 
-    # Install any required PowerShell Modules...
-    [array]$NeededModules = @(
-        "PSPKI"
-    )
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    # Install any required PowerShell Modules
+    <#
+    # NOTE: This is handled by the MiniLab Module Import
+    $RequiredModules = @("PSPKI")
+    $InvModDepSplatParams = @{
+        RequiredModules                     = $RequiredModules
+        InstallModulesNotAvailableLocally   = $True
+        ErrorAction                         = "Stop"
     }
-    else {
-        $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    }
-
-    [System.Collections.ArrayList]$FailedModuleInstall = @()
-    foreach ($ModuleResource in $NeededModules) {
-        try {
-            $null = Install-Module $ModuleResource -ErrorAction Stop
-        }
-        catch {
-            Write-Error $_
-            $null = $FailedModuleInstall.Add($ModuleResource)
-            continue
-        }
-    }
-    if ($FailedModuleInstall.Count -gt 0) {
-        Write-Error "Problem installing the following DSC Modules:`n$($FailedModuleInstall -join "`n")"
-        $global:FunctionResult = "1"
-        return
-    }
+    $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
+    #>
 
     #endregion >> Initial Prep
 
@@ -12126,10 +12068,28 @@ function New-SubordinateCA {
             return
         }
 
-        # Transfer any required PowerShell Modules
-        [array]$ModulesToTransfer = foreach ($ModuleResource in $NeededModules) {
-            $Module = Get-Module -ListAvailable $ModuleResource
-            "$($($Module.ModuleBase -split $ModuleResource)[0])\$ModuleResource"
+        # Transfer any Required Modules that were installed on $env:ComputerName from an external source
+        $NeededModules = @("PSPKI")
+        [System.Collections.ArrayList]$ModulesToTransfer = @()
+        foreach ($ModuleResource in $NeededModules) {
+            $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
+            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+                $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Install-Module $args[0]
+                    }
+                    if (![bool]$(Get-Module -ListAvailable $args[0])) {
+                        Write-Error $("Problem installing" + $args[0])
+                    }
+                    $Module = Get-Module -ListAvailable $args[0]
+                    $($Module.ModuleBase -split $args[0])[0] + $args[0]
+                } -ArgumentList $ModuleResource
+            }
+            else {
+                $ModuleBase = $($ModMapObj.ManifestFileItem.FullName -split $ModuleResource)[0] + $ModuleResource
+            }
+            
+            $null = $ModulesToTransfer.Add($ModuleBase)
         }
 
         $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
@@ -12152,67 +12112,14 @@ function New-SubordinateCA {
             ${Function:SetupSubCA}.Ast.Extent.Text
         )
 
-        # Invoke-CommandAs Module looked promising, but doesn't actually work (it just hangs). Maybe in future updates...
-        # For more info, see: https://github.com/mkellerman/Invoke-CommandAs
-        <#
-        if (![bool]$(Get-Module -ListAvailable Invoke-CommandAs -ErrorAction SilentlyContinue)) {
-            try {
-                Write-Host "Installing 'Invoke-CommandAs' PowerShell Module..."
-                if ($PSVersionTable.PSEdition -ne "Core") {
-                    $null = Install-PackageProvider -Name Nuget -Force -Confirm:$False
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                else {
-                    $null = Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                }
-                Install-Module Invoke-CommandAs -ErrorAction Stop
-            }
-            catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
-            }
-        }
-
-        try {
-            Write-Host "Importing 'Invoke-CommandAs' PowerShell Module..."
-            Import-Module Invoke-CommandAs -ErrorAction Stop
-        }
-        catch {
-            Write-Error $_
-            $global:FunctionResult = "1"
-            return
-        }
-
-        Invoke-CommandAs -Session $SubCAPSSession -ScriptBlock {
-            Start-Transcript -Path "C:\NewSubCATask.log" -Append
-            $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
-
-            $SetupSubCASplatParams = @{
-                DomainAdminCredentials              = $using:DomainAdminCredentials
-                NetworkInfoPSObjects                = $using:NetworkInfoPSObjects
-                CAType                              = $using:CAType
-                NewComputerTemplateCommonName       = $using:NewComputerTemplateCommonName
-                NewWebServerTemplateCommonName      = $using:NewWebServerTemplateCommonName
-                FileOutputDirectory                 = $using:FileOutputDirectory
-                CryptoProvider                      = $using:CryptoProvider
-                KeyLength                           = $using:KeyLength
-                HashAlgorithm                       = $using:HashAlgorithm
-                KeyAlgorithmValue                   = $using:KeyAlgorithmValue
-                CDPUrl                              = $using:CDPUrl
-                AIAUrl                              = $using:AIAUrl
-            }
-            
-            SetupSubCA @SetupSubCASplatParams
-            Stop-Transcript
-
-        } -As $DomainAdminCredentials
-        #>
-
+        # Initialize the Remote Environment
+        $FunctionsForRemoteUse = $script:FunctionsForSBUse
+        $FunctionsForRemoteUse.Add($(${Function:SetupSubCA}.Ast.Extent.Text))
         $DomainAdminAccount = $DomainAdminCredentials.UserName
         $DomainAdminPwd = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($DomainAdminCredentials.Password))
         $Output = Invoke-Command -Session $SubCAPSSession -ScriptBlock {
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
+            $script:ModuleDependenciesMap = $args[0]
             ${Function:GetDomainController}.Ast.Extent.Text | Out-File "$HOME\GetDomainController.ps1"
             ${Function:SetupSubCA}.Ast.Extent.Text | Out-File "$HOME\SetupSubCA.ps1"
             $using:NetworkInfoPSObjects | Export-CliXml "$HOME\NetworkInfoPSObjects.xml"
@@ -12319,7 +12226,7 @@ function New-SubordinateCA {
                 [array]$FilesToReview = Get-ChildItem $HOME -File | Where-Object {$_.Extension -match '\.ps1|\.log|\.xml'}
                 $FilesToReview.FullName
             }
-        }
+        } -ArgumentList $script:ModuleDependenciesMap
     }
     else {
         Write-Host "This will take about 1 hour...go grab a coffee..."
@@ -12373,8 +12280,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjc3J4kSirHGZMV6F2lm5nLbQ
-# ZgSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgxj5syuYTXt3syy5UpDJvez4
+# Kzygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12431,11 +12338,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFE4tZavLs2jC/e9o
-# r3pXCsgY1/W4MA0GCSqGSIb3DQEBAQUABIIBACDZPIUzSYrf2Jmzais9MIw9UKqh
-# blIGfqvzLwu4aNHWjAp5YXEwbfzs0X1Y/YMrNk08nKDRAPbV5IJvl3gPrtLQei5Q
-# uBlU35zYOO47C1ZrLm2rKV47zRiDHfIiCjXRwuheiH+Mz8h7LaVcdZBYMZKRUTqI
-# YB7pAfwaYnoFnvJ6BHsK7MQvMKIUE43fNCdLATMKilQKyoisgv9LRu/ZIELfQTky
-# lSQZGtYbFAfuMuNfODGl4IxHD1un+K4IXeQZtwkAXNylsbDQxpmL53voEgK472BT
-# 10MoJ/m6XsyRB1Q5ZPz4QFhEx4a2nU3oRM31Q8jxvZkVQ2UAAl6iiYnZMtU=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDwy7TKPvp6k3sCj
+# Lb+YX1jkStiVMA0GCSqGSIb3DQEBAQUABIIBAFPGOMGxOgpL84melpjagstKH165
+# P8Ih5LAg3uVSvM88fA4a3zU3iy8ycmsaMrLi9bjxMx3O+bi9kDMozPrkMRMv4gvd
+# eGWMVeCIeaBkA+9ePLUb3WT64LlPRAWkNSloKtXYG3saNI0WyQidppQ9DTUjmizo
+# C5LPki5zJf9UXOoLPmAcLVcqGGbo7jC3gi9k/R5/pNNtBpeckZ1geFJ5DGHhWm7I
+# EIAhJyXhzxmDFakk8UyZ+Mh7ncxQACyCqW+4UmPnvzDtrj+tNt8FyDwFN1fefVo4
+# H7k2dm59ZtfXN5HcK/11zE0jV1WwYTimFjai8ahSIFpTorQ1zFdJi0pHmxU=
 # SIG # End signature block

@@ -318,51 +318,6 @@ function Create-RootCA {
             $BoxFilePath = $BoxFileItem.FullName
         }
 
-        <#
-        $NewVMDeploySBAsString = @(
-            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
-            ''
-            "`$env:Path = '$env:Path'"
-            ''
-            '# Load the functions we packed up'
-            '$args | foreach { Invoke-Expression $_ }'
-            ''
-            '$DeployBoxSplatParams = @{'
-            "    VagrantBox                  = '$Windows2016VagrantBox'"
-            '    CPUs                        = 2'
-            '    Memory                      = 4096'
-            '    VagrantProvider             = "hyperv"'
-            "    VMName                      = '$DomainShortName' + 'RootCA'"
-            "    VMDestinationDirectory      = '$VMStorageDirectory'"
-            '    SkipHyperVInstallCheck      = $True'
-            '    CopyDecompressedDirectory   = $True'
-            '}'
-            ''
-            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
-            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
-            '    }'
-            '}'
-            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
-            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
-            '    }'
-            '}'
-            ''
-            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
-            '$DeployBoxResult'
-        )
-
-        try {
-            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
-        }
-        catch {
-            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-        #>
-
         $NewVMDeploySB = {
             $DeployBoxSplatParams = @{
                 VagrantBox                  = $Windows2016VagrantBox
@@ -372,7 +327,6 @@ function Create-RootCA {
                 VMName                      = $DomainShortName + 'RootCA'
                 VMDestinationDirectory      = $VMStorageDirectory
                 SkipHyperVInstallCheck      = $True
-                CopyDecompressedDirectory   = $True
             }
             
             if ($DecompressedBoxDir) {
@@ -623,7 +577,8 @@ function Create-RootCA {
             Write-Host "Joining the Root CA to the Domain..."
             $DesiredHostNameRootCA = $DomainShortName + "RootCA"
 
-            $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $(Get-Job).Name
+            $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+            $JoinRootCAJobName = NewUniqueString -PossibleNewUniqueString "JoinRootCA" -ArrayOfStrings $RunspaceNames
 
             <#
             $JoinRootCAArgList = @(
@@ -636,7 +591,7 @@ function Create-RootCA {
             )
             #>
             $JoinRootCAJobSplatParams = @{
-                Name            = $JoinRootCAJobName
+                RunspaceName    = $JoinRootCAJobName
                 Scriptblock     = $JoinDomainRSJobSB
                 Wait            = $True
             }
@@ -698,8 +653,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUm+TGuVsKHRQfPeJxvMJxw63Q
-# KOWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUehE4yI1ImOfrTv37XCbgKKT7
+# ox6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -756,11 +711,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIAGyhllfn3Dpt4H
-# Yx+WWYbMNChnMA0GCSqGSIb3DQEBAQUABIIBAA8PwJrfSmNhJw1UnEk0bMSITgZ4
-# dCs60haNRndVX4xQk1xfHHBV1Y6ueTeyOZfn4RldKC0aJfRex8UXLEbi1fhDBu29
-# bBtrvrf4UcQ6h8yES6HT/6F2HHtFmefUUtjGLXTUjLDdTDEDYtM85tBblV2eAIpo
-# GsuRzojeq4ezGBK5b3wl41XooSbDveu/EuNJvegd+RcTHXPar2J3OmXPxaVYz3s6
-# sjRiD0IWD8sZSN2WrAlz+3dUU0iqvVSWBdoGGyYMFu3rR8wGZc5QQfcJBzkJR6jm
-# 6gNqpank5Y5hfE0AH1P2Au5ufMJrtn77SVf6qXWXWRNkKw1CxhkKQzbz308=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMfKweFF6fOL4Tif
+# OQX7BKVAqsygMA0GCSqGSIb3DQEBAQUABIIBAMU2gakNM0gXVKAYnl6WSJ169/bv
+# GCXkCJAOgprbMLul/CtTLzRDHkfjwm/gp6kgQ+2JseLuQzSfbY/6BOARZLxYXGdO
+# CaUdGWy7cqTTuAaz38I8DImbmM6FC1apzpEaWRXRJNmXFt17pS98X6+HNguTbxHO
+# ZOwIGlzAQLcQCOTTeUUcgOK43P5fBeJxV1f3gwJ3kPiT7+IWep4D9uVbBSf1ueYb
+# l5nDSCNG8sEsTkhFxw8J1kQlpUCdv9BJhLzrUNYN/FXRiEctN7f/BIJdRbiBHsJd
+# u5FIdnAMloVDnCDjIyXvAgyn/VYfrw8ZJvlFHcQ7pzn5Yh28AUoXwEC0mXo=
 # SIG # End signature block
