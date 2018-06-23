@@ -380,7 +380,7 @@ function Create-SubordinateCA {
                 Scriptblock     = $NewVMDeploySB
                 Wait            = $True
             }
-            $NewRootCAVMDeployResult = New-Runspace @NewRootCAVMDeployJobSplatParams
+            $NewSubCAVMDeployResult = New-Runspace @NewSubCAVMDeployJobSplatParams
 
             $IPofServerToBeSubCA = $NewSubCAVMDeployResult.VMIPAddress
 
@@ -610,7 +610,7 @@ function Create-SubordinateCA {
             Scriptblock     = $JoinDomainRSJobSB
             Wait            = $True
         }
-        $JoinSubCAResult = New-Runspace @JoinRootCAJobSplatParams
+        $JoinSubCAResult = New-Runspace @JoinSubCAJobSplatParams
 
         # Verify Sub CA is Joined to Domain
         # Try to create a PSSession to the Sub CA for 15 minutes, then give up
@@ -667,8 +667,8 @@ function Create-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmVuEQrBBVARJSsjo/7RZhKXF
-# wTOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUg1DPXrb/QEtrK0o+6W3Dbrto
+# m7ugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -725,11 +725,11 @@ function Create-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBSIzRs1peajAklX
-# ndjE2E/oySv5MA0GCSqGSIb3DQEBAQUABIIBAK89ftsw4GmgKzFE9B6nHVh1gbtp
-# uGvsfoey47i+V500z1RHX9+9vYjpsKmljgaO3boBq/3JrONIBrtg+EiYRF3h7dx0
-# /eZ6S8V6zf3pjoNm3Xm5LGd2dkIdS7ba41JeTDM6WY5KycuPj/OIf09vcrMe0M0r
-# cKjP+x945jMJ9fr610NO8sZdZwO8N5rBeT/1gw3A90qF77fJlAWVKNfSYBY6DGlt
-# DLofBDO/rnHtKfDQnzgjFUHCeWmaWnUXWWfxNO4WPuk0NJRMwspyoPQyxAcg6KSa
-# 2NCAN1YWK6fTlJ+1/+fMUWmntWw4aiUpj0N7AJ482Rsq8W/778XM86AhpNs=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCYELuBCXLJsTSaw
+# X7FXpg7BO6z7MA0GCSqGSIb3DQEBAQUABIIBAFV0g19z5JdXR11LxknRxvr28heg
+# xymxOe3jZ521wvfRCaDb8qIscELT9lPkF7m30JYojbJ8afSBrlOQSJX0I8UZ/E4o
+# +8lf/xk1KaYmu2xOlcjcaFmttWSh8XXWDfhr756mMT7NNw1kq54fX53CKxJakXDK
+# 2wv6/9PPmF9lRL6q9q8mKH7bOGGlnzo5qLnfFM5Lw8u0tGHoM3KpDEzV9w5pDArM
+# EAHGSAJ3DIwTq8edfKjkzPCrWiW1ttMgb8Gdl/5HD+nDqZzM4w4w6gvJU95/uVXF
+# X6oMI0AfGz7m+Wu67FwXc2dj0amAbdKObo1pGho1gleyWNzf9P71RzdL6r8=
 # SIG # End signature block
