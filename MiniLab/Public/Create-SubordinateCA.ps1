@@ -166,8 +166,11 @@ function Create-SubordinateCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -513,15 +516,16 @@ function Create-SubordinateCA {
             '$null = W32tm /resync /rediscover /nowait'
             ''
             '# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)'
-            '$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop'
-            '$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress'
-            '$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP'
-            '$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex'
-            '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4'
+            '$PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {'
+            '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
+            '} | Sort-Object Metric1)[0].InterfaceIndex'
+            '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
+            '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+            '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
             '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
             '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
             '$UpdatedDNSServerList.Insert(0,$args[0])'
-            '$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList'
+            '$null = Set-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -ServerAddresses $UpdatedDNSServerList'
             ''
             '$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList'
             '[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder'
@@ -667,8 +671,8 @@ function Create-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUg1DPXrb/QEtrK0o+6W3Dbrto
-# m7ugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU2SeH4IyLEp6YTbWctkF5hQNC
+# YhOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -725,11 +729,11 @@ function Create-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCYELuBCXLJsTSaw
-# X7FXpg7BO6z7MA0GCSqGSIb3DQEBAQUABIIBAFV0g19z5JdXR11LxknRxvr28heg
-# xymxOe3jZ521wvfRCaDb8qIscELT9lPkF7m30JYojbJ8afSBrlOQSJX0I8UZ/E4o
-# +8lf/xk1KaYmu2xOlcjcaFmttWSh8XXWDfhr756mMT7NNw1kq54fX53CKxJakXDK
-# 2wv6/9PPmF9lRL6q9q8mKH7bOGGlnzo5qLnfFM5Lw8u0tGHoM3KpDEzV9w5pDArM
-# EAHGSAJ3DIwTq8edfKjkzPCrWiW1ttMgb8Gdl/5HD+nDqZzM4w4w6gvJU95/uVXF
-# X6oMI0AfGz7m+Wu67FwXc2dj0amAbdKObo1pGho1gleyWNzf9P71RzdL6r8=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMNyGOGp15hRZuUL
+# LjxuYdUHqpjuMA0GCSqGSIb3DQEBAQUABIIBAEpIziR2TSLGSLbGbGBPzzQKEKdS
+# +4CNcrrx6iYTGw7XLFUrRQEBvzpBpkOol3sMan0nzV0GBrYTuBK1ARvbzvENc37c
+# KhYzyi7v0l69OL/q3UblP4SsGKVHooJwDjx2z72+6AJBgOaer0m4kguo61CcYz2u
+# JuWp51nm3Rba4R/daz/5eD5BMCF3ztD+N8oPpl8q9tP1OMHBREMxFCnhQLDiyR9t
+# eVDM+M4fdb5uQwgHjLLs8k3s7A725ALrmH50+7SoEPJuFirCdfeMOTYffOcROs7D
+# kWysPWDDdRYD0todQnfvhx5DFoSczy6JvAJH8x7e/LdVftR2aHZ8wv9GI8g=
 # SIG # End signature block

@@ -606,8 +606,11 @@ function New-RootCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @()
     if ($PSBoundParameters['RootCAIPOrFQDN']) {
@@ -865,8 +868,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPLR75gWB5tVxrvA7/uWAhxcB
-# Fjugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU/80/WpshGagBBf+AlvKH9rkF
+# 3qCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -923,11 +926,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFN+dF41B05lEfcar
-# pMH2PEwlfE+JMA0GCSqGSIb3DQEBAQUABIIBAHIpgDI3Zib8EbpSSG21jYMnmwtt
-# DgfLT+zWl53JtmCdza7OP6mzZyyRjjIIHWaM1ldba2+Ph8qEXxl9n2JJtJnbfbFJ
-# zZe5N6us+Ww9EzHGAsUo32nrruxbGSu0y016moq4faHD9OvRU6TLsJCjPFflH/+5
-# aN1D0xks9Sco8CeGTZricNZoQCvVvngR0QVl2WJoMPan7JnwTW6m7ConX4+NiQE5
-# PKtaU2oW996kAb6CzhmR7rSvgjdVXmqa5ZvZ8YZAp9LDVe+WC5Pv4x8yYheFd/4D
-# h6w0Qd/YjaKsEGVbxVaKJAyGp8a9PvIcFU7g1CgsGPr23AunJprPGs9G+2Q=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJgAo1YJvGRGzh7j
+# XUiRdkaqDgG3MA0GCSqGSIb3DQEBAQUABIIBAIpWcodMIgWbfuS6ps2y3IcKnfiQ
+# /5Lcrbr3dRLPSgVZQhRf0dSbmURIoU8ZjdsOW16sVFDFbAVb9kuSsZAigme5vPiU
+# J2L3IItvDUpulLTB4CHio84M7TzB8wh1faFrvFmEfhOvHetHR1Uoah1ryxEtgpjq
+# 2TzGZP4113F2qyIbeebxZUfYQkjWZyhchdxj2QC2X3sp+x4xXWBxECoYYBqWyeFj
+# hSr0XLpyBHykRzpyw7QVQbLrB0vCsaKAQfVbqhtfxPXjer35J+69/0qOXf1cEoW+
+# c4dSNQos6hTWjUm2v5POuZtelZvLst7eYzQO7sx16rrZH+jJlNQBhJJNaHs=
 # SIG # End signature block

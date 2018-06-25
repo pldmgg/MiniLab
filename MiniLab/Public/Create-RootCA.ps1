@@ -154,9 +154,11 @@ function Create-RootCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -352,7 +354,7 @@ function Create-RootCA {
             
             if ($global:RSSyncHash) {
                 $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
-                $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $RunspaceNames
+                $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $RunspaceNames
             }
             else {
                 $NewRootCAVMDeployJobName = "NewRootCAVM"
@@ -498,15 +500,16 @@ function Create-RootCA {
                 '$null = W32tm /resync /rediscover /nowait'
                 ''
                 '# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)'
-                '$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop'
-                '$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress'
-                '$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP'
-                '$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex'
-                '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4'
+                '$PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {'
+                '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
+                '} | Sort-Object Metric1)[0].InterfaceIndex'
+                '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
+                '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+                '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
                 '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
                 '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
                 '$UpdatedDNSServerList.Insert(0,$args[0])'
-                '$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList'
+                '$null = Set-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -ServerAddresses $UpdatedDNSServerList'
                 ''
                 '$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList'
                 '[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder'
@@ -653,8 +656,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUehE4yI1ImOfrTv37XCbgKKT7
-# ox6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQURPGF2HzPEnRPjUEK/6ZF4fja
+# Omegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -711,11 +714,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMfKweFF6fOL4Tif
-# OQX7BKVAqsygMA0GCSqGSIb3DQEBAQUABIIBAMU2gakNM0gXVKAYnl6WSJ169/bv
-# GCXkCJAOgprbMLul/CtTLzRDHkfjwm/gp6kgQ+2JseLuQzSfbY/6BOARZLxYXGdO
-# CaUdGWy7cqTTuAaz38I8DImbmM6FC1apzpEaWRXRJNmXFt17pS98X6+HNguTbxHO
-# ZOwIGlzAQLcQCOTTeUUcgOK43P5fBeJxV1f3gwJ3kPiT7+IWep4D9uVbBSf1ueYb
-# l5nDSCNG8sEsTkhFxw8J1kQlpUCdv9BJhLzrUNYN/FXRiEctN7f/BIJdRbiBHsJd
-# u5FIdnAMloVDnCDjIyXvAgyn/VYfrw8ZJvlFHcQ7pzn5Yh28AUoXwEC0mXo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPFwKRExGI4AlW5w
+# pDF+xRqMWn+nMA0GCSqGSIb3DQEBAQUABIIBAJP5cqCdQcqf10eWXjmdTfktOZD4
+# S3hyQwctBNBeMoDo0sH4DefuMIxQN6Wzc9Fd+tZ5EdWkDLFzhp/ao2TtzxmKw2Ju
+# EaytLnuYUpK6wEZiKO08qvKBb2hK69/JobAuVQmzV4wsX2mLCZN2rP7Dn9O328vN
+# St1qD12lFAloHS9kbIc6wc5gFtQ1fqZIZmg+Tf+tiY2vToqdMsnnt9AtPXEW6WDv
+# zfH3q6+PYZNzhaPNkrKSGYDjSb+hmGiYgZtK3O/HmLhszg1Kjj9S2WC7X0XfrI6S
+# ta7ND1z5Gd8bc5N+zQBLYm+ResQEmoo4y1YNU6U/Cfj/YbCw9TaK+Y4Wwkw=
 # SIG # End signature block

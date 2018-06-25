@@ -205,9 +205,11 @@ function Create-Domain {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -367,51 +369,6 @@ function Create-Domain {
             $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
             $BoxFilePath = $BoxFileItem.FullName
         }
-
-        <#
-        $NewVMDeploySBAsString = @(
-            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
-            ''
-            "`$env:Path = '$env:Path'"
-            ''
-            '# Load the functions we packed up'
-            '$args | foreach { Invoke-Expression $_ }'
-            ''
-            '$DeployBoxSplatParams = @{'
-            "    VagrantBox                  = '$Windows2016VagrantBox'"
-            '    CPUs                        = 2'
-            '    Memory                      = 4096'
-            '    VagrantProvider             = "hyperv"'
-            "    VMName                      = '$DomainShortName' + 'DC1'"
-            "    VMDestinationDirectory      = '$VMStorageDirectory'"
-            '    SkipHyperVInstallCheck      = $True'
-            '    CopyDecompressedDirectory   = $True'
-            '}'
-            ''
-            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
-            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
-            '    }'
-            '}'
-            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
-            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
-            '    }'
-            '}'
-            ''
-            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
-            '$DeployBoxResult'
-        )
-        
-        try {
-            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
-        }
-        catch {
-            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-        #>
 
         $NewVMDeploySB = {
             $DeployBoxSplatParams = @{
@@ -914,9 +871,11 @@ function Create-RootCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -1112,7 +1071,7 @@ function Create-RootCA {
             
             if ($global:RSSyncHash) {
                 $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
-                $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $RunspaceNames
+                $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $RunspaceNames
             }
             else {
                 $NewRootCAVMDeployJobName = "NewRootCAVM"
@@ -1258,15 +1217,16 @@ function Create-RootCA {
                 '$null = W32tm /resync /rediscover /nowait'
                 ''
                 '# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)'
-                '$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop'
-                '$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress'
-                '$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP'
-                '$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex'
-                '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4'
+                '$PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {'
+                '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
+                '} | Sort-Object Metric1)[0].InterfaceIndex'
+                '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
+                '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+                '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
                 '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
                 '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
                 '$UpdatedDNSServerList.Insert(0,$args[0])'
-                '$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList'
+                '$null = Set-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -ServerAddresses $UpdatedDNSServerList'
                 ''
                 '$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList'
                 '[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder'
@@ -1579,8 +1539,11 @@ function Create-SubordinateCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -1926,15 +1889,16 @@ function Create-SubordinateCA {
             '$null = W32tm /resync /rediscover /nowait'
             ''
             '# Make sure the DNS Client points to IP of Domain Controller (and others from DHCP)'
-            '$NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop'
-            '$PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress'
-            '$NetIPAddressInfo = Get-NetIPAddress -IPAddress $PrimaryIP'
-            '$NetAdapterInfo = Get-NetAdapter -InterfaceIndex $NetIPAddressInfo.InterfaceIndex'
-            '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -AddressFamily IPv4'
+            '$PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {'
+            '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
+            '} | Sort-Object Metric1)[0].InterfaceIndex'
+            '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
+            '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+            '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
             '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
             '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
             '$UpdatedDNSServerList.Insert(0,$args[0])'
-            '$null = Set-DnsClientServerAddress -InterfaceIndex $NetIPAddressInfo.InterfaceIndex -ServerAddresses $UpdatedDNSServerList'
+            '$null = Set-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -ServerAddresses $UpdatedDNSServerList'
             ''
             '$CurrentDNSSuffixSearchOrder = $(Get-DNSClientGlobalSetting).SuffixSearchList'
             '[System.Collections.ArrayList]$UpdatedDNSSuffixList = $CurrentDNSSuffixSearchOrder'
@@ -2328,8 +2292,8 @@ function Create-TwoTierPKI {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-NetIPConfiguration | foreach {$_.IPv4DefaultGateway} | Where-Object {$_.DestinationPrefix -eq "0.0.0.0/0"}).ifIndex
+    $PrimaryIP = $(Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $PrimaryIfIndex).IPAddress
 
     if ($($PSBoundParameters['CreateNewVMs'] -or $PSBoundParameters['NewDomain']) -and
     !$PSBoundParameters['VMStorageDirectory']
@@ -2440,38 +2404,7 @@ function Create-TwoTierPKI {
         }
     }
 
-    $FunctionsForSBUse = @(
-        ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-        ${Function:GetDomainController}.Ast.Extent.Text
-        ${Function:GetElevation}.Ast.Extent.Text
-        ${Function:GetFileLockProcess}.Ast.Extent.Text
-        ${Function:GetNativePath}.Ast.Extent.Text
-        ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-        ${Function:GetWinPSInCore}.Ast.Extent.Text
-        ${Function:InstallFeatureDism}.Ast.Extent.Text
-        ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-        ${Function:InvokePSCompatibility}.Ast.Extent.Text
-        ${Function:NewUniqueString}.Ast.Extent.Text
-        ${Function:PauseForWarning}.Ast.Extent.Text
-        ${Function:ResolveHost}.Ast.Extent.Text
-        ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-        ${Function:UnzipFile}.Ast.Extent.Text
-        ${Function:Create-Domain}.Ast.Extent.Text
-        ${Function:Create-RootCA}.Ast.Extent.Text
-        ${Function:Create-SubordinateCA}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-        ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
-        ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-        ${Function:Generate-Certificate}.Ast.Extent.Text
-        ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-        ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-        ${Function:Manage-HyperVVM}.Ast.Extent.Text
-        ${Function:New-DomainController}.Ast.Extent.Text
-        ${Function:New-RootCA}.Ast.Extent.Text
-        ${Function:New-Runspace}.Ast.Extent.Text
-        ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-        ${Function:New-SubordinateCA}.Ast.Extent.Text
-    )
+    $FunctionsForRemoteUse = $script:FunctionsForSBUse
 
     $CreateDCSplatParams = @{
         PSRemotingCredentials                   = $PSRemotingCredentials
@@ -2622,28 +2555,33 @@ function Create-TwoTierPKI {
         }
         
         if ($BoxFileItem) {
-            if (!$(Test-Path "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)")) {
-                $null = New-Item -ItemType Directory -Path "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            $DecompressedBoxDir = "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            if (!$(Test-Path $DecompressedBoxDir)) {
+                $null = New-Item -ItemType Directory -Path $DecompressedBoxDir
             }
 
             # Extract the .box File
-            Push-Location "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            Push-Location $DecompressedBoxDir
 
             if ($PSVersionTable.PSEdition -eq "Core") {
+                <#
                 GetWinPSInCore -ScriptBlock {
-                    $FunctionsForSBUse | foreach {Invoke-Expression $_}
+                    $FunctionsForRemoteUse | foreach {Invoke-Expression $_}
 
                     while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
                         Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
                         Start-Sleep -Seconds 5
                     }
                 }
-                <#
-                while ([bool]$(Invoke-WinCommand -ScriptBlock {GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue})) {
-                    Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
-                    Start-Sleep -Seconds 5
-                }
                 #>
+                Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                    $args[0] | foreach {Invoke-Expression $_}
+
+                    while ([bool]$(GetFileLockProcess -FilePath $args[1] -ErrorAction SilentlyContinue)) {
+                        Write-Host "'$($args[1])' is currently being used by another process...Waiting for it to become available"
+                        Start-Sleep -Seconds 5
+                    }
+                } -ArgumentList $FunctionsForRemoteUse,$BoxFilePath
             }
             else {
                 while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
@@ -2651,9 +2589,38 @@ function Create-TwoTierPKI {
                     Start-Sleep -Seconds 5
                 }
             }
-            
+
             try {
-                $null = & $TarCmd -xzvf $BoxFilePath 2>&1
+                #Write-Host "Extracting .box file..."
+                
+                $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+                $ProcessInfo.WorkingDirectory = $DecompressedBoxDir
+                $ProcessInfo.FileName = $TarCmd
+                $ProcessInfo.RedirectStandardError = $true
+                $ProcessInfo.RedirectStandardOutput = $true
+                $ProcessInfo.UseShellExecute = $false
+                $ProcessInfo.Arguments = "-xzvf $BoxFilePath"
+                $Process = New-Object System.Diagnostics.Process
+                $Process.StartInfo = $ProcessInfo
+                $Process.Start() | Out-Null
+                # Below $FinishedInAlottedTime returns boolean true/false
+                # 1800000 ms is 30 minutes
+                $FinishedInAlottedTime = $Process.WaitForExit(1800000)
+                if (!$FinishedInAlottedTime) {
+                    $Process.Kill()
+                }
+                $stdout = $Process.StandardOutput.ReadToEnd()
+                $stderr = $Process.StandardError.ReadToEnd()
+                $AllOutput = $stdout + $stderr
+    
+                if ($stderr) {
+                    if ($stderr -match "failed") {
+                        throw $stderr
+                    }
+                    else {
+                        Write-Verbose $stderr
+                    }
+                }
             }
             catch {
                 Write-Error $_
@@ -2661,9 +2628,8 @@ function Create-TwoTierPKI {
                 $global:FunctionResult = "1"
                 return
             }
-            Pop-Location
 
-            $DecompressedBoxDir = "$VMStorageDirectory\BoxDownloads\$($BoxFileItem.BaseName)"
+            Pop-Location
         }
 
         # Make sure $BoxFilePath doesn't exist as a variable so that the below VM Deployment scriptblock
@@ -2684,55 +2650,61 @@ function Create-TwoTierPKI {
             }
         }
 
-        $NewVMDeploySBAsString = @"
-[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
-
-`$env:Path = '$env:Path'
-
-# Load the functions we packed up
-`$args | foreach { Invoke-Expression `$_ }
-
-`$DeployBoxSplatParams = @{
-    VagrantBox                  = '$Windows2016VagrantBox'
-    CPUs                        = 2
-    Memory                      = 4096
-    VagrantProvider             = "hyperv"
-    VMName                      = '$DomainShortName' + "replaceme"
-    VMDestinationDirectory      = '$VMStorageDirectory'
-    SkipHyperVInstallCheck      = `$True
-    CopyDecompressedDirectory   = `$True
-}
-
-if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {
-    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("DecompressedBoxDirectory",'$DecompressedBoxDir')
-    }
-}
-if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
-    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {
-        `$DeployBoxSplatParams.Add("BoxFilePath",'$BoxFilePath')
-    }
-}
-
-`$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
-`$DeployBoxResult
-"@
+        $NewVMDeploySB = {
+            $DeployBoxSplatParams = @{
+                VagrantBox                  = $Windows2016VagrantBox
+                CPUs                        = 2
+                Memory                      = 4096
+                VagrantProvider             = "hyperv"
+                VMName                      = $UpdatedVMName
+                VMDestinationDirectory      = $VMStorageDirectory
+                CopyDecompressedDirectory   = $True
+                SkipHyperVInstallCheck      = $True
+            }
+            
+            if ($DecompressedBoxDir) {
+                if ($(Get-Item $DecompressedBoxDir).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('DecompressedBoxDirectory',$DecompressedBoxDir)
+                }
+            }
+            if ($BoxFilePath) {
+                if (-not $(Get-Item $BoxFilePath).PSIsContainer) {
+                    $DeployBoxSplatParams.Add('BoxFilePath',$BoxFilePath)
+                }
+            }
+            
+            Write-Host "Deploying Hyper-V Vagrant Box..."
+            $DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams
+            $DeployBoxResult
+        }
 
         if ($NewDomain -and !$IPofServerToBeDomainController) {
             $DomainShortName = $($NewDomain -split "\.")[0]
-            Write-Host "Deploying New Domain Controller VM '$DomainShortName`DC1'..."
+            $NewDCVMName = $UpdatedVMName = $DomainShortName + 'DC1'
+            Write-Host "Deploying New Domain Controller VM '$UpdatedVMName'..."
 
-            $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $(Get-Job).Name
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewDCVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewDCVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewDCVMDeployJobName = "NewDCVM"
+            }
 
-            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','DC1'
-            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
+            $NewDCVMDeployJobSplatParams = @{
+                RunspaceName    = $NewDCVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+            }
+            $null = New-Runspace @NewDCVMDeployJobSplatParams
 
+            <#
             $NewDCVMDeployJobSplatParams = @{
                 Name            = $NewDCVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                ArgumentList    = $FunctionsForRemoteUse
             }
             $NewDCVMDeployJobInfo = Start-Job @NewDCVMDeployJobSplatParams
+            #>
         }
         if (!$IPofServerToBeRootCA -and !$DCIsRootCA) {
             if ($NewDomain) {
@@ -2741,19 +2713,31 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
             if ($ExistingDomain) {
                 $DomainShortName = $($ExistingDomain -split "\.")[0]
             }
-            Write-Host "Deploying New Root CA VM '$DomainShortName`RootCA'..."
+            $NewRootCAVMName = $UpdatedVMName = $DomainShortName + "RootCA"
+            Write-Host "Deploying New Root CA VM '$UpdatedVMName'..."
 
-            $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $(Get-Job).Name
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewRootCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewRootCAVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewRootCAVMDeployJobName = "NewRootCAVM"
+            }
 
-            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','RootCA'
-            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
+            $NewRootCAVMDeployJobSplatParams = @{
+                RunspaceName    = $NewRootCAVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+            }
+            $null = New-Runspace @NewRootCAVMDeployJobSplatParams
 
+            <#
             $NewRootCAVMDeployJobSplatParams = @{
                 Name            = $NewRootCAVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                ArgumentList    = $FunctionsForRemoteUse
             }
             $NewRootCAVMDeployJobInfo = Start-Job @NewRootCAVMDeployJobSplatParams
+            #>
         }
         if (!$IPofServerToBeSubCA) {
             if ($NewDomain) {
@@ -2762,76 +2746,162 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
             if ($ExistingDomain) {
                 $DomainShortName = $($ExistingDomain -split "\.")[0]
             }
-            Write-Host "Deploying New Subordinate CA VM '$DomainShortName`SubCA'..."
+            $NewSubCAVMName = $UpdatedVMName = $DomainShortName + "SubCA"
+            Write-Host "Deploying New Subordinate CA VM '$UpdatedVMName'..."
 
-            $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $(Get-Job).Name
+            if ($global:RSSyncHash) {
+                $RunspaceNames = $($global:RSSyncHash.Keys | Where-Object {$_ -match "Result$"}) | foreach {$_ -replace 'Result',''}
+                $NewSubCAVMDeployJobName = NewUniqueString -PossibleNewUniqueString "NewSubCAVM" -ArrayOfStrings $RunspaceNames
+            }
+            else {
+                $NewSubCAVMDeployJobName = "NewSubCAVM"
+            }
 
-            $UpdatedDeployVMSBString = $NewVMDeploySBAsString -replace 'replaceme','SubCA'
-            $NewVMDeploySB = [scriptblock]::Create($UpdatedDeployVMSBString)
+            $NewSubCAVMDeployJobSplatParams = @{
+                RunspaceName    = $NewSubCAVMDeployJobName
+                Scriptblock     = $NewVMDeploySB
+            }
+            $null = New-Runspace @NewSubCAVMDeployJobSplatParams
 
+            <#
             $NewSubCAVMDeployJobSplatParams = @{
                 Name            = $NewSubCAVMDeployJobName
                 Scriptblock     = $NewVMDeploySB
-                ArgumentList    = $FunctionsForSBUse
+                ArgumentList    = $FunctionsForRemoteUse
             }
             $NewSubCAVMDeployJobInfo = Start-Job @NewSubCAVMDeployJobSplatParams
+            #>
         }
 
+        [System.Collections.ArrayList]$ResultProperties = @()
         if ($NewDomain -and !$IPofServerToBeDomainController) {
-            $NewDCVMDeployResult = Wait-Job -Job $NewDCVMDeployJobInfo | Receive-Job
+            $NewDCResultProperty = $NewDCVMDeployJobName + "Result"
+            $null = $ResultProperties.Add($NewDCResultProperty)
+        }
+        if (!$IPofServerToBeRootCA -and !$DCIsRootCA) {
+            $NewRootCAResultProperty = $NewRootCAVMDeployJobName + "Result"
+            $null = $ResultProperties.Add($NewRootCAResultProperty)
+        }
+        if (!$IPofServerToBeSubCA) {
+            $NewSubCAResultProperty = $NewSubCAVMDeployJobName + "Result"
+            $null = $ResultProperties.Add($NewSubCAResultProperty)
+        }
 
-            while (![bool]$(Get-VM -Name "$DomainShortName`DC1" -ErrorAction SilentlyContinue)) {
-                Write-Host "Waiting for $DomainShortName`DC1 VM to be deployed..."
-                Start-Sleep -Seconds 15
+        # VM deployment operations have 60 minutes to complete...
+        $Counter = 0
+        while (!$VMsReady -and $Counter -le 60) {
+            [System.Collections.ArrayList]$ResultCollection = @()
+            foreach ($ResultProp in $ResultProperties) {
+                if ($global:RSSyncHash.$ResultProp.Errors.Count -gt 0 -and $global:RSSyncHash.$ResultProp.Done -eq $True) {
+                    $Errmsg = "One or more errors occurred with the Deploy-HyperVVagrantBoxManually " +
+                    "function within the Runspaces. Please inspect the 'Errors' property in the " +
+                    "`$global:RSSynchHash object. Halting!"
+                    Write-Error $ErrMsg
+                    $global:FunctionResult = "1"
+                    return
+                }
+
+                if ($global:RSSyncHash.$ResultProp.Done -ne $True) {
+                    Write-Host "Waiting for $ResultProp ..."
+                    $null = $ResultCollection.Add($False)
+                }
+                else {
+                    $null = $ResultCollection.Add($True)
+                }
             }
+
+            if ($ResultCollection -contains $False -or $ResultCollection.Count -eq 0) {
+                Write-Host "VMs not ready. Checking again in 60 seconds ..."
+                $VMsReady = $False
+                Start-Sleep -Seconds 60
+                $Counter++
+            }
+            else {
+                $VMsReady = $True
+                Write-Host "VMs are ready to be configured!" -ForegroundColor Green
+            }
+        }
+        if ($Counter -gt 60) {
+            Write-Error "VMs were not deployed within 60 minutes! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        Write-Host "Waiting for VMs to report their IP Addresses (for up to 30 minutes)..."
+
+        # NOTE: Each VM has 30 minutes to report its IP Address
+        $Counter = 0
+        if ($NewDomain -and !$IPofServerToBeDomainController) {
+            $NewDCVMDeployResult = $global:RSSyncHash.$NewDCResultProperty.Output
 
             $IPofServerToBeDomainController = $NewDCVMDeployResult.VMIPAddress
-            if (!$IPofServerToBeDomainController) {
-                $IPofServerToBeDomainController = $(Get-VM -Name "$DomainShortName`DC1").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+            if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
+                $VMNetAdapter = Get-VMNetworkAdapter -VMName $NewDCVMName -ErrorAction SilentlyContinue
+                $IPofServerToBeDomainController = $NewDCVMIPCheck = $VMNetAdapter.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                while (!$NewDCVMIPCheck -and $Counter -le 60) {
+                    Start-Sleep -Seconds 60
+
+                    $VMNetAdapter = Get-VMNetworkAdapter -VMName $NewDCVMName -ErrorAction SilentlyContinue
+                    $IPofServerToBeDomainController = $NewDCVMIPCheck = $VMNetAdapter.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                    $Counter++
+                }
             }
         }
+
+        $Counter = 0
         if (!$IPofServerToBeRootCA) {
             if ($DCIsRootCA) {
                 $IPofServerToBeRootCA = $IPofServerToBeDomainController
             }
 
             if (!$DCIsRootCA) {
-                $NewRootCAVMDeployResult = Wait-Job -Job $NewRootCAVMDeployJobInfo | Receive-Job
-                $IPofServerToBeRootCA = $NewRootCAVMDeployResult.VMIPAddress
-                
-                while (![bool]$(Get-VM -Name "$DomainShortName`RootCA" -ErrorAction SilentlyContinue)) {
-                    Write-Host "Waiting for $DomainShortName`RootCA VM to be deployed..."
-                    Start-Sleep -Seconds 15
-                }
+                $NewRootCAVMDeployResult = $global:RSSyncHash.$NewRootCAResultProperty.Output
 
-                if (!$IPofServerToBeRootCA) {
-                    $IPofServerToBeRootCA = $(Get-VM -Name "$DomainShortName`RootCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                $IPofServerToBeRootCA = $NewRootCAVMDeployResult.VMIPAddress
+
+                if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
+                    $VMNetAdapter = Get-VMNetworkAdapter -VMName $NewRootCAVMName -ErrorAction SilentlyContinue
+                    $IPofServerToBeRootCA = $NewRootCAVMIPCheck = $VMNetAdapter.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                    while (!$NewRootCAVMIPCheck -and $Counter -le 60) {
+                        Start-Sleep -Seconds 60
+    
+                        $VMNetAdapter = Get-VMNetworkAdapter -VMName $NewRootCAVMName -ErrorAction SilentlyContinue
+                        $IPofServerToBeRootCA = $NewRootCAVMIPCheck = $VMNetAdapter.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                        $Counter++
+                    }
                 }
             }
         }
+
+        $Counter = 0
         if (!$IPofServerToBeSubCA) {
-            $NewSubCAVMDeployResult = Wait-Job -Job $NewSubCAVMDeployJobInfo | Receive-Job
-            $IPofServerToBeSubCA = $NewSubCAVMDeployResult.VMIPAddress
+            $NewSubCAVMDeployResult = $global:RSSyncHash.$NewSubCAResultProperty.Output
 
-            while (![bool]$(Get-VM -Name "$DomainShortName`SubCA" -ErrorAction SilentlyContinue)) {
-                Write-Host "Waiting for $DomainShortName`SubCA VM to be deployed..."
-                Start-Sleep -Seconds 15
-            }
+            $IPofServerToBeSubCA = $NewRSubCAVMDeployResult.VMIPAddress
 
-            if (!$IPofServerToBeSubCA) {
-                $IPofServerToBeSubCA = $(Get-VM -Name "$DomainShortName`SubCA").NetworkAdpaters.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+            if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
+                $VMNetAdapter = Get-VMNetworkAdapter -VMName $NewSubCAVMName -ErrorAction SilentlyContinue
+                $IPofServerToBeSubCA = $NewSubCAVMIPCheck = $VMNetAdapter.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                while (!$NewSubCAVMIPCheck -and $Counter -le 60) {
+                    Start-Sleep -Seconds 60
+
+                    $VMNetAdapter = Get-VMNetworkAdapter -VMName $NewSubCAVMName -ErrorAction SilentlyContinue
+                    $IPofServerToBeSubCA = $NewSubCAVMIPCheck = $VMNetAdapter.IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                    $Counter++
+                }
             }
         }
 
         [System.Collections.ArrayList]$VMsNotReportingIP = @()
         if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeDomainController)) {
-            $null = $VMsNotReportingIP.Add("$DomainShortName`DC1")
+            $null = $VMsNotReportingIP.Add($NewDCVMName)
         }
         if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeRootCA)) {
-            $null = $VMsNotReportingIP.Add("$DomainShortName`RootCA")
+            $null = $VMsNotReportingIP.Add($NewRootCAVMName)
         }
         if (!$(TestIsValidIPAddress -IPAddress $IPofServerToBeSubCA)) {
-            $null = $VMsNotReportingIP.Add("$DomainShortName`SubCA")
+            $null = $VMsNotReportingIP.Add($NewSubCAVMName)
         }
 
         if ($VMsNotReportingIP.Count -gt 0) {
@@ -2840,7 +2910,7 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
             return
         }
 
-        Write-Host "Finished Deploying New VMs..."
+        Write-Host "Finished Deploying New VMs..." -ForegroundColor Green
 
         if ($NewDomain) {
             Write-Host "IP of DC is $IPOfServerToBeDomainController"
@@ -2919,21 +2989,13 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
                         Start-Sleep -Seconds 15
                     }
                     else {
-                        Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                        Write-Error "Unable to create new PSSession to '$PSSessionName' to '$IPofServerToBeDomainController' using account '$($PSRemotingCredentials.UserName)' within 30 minutes! Halting!"
                         $global:FunctionResult = "1"
-                        $DCPSRemotingFailure
                         return
                     }
                 }
                 $Counter++
             }
-        }
-        if ($DCPSRemotingFailure) {
-            Write-Host "Tried to remote into DC1 with the following parameters:"
-            $IPofServerToBeDomainController
-            $PSRemotingCredentials
-            $global:FunctionResult = "1"
-            return
         }
 
         $PSSessionName = NewUniqueString -ArrayOfStrings $(Get-PSSession).Name -PossibleNewUniqueString "ToRootCACheck"
@@ -2949,7 +3011,7 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
                     Start-Sleep -Seconds 15
                 }
                 else {
-                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                    Write-Error "Unable to create new PSSession to '$PSSessionName' to '$IPofServerToBeRootCA' using account '$($PSRemotingCredentials.UserName)' within 30 minutes! Halting!"
                     $global:FunctionResult = "1"
                     $RootCAPSRemotingFailure = $True
                     return
@@ -2971,7 +3033,7 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
                     Start-Sleep -Seconds 15
                 }
                 else {
-                    Write-Error "Unable to create new PSSession to '$PSSessionName' using account '$($PSRemotingCredentials.UserName)'! Halting!"
+                    Write-Error "Unable to create new PSSession to '$PSSessionName' to '$IPofServerToBeSubCA' using account '$($PSRemotingCredentials.UserName)' within 30 minutes! Halting!"
                     $global:FunctionResult = "1"
                     return
                 }
@@ -2996,73 +3058,57 @@ if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {
             $CreateDCSplatParams.Add("IPofServerToBeDomainController",$IPofServerToBeDomainController)
             $CreateDCSplatParams.Add("NewDomain",$FinalDomainName)
 
-            Write-Host "Splat Params for Create-Domain are:" -ForegroundColor Yellow
-            $CreateDCSplatParams
+            #Write-Host "Splat Params for Create-Domain are:" -ForegroundColor Yellow
+            #$CreateDCSplatParams
         }
 
         $CreateRootCASplatParams.Add("IPofServerToBeRootCA",$IPofServerToBeRootCA)
         $CreateRootCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
         $CreateRootCASplatParams.Add("ExistingDomain",$FinalDomainName)
-        Write-Host "Splat Params for Create-RootCA are:" -ForegroundColor Yellow
-        $CreateRootCASplatParams
+        #Write-Host "Splat Params for Create-RootCA are:" -ForegroundColor Yellow
+        #$CreateRootCASplatParams
 
         $CreateSubCASplatParams.Add("IPofServerToBeSubCA",$IPofServerToBeSubCA)
         $CreateSubCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
         $CreateSubCASplatParams.Add("IPofRootCA",$IPofServerToBeRootCA)
         $CreateSubCASplatParams.Add("ExistingDomain",$FinalDomainName)
-        Write-Host "Splat Params for Create-SubordinateCA are:" -ForegroundColor Yellow
-        $CreateSubCASplatParams
+        #Write-Host "Splat Params for Create-SubordinateCA are:" -ForegroundColor Yellow
+        #$CreateSubCASplatParams
 
         
         #endregion >> Deploy New VMs
     }
 
     #region >> Create the Services
-
-    # Can't Invoke-Parallel because Root CA depends on DC and SubCA Depends on Root CA...
-    <#
-    $ArrayOfPSObjects = @(
-        [pscustomobject]@{
-            Purpose             = "ForDC"
-            FunctionsForSBUse   = $FunctionsForSBUse
-            SplatParams         = $CreateDCSplatParams
-        }
-        [pscustomobject]@{
-            Purpose             = "ForRootCA"
-            FunctionsForSBUse   = $FunctionsForSBUse
-            SplatParams         = $CreateRootCASplatParams
-        }
-        [pscustomobject]@{
-            Purpose             = "ForSubCA"
-            FunctionsForSBUse   = $FunctionsForSBUse
-            SplatParams         = $CreateSubCASplatParams
-        }
-    )
-
-    $ArrayOfPSObjects | Invoke-Parallel {
-        # Load the functions we packed up
-        foreach ($func in $_.FunctionsForSBUse) { Invoke-Expression $func }
-        $SplatParams = $_.SplatParams
-
-        if ($_.Purpose -eq "ForDC") {
-            Create-Domain @SplatParams
-        }
-        if ($_.Purpose -eq "ForRootCA") {
-            Create-RootCA @SplatParams
-        }
-        if ($_.Purpose -eq "ForSubCA") {
-            Create-SubCA @SplatParams
-        }
-    }
-    #>
     
     if ($NewDomain) {
-        $CreateDCResult = Create-Domain @CreateDCSplatParams
+        try {
+            $CreateDCResult = Create-Domain @CreateDCSplatParams
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
     }
 
-    $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
-
-    $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
+    try {
+        $CreateRootCAResult = Create-RootCA @CreateRootCASplatParams
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
+    
+    try {
+        $CreateSubCAResult = Create-SubordinateCA @CreateSubCASplatParams
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
 
     $EndTime = Get-Date
     $TotalAllOpsTime = $EndTime - $StartTime
@@ -3437,7 +3483,7 @@ function Create-TwoTierPKICFSSL {
         
 #>
 function Deploy-HyperVVagrantBoxManually {
-    [CmdletBinding(DefaultParameterSetName='ExternalNetworkVM')]
+    [CmdletBinding()]
     Param(
         [Parameter(Mandatory=$True)]
         [ValidatePattern("[\w]+\/[\w]+")]
@@ -3464,11 +3510,11 @@ function Deploy-HyperVVagrantBoxManually {
 
         [Parameter(Mandatory=$True)]
         [ValidateSet(1024,2048,4096,8192,12288,16384,32768)]
-        [int]$Memory = 2048,
+        [int]$Memory,
 
         [Parameter(Mandatory=$True)]
         [ValidateSet(1,2)]
-        [int]$CPUs = 1,
+        [int]$CPUs,
 
         [Parameter(Mandatory=$False)]
         [string]$TemporaryDownloadDirectory,
@@ -3488,6 +3534,13 @@ function Deploy-HyperVVagrantBoxManually {
     )
 
     #region >> Variable/Parameter Transforms and PreRun Prep
+
+    $tempdir = $HOME + '\' + $([IO.Path]::GetRandomFileName()) -replace "\.[\w]+$",""
+    if (!$(Test-Path $tempdir)) {
+        $null = New-Item -ItemType Directory -Path $tempdir -Force
+    }
+
+    "Starting Deploy-HyperVVagrantBoxManually..." | Out-File "$tempdir\StartDepHyperVVM.txt"
 
     if (!$SkipHyperVInstallCheck) {
         # Check to Make Sure Hyper-V is installed
@@ -3523,6 +3576,8 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part2..." | Out-File "$tempdir\Part2.txt"
+
     if (!$(Test-Path $VMDestinationDirectory)) {
         Write-Error "The path '$VMDestinationDirectory' does not exist! Halting!"
         $global:FunctionResult = "1"
@@ -3531,6 +3586,8 @@ function Deploy-HyperVVagrantBoxManually {
     if ($($VMDestinationDirectory | Split-Path -Leaf) -eq $VMName) {
         $VMDestinationDirectory = $VMDestinationDirectory | Split-Path -Parent
     }
+
+    "Part3..." | Out-File "$tempdir\Part3.txt"
 
     # Make sure $VMDestinationDirectory is a local hard drive
     if ([bool]$(Get-Item $VMDestinationDirectory).LinkType) {
@@ -3547,6 +3604,8 @@ function Deploy-HyperVVagrantBoxManually {
         $global:FunctionResult = "1"
         return
     }
+
+    "Part4..." | Out-File "$tempdir\Part4.txt"
 
     if (!$TemporaryDownloadDirectory) {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
@@ -3573,6 +3632,8 @@ function Deploy-HyperVVagrantBoxManually {
             return
         }
     }
+
+    "Part5..." | Out-File "$tempdir\Part5.txt"
     
     if (![bool]$(Get-Module Hyper-V)) {
         try {
@@ -3610,6 +3671,8 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part6..." | Out-File "$tempdir\Part6.txt"
+
     try {
         $VMs = Get-VM
     }
@@ -3641,18 +3704,28 @@ function Deploy-HyperVVagrantBoxManually {
         return
     }
 
+    "Part7..." | Out-File "$tempdir\Part7.txt"
+
     # Set some other variables that we will need
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-    $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    "Part7X..." | Out-File "$tempdir\Part7X.txt"
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    
+    "Part7A..." | Out-File "$tempdir\Part7A.txt"
 
     if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
+        "Part7B..." | Out-File "$tempdir\Part7B.txt"
         if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
             # Download bsdtar from latest MSYS2 available on pldmgg github
             $WindowsNativeLinuxUtilsZipUrl = "https://github.com/pldmgg/WindowsNativeLinuxUtils/raw/master/MSYS2_20161025/bsdtar.zip"
+            "Part7C..." | Out-File "$tempdir\Part7C.txt"
             Invoke-WebRequest -Uri $WindowsNativeLinuxUtilsZipUrl -OutFile "$HOME\Downloads\bsdtar.zip"
+            "Part7D..." | Out-File "$tempdir\Part7D.txt"
             Expand-Archive -Path "$HOME\Downloads\bsdtar.zip" -DestinationPath "$HOME\Downloads" -Force
+            "Part7E..." | Out-File "$tempdir\Part7E.txt"
             $BsdTarDirectory = "$HOME\Downloads\bsdtar"
 
             if ($($env:Path -split ";") -notcontains $BsdTarDirectory) {
@@ -3676,6 +3749,8 @@ function Deploy-HyperVVagrantBoxManually {
 
     #region >> Main Body
 
+    "Part8..." | Out-File "$tempdir\Part8.txt"
+
     if (!$BoxFilePath -and !$DecompressedBoxDirectory) {
         $GetVagrantBoxSplatParams = @{
             VagrantBox          = $VagrantBox
@@ -3689,6 +3764,7 @@ function Deploy-HyperVVagrantBoxManually {
         }
 
         try {
+            "Running Get-VagrantBoxManualDownload..." | Out-File "$tempdir\GetVagrantBoxManualDownload.txt"
             $DownloadedBoxFilePath = Get-VagrantBoxManualDownload @GetVagrantBoxSplatParams
             if (!$DownloadedBoxFilePath) {throw "The Get-VagrantBoxManualDownload function failed! Halting!"}
         }
@@ -3706,6 +3782,8 @@ function Deploy-HyperVVagrantBoxManually {
         $BoxFilePath = $DownloadedBoxFilePath
     }
 
+    "Part9..." | Out-File "$tempdir\Part9.txt"
+
     if ($BoxFilePath) {
         if (!$(Test-Path $BoxFilePath)) {
             Write-Error "The path $BoxFilePath was not found! Halting!"
@@ -3714,7 +3792,10 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part10..." | Out-File "$tempdir\Part10.txt"
+
     if (!$DecompressedBoxDirectory) {
+        "Part11..." | Out-File "$tempdir\Part11.txt"
         $DownloadedVMDir = "$TemporaryDownloadDirectory\$NewVMName"
         if (!$(Test-Path $DownloadedVMDir)) {
             $null = New-Item -ItemType Directory -Path $DownloadedVMDir
@@ -3722,6 +3803,8 @@ function Deploy-HyperVVagrantBoxManually {
         
         # Extract the .box File
         Push-Location $DownloadedVMDir
+
+        "Part12..." | Out-File "$tempdir\Part12.txt"
 
         Write-Host "Checking file lock of .box file..."
         if ($PSVersionTable.PSEdition -eq "Core") {
@@ -3731,6 +3814,8 @@ function Deploy-HyperVVagrantBoxManually {
                 [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
             }
 
+            "Part13..." | Out-File "$tempdir\Part13.txt"
+            
             $Module = Get-Module MiniLab
             # NOTE: The below $FunctionsForSBUse is loaded when the MiniLab Module is imported
             $ThisModuleFunctions = $script:FunctionsForSBUse
@@ -3746,11 +3831,15 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
         else {
+            "Part14..." | Out-File "$tempdir\Part14.txt"
+
             while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
                 Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
                 Start-Sleep -Seconds 5
             }
         }
+
+        "Part15..." | Out-File "$tempdir\Part15.txt"
 
         try {
             Write-Host "Extracting .box file..."
@@ -3795,6 +3884,8 @@ function Deploy-HyperVVagrantBoxManually {
         $DecompressedBoxDirectory = $DownloadedVMDir
     }
 
+    "Part16..." | Out-File "$tempdir\Part16.txt"
+
     if ($DecompressedBoxDirectory) {
         if (!$(Test-Path $DecompressedBoxDirectory)) {
             Write-Error "The path $DecompressedBoxDirectory was not found! Halting!"
@@ -3803,13 +3894,19 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part17..." | Out-File "$tempdir\Part17.txt"
+
     try {
         if ($CopyDecompressedDirectory) {
+            "Part18..." | Out-File "$tempdir\Part18.txt"
+
             Write-Host "Copying decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory\$NewVMName'..."
             $ItemsToCopy = Get-ChildItem $DecompressedBoxDirectory
             $ItemsToCopy | foreach {Copy-Item -Path $_.FullName -Recurse -Destination "$VMDestinationDirectory\$NewVMName" -Force -ErrorAction SilentlyContinue}
         }
         else {
+            "Part19..." | Out-File "$tempdir\Part19.txt"
+
             Write-Host "Moving decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory'..."
             if (Test-Path "$VMDestinationDirectory\$NewVMName") {
                 Remove-Item -Path "$VMDestinationDirectory\$NewVMName" -Recurse -Force
@@ -3821,32 +3918,43 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
 
+        "Part20..." | Out-File "$tempdir\Part20.txt"
+
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
         $ExternalvSwitches = Get-VMSwitch -SwitchType External
         if ($ExternalvSwitches.Count -gt 1) {
-            $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-            $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-            $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-            $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+            "Part21..." | Out-File "$tempdir\Part21.txt"
+
+            $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+                $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+            } | Sort-Object Metric1)[0].InterfaceIndex
+            $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
             foreach ($vSwitchName in $ExternalvSwitches.Name) {
                 $AllRelatedvSwitchInfo = GetvSwitchAllRelatedInfo -vSwitchName $vSwitchName -WarningAction SilentlyContinue
-                if ($($NicAdapter.MacAddress -replace "-","") -eq $AllRelatedvSwitchInfo.MacAddress) {
+                if ($($NicInfo.MacAddress -replace ":","") -eq $AllRelatedvSwitchInfo.MacAddress) {
                     $vSwitchToUse = $AllRelatedvSwitchInfo.BasicvSwitchInfo
                 }
             }
         }
         elseif ($ExternalvSwitches.Count -eq 0) {
+            "Part22..." | Out-File "$tempdir\Part22.txt"
+
             $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $NicInfo.InterfaceAlias
             $ExternalSwitchCreated = $True
             $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
         }
         else {
+            "Part23..." | Out-File "$tempdir\Part23.txt"
+
             $vSwitchToUse = $ExternalvSwitches[0]
         }
 
         # Instead of actually importing the VM, it's easier (and more reliable) to just create a new one using the existing
         # .vhd/.vhdx so we don't have to deal with potential Hyper-V Version Incompatibilities
+
+        "Part24..." | Out-File "$tempdir\Part24.txt"
 
         $SwitchName = $vSwitchToUse.Name
         if ($VagrantBox -match "Win|Windows") {
@@ -3855,6 +3963,8 @@ function Deploy-HyperVVagrantBoxManually {
         else {
             $VMGen = 1
         }
+
+        "Part25..." | Out-File "$tempdir\Part25.txt"
 
         # Create the NEW VM
         $NewTempVMParams = @{
@@ -3868,11 +3978,18 @@ function Deploy-HyperVVagrantBoxManually {
         Write-Host "Creating VM..."
         $CreateVMOutput = Manage-HyperVVM @NewTempVMParams -Create
         #FixNTVirtualMachinesPerms -DirectoryPath $VMDestinationDirectory
+
+        "Part26..." | Out-File "$tempdir\Part26.txt"
+
         Write-Host "Starting VM..."
         #Start-VM -Name $NewVMName
         $StartVMOutput = Manage-HyperVVM -VMName $NewVMName -Start
+
+        "Part27..." | Out-File "$tempdir\Part7.txt"
     }
     catch {
+        "Part28..." | Out-File "$tempdir\Part28.txt"
+
         Write-Error $_
         
         # Cleanup
@@ -3894,6 +4011,8 @@ function Deploy-HyperVVagrantBoxManually {
         return
     }
 
+    "Part29..." | Out-File "$tempdir\Part29.txt"
+
     # Wait for up to 30 minutes for the new VM to report its IP Address
     $NewVMIP = $(Get-VMNetworkAdapter -VMName $NewVMName).IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
     $Counter = 0
@@ -3906,6 +4025,8 @@ function Deploy-HyperVVagrantBoxManually {
     if (!$NewVMIP) {
         $NewVMIP = "<$NewVMName`IPAddress>"
     }
+
+    "Part30..." | Out-File "$tempdir\Part30.txt"
 
     if ($VagrantBox -notmatch "Win|Windows") {
         if (!$(Test-Path "$HOME\.ssh")) {
@@ -3930,6 +4051,8 @@ function Deploy-HyperVVagrantBoxManually {
         Write-Host "To login to the Vagrant VM, use 'ssh -i `"$HOME\.ssh\$VagrantKeyFilename`" vagrant@$NewVMIP' OR use the Hyper-V Console GUI with username/password vagrant/vagrant"
     }
 
+    "Part31..." | Out-File "$tempdir\Part31.txt"
+
     $Output = @{
         VMName                  = $NewVMName
         VMIPAddress             = $NewVMIP
@@ -3942,6 +4065,8 @@ function Deploy-HyperVVagrantBoxManually {
     if ($MoveDecompressedDir) {
         $Output.Add("DecompressedBoxFileLocation",$DecompressedBoxFileLocation.FullName)
     }
+
+    "Part32..." | Out-File "$tempdir\Part32.txt"
 
     [pscustomobject]$Output
 
@@ -8648,8 +8773,11 @@ function New-DomainController {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
     if ($ServerIP -eq $PrimaryIP) {
         Write-Error "This $($MyInvocation.MyCommand.Name) function must be run remotely (i.e. from a workstation that can access the target Windows Server via PS Remoting)! Halting!"
         $global:FunctionResult = "1"
@@ -9854,8 +9982,11 @@ function New-RootCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @()
     if ($PSBoundParameters['RootCAIPOrFQDN']) {
@@ -10490,8 +10621,8 @@ function New-RunSpace {
             # the Runspace to hang. Invoke-Expression works all the time.
             #$Result = $ScriptBlock.InvokeReturnAsIs()
             #$Result = Invoke-Command -ScriptBlock $ScriptBlock
-            #$ScriptBlock.ToString() | Export-CliXml -Path "$HOME\SBToString.xml"
-            $Result = Invoke-Expression $ScriptBlock.ToString()
+            #$SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name SBString -Value $ScriptBlock.ToString()
+            $Result = Invoke-Expression -Command $ScriptBlock.ToString()
             $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name Output -Value $Result
         }
         catch {
@@ -11230,7 +11361,7 @@ function New-SubordinateCA {
         #region >> Prep
 
         # Import any Module Dependencies
-        $RequiredModules = @("PSPKI","ServerManager","WebAdministration")
+        $RequiredModules = @("PSPKI","ServerManager")
         $InvModDepSplatParams = @{
             RequiredModules                     = $RequiredModules
             InstallModulesNotAvailableLocally   = $True
@@ -11798,6 +11929,7 @@ function New-SubordinateCA {
         # Configure HTTPS Binding
         try {
             Write-Host "Configuring IIS https binding to use $PKIWebsiteCertFileOut..."
+            Import-Module WebAdministration
             Remove-Item IIS:\SslBindings\*
             $null = Get-ChildItem Cert:\LocalMachine\My | Where-Object {$_.Thumbprint -eq $PKIWebsiteCertThumbPrint} | New-Item IIS:\SslBindings\0.0.0.0!443
         }
@@ -11860,8 +11992,11 @@ function New-SubordinateCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @(
         [pscustomobject]@{
@@ -12120,15 +12255,17 @@ function New-SubordinateCA {
         $Output = Invoke-Command -Session $SubCAPSSession -ScriptBlock {
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
             $script:ModuleDependenciesMap = $args[0]
-            ${Function:GetDomainController}.Ast.Extent.Text | Out-File "$HOME\GetDomainController.ps1"
-            ${Function:SetupSubCA}.Ast.Extent.Text | Out-File "$HOME\SetupSubCA.ps1"
+            ${Function:GetDomainController}.Ast.Extent.Text | Set-Content "$HOME\SetupSubCA.psm1"
+            ${Function:SetupSubCA}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
+            ${Function:GetModuleDependencies}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
+            ${Function:InvokePSCompatibility}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
+            ${Function:InvokeModuleDependencies}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
             $using:NetworkInfoPSObjects | Export-CliXml "$HOME\NetworkInfoPSObjects.xml"
 
             $ExecutionScript = @(
                 'Start-Transcript -Path "$HOME\NewSubCATask.log" -Append'
                 ''
-                '. "$HOME\GetDomainController.ps1"'
-                '. "$HOME\SetupSubCA.ps1"'
+                'Import-Module "$HOME\SetupSubCA.psm1"'
                 '$NetworkInfoPSObjects = Import-CliXML "$HOME\NetworkInfoPSObjects.xml"'
                 ''
                 "`$DomainAdminPwdSS = ConvertTo-SecureString '$using:DomainAdminPwd' -AsPlainText -Force"
@@ -12137,7 +12274,6 @@ function New-SubordinateCA {
                 '$SetupSubCASplatParams = @{'
                 '    DomainAdminCredentials              = $DomainAdminCredentials'
                 '    NetworkInfoPSObjects                = $NetworkInfoPSObjects'
-                '    '
                 "    CAType                              = '$using:CAType'"
                 "    NewComputerTemplateCommonName       = '$using:NewComputerTemplateCommonName'"
                 "    NewWebServerTemplateCommonName      = '$using:NewWebServerTemplateCommonName'"
@@ -12280,8 +12416,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgmA88PO3Z/AAM0Vk5P30zuCJ
-# MNOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU4PH/W2pIamqrlJzvrObTeXhr
+# rLqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12338,11 +12474,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOUeZB4in/0/b3xC
-# whZW+DuwwtKYMA0GCSqGSIb3DQEBAQUABIIBAHRlt4nphEe/x1Zuy9iuR8Jw5yf6
-# wdyZdNQ2sW9ArR1O8vB6ZEW8sAX0Hr7jY8IwUzUVL9K8jHHf2m6cTMa1aXT4euCy
-# OVSjypCEz0cZQ1vn5Bkh3nMMBhuTfjTg1sJlEDb40tO+vZCKgih1QVwtxxMYAhpr
-# 2S9YxGxA3tfQRDIeFsjXRwT9johTGqTs3XbElEZc3yFU+zWCRKiMCiY+Bp9GiRuq
-# o4OhmwzkmDM7clJmo/fxY3oJBheYt+f8oMMIIe8HTC3w5D0kAiXfsMVfC7M4g7N3
-# R+pRvjpVbuDzv4LgdCH9iBaWI32Uk0GpZ+znq+fvLCm5wh6Dz/4w1uxqsYE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGQ+YOYLwJEmQw0/
+# VTGU72BWkLejMA0GCSqGSIb3DQEBAQUABIIBAC3loJBSlHkTko7vKHMN2gM5WG0K
+# 36HzWazF95MmLm9LFWGRkUyiN7UpvPuSAcIZomYX/8Zdwq6dxkB1G4DpDsh3IW17
+# 8w2Jbwjl0xF7qVnzDA7dCQ+IXoQ8Zp8qFsd/PEh2Meyl1yCulaCu/2ije8jERRZO
+# zb10czsA0WSAWZheu+XUC63Tt0kS9cFcjhjQ7h0G25wxfAAmRA7gmmk+B0IcjMi6
+# N0Izs2v3WuKGt0+thNq13Ry2l2WJvdR6nbFRHVpDzxUepWcIhIJTHyUvCkEt3nyF
+# MB+W74n8RBOCus14sjMKYVfrydlvP6jE9Xm+PX9+uf2rE++WHO6e+z1a/IM=
 # SIG # End signature block

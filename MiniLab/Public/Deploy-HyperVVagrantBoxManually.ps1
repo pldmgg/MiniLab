@@ -123,7 +123,7 @@
         
 #>
 function Deploy-HyperVVagrantBoxManually {
-    [CmdletBinding(DefaultParameterSetName='ExternalNetworkVM')]
+    [CmdletBinding()]
     Param(
         [Parameter(Mandatory=$True)]
         [ValidatePattern("[\w]+\/[\w]+")]
@@ -150,11 +150,11 @@ function Deploy-HyperVVagrantBoxManually {
 
         [Parameter(Mandatory=$True)]
         [ValidateSet(1024,2048,4096,8192,12288,16384,32768)]
-        [int]$Memory = 2048,
+        [int]$Memory,
 
         [Parameter(Mandatory=$True)]
         [ValidateSet(1,2)]
-        [int]$CPUs = 1,
+        [int]$CPUs,
 
         [Parameter(Mandatory=$False)]
         [string]$TemporaryDownloadDirectory,
@@ -174,6 +174,13 @@ function Deploy-HyperVVagrantBoxManually {
     )
 
     #region >> Variable/Parameter Transforms and PreRun Prep
+
+    $tempdir = $HOME + '\' + $([IO.Path]::GetRandomFileName()) -replace "\.[\w]+$",""
+    if (!$(Test-Path $tempdir)) {
+        $null = New-Item -ItemType Directory -Path $tempdir -Force
+    }
+
+    "Starting Deploy-HyperVVagrantBoxManually..." | Out-File "$tempdir\StartDepHyperVVM.txt"
 
     if (!$SkipHyperVInstallCheck) {
         # Check to Make Sure Hyper-V is installed
@@ -209,6 +216,8 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part2..." | Out-File "$tempdir\Part2.txt"
+
     if (!$(Test-Path $VMDestinationDirectory)) {
         Write-Error "The path '$VMDestinationDirectory' does not exist! Halting!"
         $global:FunctionResult = "1"
@@ -217,6 +226,8 @@ function Deploy-HyperVVagrantBoxManually {
     if ($($VMDestinationDirectory | Split-Path -Leaf) -eq $VMName) {
         $VMDestinationDirectory = $VMDestinationDirectory | Split-Path -Parent
     }
+
+    "Part3..." | Out-File "$tempdir\Part3.txt"
 
     # Make sure $VMDestinationDirectory is a local hard drive
     if ([bool]$(Get-Item $VMDestinationDirectory).LinkType) {
@@ -233,6 +244,8 @@ function Deploy-HyperVVagrantBoxManually {
         $global:FunctionResult = "1"
         return
     }
+
+    "Part4..." | Out-File "$tempdir\Part4.txt"
 
     if (!$TemporaryDownloadDirectory) {
         $TemporaryDownloadDirectory = "$VMDestinationDirectory\BoxDownloads"
@@ -259,6 +272,8 @@ function Deploy-HyperVVagrantBoxManually {
             return
         }
     }
+
+    "Part5..." | Out-File "$tempdir\Part5.txt"
     
     if (![bool]$(Get-Module Hyper-V)) {
         try {
@@ -296,6 +311,8 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part6..." | Out-File "$tempdir\Part6.txt"
+
     try {
         $VMs = Get-VM
     }
@@ -327,18 +344,28 @@ function Deploy-HyperVVagrantBoxManually {
         return
     }
 
+    "Part7..." | Out-File "$tempdir\Part7.txt"
+
     # Set some other variables that we will need
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-    $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    "Part7X..." | Out-File "$tempdir\Part7X.txt"
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    
+    "Part7A..." | Out-File "$tempdir\Part7A.txt"
 
     if ([Environment]::OSVersion.Version -lt [version]"10.0.17063") {
+        "Part7B..." | Out-File "$tempdir\Part7B.txt"
         if (![bool]$(Get-Command bsdtar -ErrorAction SilentlyContinue)) {
             # Download bsdtar from latest MSYS2 available on pldmgg github
             $WindowsNativeLinuxUtilsZipUrl = "https://github.com/pldmgg/WindowsNativeLinuxUtils/raw/master/MSYS2_20161025/bsdtar.zip"
+            "Part7C..." | Out-File "$tempdir\Part7C.txt"
             Invoke-WebRequest -Uri $WindowsNativeLinuxUtilsZipUrl -OutFile "$HOME\Downloads\bsdtar.zip"
+            "Part7D..." | Out-File "$tempdir\Part7D.txt"
             Expand-Archive -Path "$HOME\Downloads\bsdtar.zip" -DestinationPath "$HOME\Downloads" -Force
+            "Part7E..." | Out-File "$tempdir\Part7E.txt"
             $BsdTarDirectory = "$HOME\Downloads\bsdtar"
 
             if ($($env:Path -split ";") -notcontains $BsdTarDirectory) {
@@ -362,6 +389,8 @@ function Deploy-HyperVVagrantBoxManually {
 
     #region >> Main Body
 
+    "Part8..." | Out-File "$tempdir\Part8.txt"
+
     if (!$BoxFilePath -and !$DecompressedBoxDirectory) {
         $GetVagrantBoxSplatParams = @{
             VagrantBox          = $VagrantBox
@@ -375,6 +404,7 @@ function Deploy-HyperVVagrantBoxManually {
         }
 
         try {
+            "Running Get-VagrantBoxManualDownload..." | Out-File "$tempdir\GetVagrantBoxManualDownload.txt"
             $DownloadedBoxFilePath = Get-VagrantBoxManualDownload @GetVagrantBoxSplatParams
             if (!$DownloadedBoxFilePath) {throw "The Get-VagrantBoxManualDownload function failed! Halting!"}
         }
@@ -392,6 +422,8 @@ function Deploy-HyperVVagrantBoxManually {
         $BoxFilePath = $DownloadedBoxFilePath
     }
 
+    "Part9..." | Out-File "$tempdir\Part9.txt"
+
     if ($BoxFilePath) {
         if (!$(Test-Path $BoxFilePath)) {
             Write-Error "The path $BoxFilePath was not found! Halting!"
@@ -400,7 +432,10 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part10..." | Out-File "$tempdir\Part10.txt"
+
     if (!$DecompressedBoxDirectory) {
+        "Part11..." | Out-File "$tempdir\Part11.txt"
         $DownloadedVMDir = "$TemporaryDownloadDirectory\$NewVMName"
         if (!$(Test-Path $DownloadedVMDir)) {
             $null = New-Item -ItemType Directory -Path $DownloadedVMDir
@@ -408,6 +443,8 @@ function Deploy-HyperVVagrantBoxManually {
         
         # Extract the .box File
         Push-Location $DownloadedVMDir
+
+        "Part12..." | Out-File "$tempdir\Part12.txt"
 
         Write-Host "Checking file lock of .box file..."
         if ($PSVersionTable.PSEdition -eq "Core") {
@@ -417,6 +454,8 @@ function Deploy-HyperVVagrantBoxManually {
                 [PowerShell].Assembly.GetType("System.Management.Automation.TypeAccelerators")::Add("PSSession","System.Management.Automation.Runspaces.PSSession")
             }
 
+            "Part13..." | Out-File "$tempdir\Part13.txt"
+            
             $Module = Get-Module MiniLab
             # NOTE: The below $FunctionsForSBUse is loaded when the MiniLab Module is imported
             $ThisModuleFunctions = $script:FunctionsForSBUse
@@ -432,11 +471,15 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
         else {
+            "Part14..." | Out-File "$tempdir\Part14.txt"
+
             while ([bool]$(GetFileLockProcess -FilePath $BoxFilePath -ErrorAction SilentlyContinue)) {
                 Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
                 Start-Sleep -Seconds 5
             }
         }
+
+        "Part15..." | Out-File "$tempdir\Part15.txt"
 
         try {
             Write-Host "Extracting .box file..."
@@ -481,6 +524,8 @@ function Deploy-HyperVVagrantBoxManually {
         $DecompressedBoxDirectory = $DownloadedVMDir
     }
 
+    "Part16..." | Out-File "$tempdir\Part16.txt"
+
     if ($DecompressedBoxDirectory) {
         if (!$(Test-Path $DecompressedBoxDirectory)) {
             Write-Error "The path $DecompressedBoxDirectory was not found! Halting!"
@@ -489,13 +534,19 @@ function Deploy-HyperVVagrantBoxManually {
         }
     }
 
+    "Part17..." | Out-File "$tempdir\Part17.txt"
+
     try {
         if ($CopyDecompressedDirectory) {
+            "Part18..." | Out-File "$tempdir\Part18.txt"
+
             Write-Host "Copying decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory\$NewVMName'..."
             $ItemsToCopy = Get-ChildItem $DecompressedBoxDirectory
             $ItemsToCopy | foreach {Copy-Item -Path $_.FullName -Recurse -Destination "$VMDestinationDirectory\$NewVMName" -Force -ErrorAction SilentlyContinue}
         }
         else {
+            "Part19..." | Out-File "$tempdir\Part19.txt"
+
             Write-Host "Moving decompressed VM from '$DecompressedBoxDirectory' to '$VMDestinationDirectory'..."
             if (Test-Path "$VMDestinationDirectory\$NewVMName") {
                 Remove-Item -Path "$VMDestinationDirectory\$NewVMName" -Recurse -Force
@@ -507,32 +558,43 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
 
+        "Part20..." | Out-File "$tempdir\Part20.txt"
+
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
         $ExternalvSwitches = Get-VMSwitch -SwitchType External
         if ($ExternalvSwitches.Count -gt 1) {
-            $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-            $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-            $NicInfo = Get-NetIPAddress -IPAddress $PrimaryIP
-            $NicAdapter = Get-NetAdapter -InterfaceAlias $NicInfo.InterfaceAlias
+            "Part21..." | Out-File "$tempdir\Part21.txt"
+
+            $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+                $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+            } | Sort-Object Metric1)[0].InterfaceIndex
+            $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
             foreach ($vSwitchName in $ExternalvSwitches.Name) {
                 $AllRelatedvSwitchInfo = GetvSwitchAllRelatedInfo -vSwitchName $vSwitchName -WarningAction SilentlyContinue
-                if ($($NicAdapter.MacAddress -replace "-","") -eq $AllRelatedvSwitchInfo.MacAddress) {
+                if ($($NicInfo.MacAddress -replace ":","") -eq $AllRelatedvSwitchInfo.MacAddress) {
                     $vSwitchToUse = $AllRelatedvSwitchInfo.BasicvSwitchInfo
                 }
             }
         }
         elseif ($ExternalvSwitches.Count -eq 0) {
+            "Part22..." | Out-File "$tempdir\Part22.txt"
+
             $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $NicInfo.InterfaceAlias
             $ExternalSwitchCreated = $True
             $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
         }
         else {
+            "Part23..." | Out-File "$tempdir\Part23.txt"
+
             $vSwitchToUse = $ExternalvSwitches[0]
         }
 
         # Instead of actually importing the VM, it's easier (and more reliable) to just create a new one using the existing
         # .vhd/.vhdx so we don't have to deal with potential Hyper-V Version Incompatibilities
+
+        "Part24..." | Out-File "$tempdir\Part24.txt"
 
         $SwitchName = $vSwitchToUse.Name
         if ($VagrantBox -match "Win|Windows") {
@@ -541,6 +603,8 @@ function Deploy-HyperVVagrantBoxManually {
         else {
             $VMGen = 1
         }
+
+        "Part25..." | Out-File "$tempdir\Part25.txt"
 
         # Create the NEW VM
         $NewTempVMParams = @{
@@ -554,11 +618,18 @@ function Deploy-HyperVVagrantBoxManually {
         Write-Host "Creating VM..."
         $CreateVMOutput = Manage-HyperVVM @NewTempVMParams -Create
         #FixNTVirtualMachinesPerms -DirectoryPath $VMDestinationDirectory
+
+        "Part26..." | Out-File "$tempdir\Part26.txt"
+
         Write-Host "Starting VM..."
         #Start-VM -Name $NewVMName
         $StartVMOutput = Manage-HyperVVM -VMName $NewVMName -Start
+
+        "Part27..." | Out-File "$tempdir\Part7.txt"
     }
     catch {
+        "Part28..." | Out-File "$tempdir\Part28.txt"
+
         Write-Error $_
         
         # Cleanup
@@ -580,6 +651,8 @@ function Deploy-HyperVVagrantBoxManually {
         return
     }
 
+    "Part29..." | Out-File "$tempdir\Part29.txt"
+
     # Wait for up to 30 minutes for the new VM to report its IP Address
     $NewVMIP = $(Get-VMNetworkAdapter -VMName $NewVMName).IPAddresses | Where-Object {TestIsValidIPAddress -IPAddress $_}
     $Counter = 0
@@ -592,6 +665,8 @@ function Deploy-HyperVVagrantBoxManually {
     if (!$NewVMIP) {
         $NewVMIP = "<$NewVMName`IPAddress>"
     }
+
+    "Part30..." | Out-File "$tempdir\Part30.txt"
 
     if ($VagrantBox -notmatch "Win|Windows") {
         if (!$(Test-Path "$HOME\.ssh")) {
@@ -616,6 +691,8 @@ function Deploy-HyperVVagrantBoxManually {
         Write-Host "To login to the Vagrant VM, use 'ssh -i `"$HOME\.ssh\$VagrantKeyFilename`" vagrant@$NewVMIP' OR use the Hyper-V Console GUI with username/password vagrant/vagrant"
     }
 
+    "Part31..." | Out-File "$tempdir\Part31.txt"
+
     $Output = @{
         VMName                  = $NewVMName
         VMIPAddress             = $NewVMIP
@@ -629,6 +706,8 @@ function Deploy-HyperVVagrantBoxManually {
         $Output.Add("DecompressedBoxFileLocation",$DecompressedBoxFileLocation.FullName)
     }
 
+    "Part32..." | Out-File "$tempdir\Part32.txt"
+
     [pscustomobject]$Output
 
     #endregion >> Main Body
@@ -637,8 +716,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUu7gm1reUm+H6ILKXM79OLPXk
-# 1kugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUtASUX1ZW3wKY5LN4DYhpQTzq
+# Sz2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -695,11 +774,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGCwdMjMF5rZoEuT
-# pwHUD+G380kZMA0GCSqGSIb3DQEBAQUABIIBAFT+cINGEQ8Bwl5zRX/XG6wdihF2
-# RNSR2yzZHBP4AGTK5tmi3kZdRQjZ6AppDEMe5THD1lpLoQf1MIHKtYcsNEcKV5E+
-# iYqgWvGY10ePuv2BOkc92Gl7NwnVgmf8qT6841Qg5W1ABlTtZ42JHs7q+BYKlEJ6
-# JBdxg1x2ISLc/SToKbsPcgALvYcIA11O8xq7R0n5EVXzvCXIGXKM36lCH3b10V4i
-# p3iNwFzWHFni1AaUGyAkXEpE2hL3DR2iqFbZKHIV9Fw8PdDQHWz7E4lzGyj6p1MH
-# wOJneR4ZJFGgCI/ohZ0SFUkjyr1L5r81Cdnjbj/uvUPeu+yDNucUaxucv+k=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMFATnzkIUWQtH8M
+# 4dtqmC/ScwHZMA0GCSqGSIb3DQEBAQUABIIBABLsMey4gPJFvi8fIlNLYg3l6E8q
+# gahJ3gAuUSRc7SJzsMwkeuZbWKO5c2DZQYEEB6MdK1B6otvzSxDUj39pgG7OCXUF
+# LQU7BVxD1FxkhJNS4k2PqxL5z38WcciBl+MBbB9s8IDqDd5Y5zWgH7yrv1frwxvI
+# tgUjxcD7gY1DWpkUwujogfRQyKAvJpB30NHfuWZ92xfGWm92dLLqhncyJQXmA3f6
+# bQwmH0pxNbptmZRQ2wBEzgFEVYytQ76fD/oe6rnN720OXI8ljvhlWMCnEiCzLvk5
+# cxydHXlLuwFd5M/o0+dFUbfVjEmucdIsVykk+yBQ1SJd+S/0HvLM/Pfivs4=
 # SIG # End signature block

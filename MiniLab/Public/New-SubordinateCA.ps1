@@ -232,7 +232,7 @@ function New-SubordinateCA {
         #region >> Prep
 
         # Import any Module Dependencies
-        $RequiredModules = @("PSPKI","ServerManager","WebAdministration")
+        $RequiredModules = @("PSPKI","ServerManager")
         $InvModDepSplatParams = @{
             RequiredModules                     = $RequiredModules
             InstallModulesNotAvailableLocally   = $True
@@ -800,6 +800,7 @@ function New-SubordinateCA {
         # Configure HTTPS Binding
         try {
             Write-Host "Configuring IIS https binding to use $PKIWebsiteCertFileOut..."
+            Import-Module WebAdministration
             Remove-Item IIS:\SslBindings\*
             $null = Get-ChildItem Cert:\LocalMachine\My | Where-Object {$_.Thumbprint -eq $PKIWebsiteCertThumbPrint} | New-Item IIS:\SslBindings\0.0.0.0!443
         }
@@ -862,8 +863,11 @@ function New-SubordinateCA {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @(
         [pscustomobject]@{
@@ -1122,15 +1126,17 @@ function New-SubordinateCA {
         $Output = Invoke-Command -Session $SubCAPSSession -ScriptBlock {
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
             $script:ModuleDependenciesMap = $args[0]
-            ${Function:GetDomainController}.Ast.Extent.Text | Out-File "$HOME\GetDomainController.ps1"
-            ${Function:SetupSubCA}.Ast.Extent.Text | Out-File "$HOME\SetupSubCA.ps1"
+            ${Function:GetDomainController}.Ast.Extent.Text | Set-Content "$HOME\SetupSubCA.psm1"
+            ${Function:SetupSubCA}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
+            ${Function:GetModuleDependencies}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
+            ${Function:InvokePSCompatibility}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
+            ${Function:InvokeModuleDependencies}.Ast.Extent.Text | Add-Content "$HOME\SetupSubCA.psm1"
             $using:NetworkInfoPSObjects | Export-CliXml "$HOME\NetworkInfoPSObjects.xml"
 
             $ExecutionScript = @(
                 'Start-Transcript -Path "$HOME\NewSubCATask.log" -Append'
                 ''
-                '. "$HOME\GetDomainController.ps1"'
-                '. "$HOME\SetupSubCA.ps1"'
+                'Import-Module "$HOME\SetupSubCA.psm1"'
                 '$NetworkInfoPSObjects = Import-CliXML "$HOME\NetworkInfoPSObjects.xml"'
                 ''
                 "`$DomainAdminPwdSS = ConvertTo-SecureString '$using:DomainAdminPwd' -AsPlainText -Force"
@@ -1139,7 +1145,6 @@ function New-SubordinateCA {
                 '$SetupSubCASplatParams = @{'
                 '    DomainAdminCredentials              = $DomainAdminCredentials'
                 '    NetworkInfoPSObjects                = $NetworkInfoPSObjects'
-                '    '
                 "    CAType                              = '$using:CAType'"
                 "    NewComputerTemplateCommonName       = '$using:NewComputerTemplateCommonName'"
                 "    NewWebServerTemplateCommonName      = '$using:NewWebServerTemplateCommonName'"
@@ -1245,8 +1250,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUibZVE7omU1JNPwgsqHsoHRSs
-# yTigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKh2ikwx+CRupKYaodgWq46rV
+# L0Wgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1303,11 +1308,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJStoWB9Gel0Ulzp
-# gGaQN+7W0AUZMA0GCSqGSIb3DQEBAQUABIIBAA8Odeazd3wuKW2lx77v4WN2x28g
-# G3mtv7++wi2/ao4UZTXuIkV2ofhNZSrF7mOv+534i6NLDucdGbC49lmjMJjwsKcl
-# Yx5+EQg6Hz68jn8s5/nNUK9YqjXsXfFHzdTdHQxboYteIDuf53Z397LkWWOE09bF
-# 7m2L3UiKT+qAk9fjxJ2wmSiN5oG0LHvALdPDT0w+wv26gq5wAipapBkEt5Cp6Jec
-# MqNT7tn1OvcS9aJ9+iWz5dfoAHVTbesakNnM5jBoofjqHraLOmBXM0zchXw66eaq
-# PrrVC1A5a6gjjgOI2rAO9br1iS8lPaHtWNBnEkAEBq50lOKMFzHV2XR3gLM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC5PYRVUwl/dIvLm
+# +RWqxUj0JIMsMA0GCSqGSIb3DQEBAQUABIIBADOVryCQB8oVtsnJ/bjbeXXa+XJL
+# uXxOPHNWwfpC3FgTC/ymTYCs9F14E6efvvpisQSpLBk8dbIWeQVl7OeEsyWXsShK
+# sbSdH2OKP0RZHxi+gcPDQvKY05PzzT0v/FGtmytxiWEELwU+JbF3O0eFBfflXkP0
+# blZeRGkc1PJVGKS/MhL4Ltt18oSDUsi3nRRGLDHlRyxP7lx5jrwmVrvzD5oGo/U4
+# Rz+WI/QHvsndqmLLTKsTQQBNRVDo3oMQfT+xhIYccxK4Wrw6jh2Ir5cht2pPcow1
+# J+wugJcb2qDWJtr4GtyvjpFvaji+9fLgNDrvdgNAdqTyPosd9RbuPX0V5Co=
 # SIG # End signature block

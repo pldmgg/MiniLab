@@ -377,8 +377,8 @@ function New-RunSpace {
             # the Runspace to hang. Invoke-Expression works all the time.
             #$Result = $ScriptBlock.InvokeReturnAsIs()
             #$Result = Invoke-Command -ScriptBlock $ScriptBlock
-            #$ScriptBlock.ToString() | Export-CliXml -Path "$HOME\SBToString.xml"
-            $Result = Invoke-Expression $ScriptBlock.ToString()
+            #$SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name SBString -Value $ScriptBlock.ToString()
+            $Result = Invoke-Expression -Command $ScriptBlock.ToString()
             $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name Output -Value $Result
         }
         catch {
@@ -487,8 +487,8 @@ function New-RunSpace {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmLHtcZJFilgOtNA1rPD58Zme
-# Y8igggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUY8OJ4FMFVWRzoy3p/rZs9J0t
+# 79qgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -545,11 +545,11 @@ function New-RunSpace {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFARzD4Jry0bxomwm
-# oeV4QvM/J6Y/MA0GCSqGSIb3DQEBAQUABIIBAIpIugKnWbiSV+ONRfLtukJK5iYY
-# M9fu2kJLSCnxc7NzBDEj+pFedotdTBmNuGFIs+zcpBeBpsrKz0i5nUBGMDvl5LvY
-# oWhtK3RMbJc8pWX/VdzjIAWx7GqkoKUv5xbXWtZmX5vzyag4PvnWuWQMUB1up/qX
-# 02SQUfXipDKZ/V4eKY+RTuYVv8ekzXXfqcOolWuyQO3UmjtMKH9cIpQ1+8LCsRhF
-# kLENQ04m0feOzCdFOkknWaghNUIUj8UmCWXCI5g85d/BYTGXqaO7RYcJ/RCap2xV
-# p2zlMDL7YOoayEVqrzSNVPIWnkHw2oZSUOXafbM/T9IVjRaJmVn0fvy3gt0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNwoS6f4jQpdXUhH
+# /EFFoaD1porQMA0GCSqGSIb3DQEBAQUABIIBACZAO1x9kObDMqdwzQnOMre36T7J
+# 1gaNr1Ny5nSYcGyk8kAU/ePn2ngCaNcW6EynzUIokK5smhCW+r15vWYJ6fYKT6Ko
+# 8GzHDApBf/gu7TK4t/auhzG8XpuICoGN12fsTOYtD+cOzp/0Txc9QRxoRLCnB5bk
+# VyCjhz539JnjTL+XlxKwU0YDw81PDeNm2USdd8K9rk57O/3aw/5JYof7o80KlUR6
+# H9tVOYj3wVVWlD7bXTN9KCU6x3i0XbTNrV9CDlx9X8FrmKDx+RwNjh9ctuFQx56s
+# vsp9j0Vxz9r593L6N5CTkJFufV6Kj60Hkv5bgbkVBKgKQz9BLA6E3QSlIeo=
 # SIG # End signature block

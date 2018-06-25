@@ -159,9 +159,11 @@ function Create-Domain {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
-    
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -321,51 +323,6 @@ function Create-Domain {
             $BoxFileItem = Get-VagrantBoxManualDownload -VagrantBox $Windows2016VagrantBox -VagrantProvider "hyperv" -DownloadDirectory "$VMStorageDirectory\BoxDownloads"
             $BoxFilePath = $BoxFileItem.FullName
         }
-
-        <#
-        $NewVMDeploySBAsString = @(
-            '[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"'
-            ''
-            "`$env:Path = '$env:Path'"
-            ''
-            '# Load the functions we packed up'
-            '$args | foreach { Invoke-Expression $_ }'
-            ''
-            '$DeployBoxSplatParams = @{'
-            "    VagrantBox                  = '$Windows2016VagrantBox'"
-            '    CPUs                        = 2'
-            '    Memory                      = 4096'
-            '    VagrantProvider             = "hyperv"'
-            "    VMName                      = '$DomainShortName' + 'DC1'"
-            "    VMDestinationDirectory      = '$VMStorageDirectory'"
-            '    SkipHyperVInstallCheck      = $True'
-            '    CopyDecompressedDirectory   = $True'
-            '}'
-            ''
-            "if (-not [string]::IsNullOrWhiteSpace('$DecompressedBoxDir')) {"
-            "    if (`$(Get-Item '$DecompressedBoxDir').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('DecompressedBoxDirectory','$DecompressedBoxDir')"
-            '    }'
-            '}'
-            "if (-not [string]::IsNullOrWhiteSpace('$BoxFilePath')) {"
-            "    if (-not `$(Get-Item '$BoxFilePath').PSIsContainer) {"
-            "        `$DeployBoxSplatParams.Add('BoxFilePath','$BoxFilePath')"
-            '    }'
-            '}'
-            ''
-            '$DeployBoxResult = Deploy-HyperVVagrantBoxManually @DeployBoxSplatParams'
-            '$DeployBoxResult'
-        )
-        
-        try {
-            $NewVMDeploySB = [scriptblock]::Create($($NewVMDeploySBAsString -join "`n"))
-        }
-        catch {
-            Write-Error "Problem creating `$NewVMDeploySB! Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-        #>
 
         $NewVMDeploySB = {
             $DeployBoxSplatParams = @{
@@ -714,8 +671,8 @@ function Create-Domain {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSvaYMowryv6H0VYFc01jOwc5
-# uIWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUyN2k3yMV8o4NPtdMKwkUT3es
+# Woygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -772,11 +729,11 @@ function Create-Domain {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNHpUlIQ4VQeMOvn
-# XJTLsVUPanjCMA0GCSqGSIb3DQEBAQUABIIBAF7vor76dAVeazB5ldswwR+azOF7
-# E6HlOEEpbYghazHV1xQQTr4Xdm/YePMD67j7XvjuNlbKidmT1kRPU3asekpaX2u3
-# qog87KM5vY34x05nW5r3pMcw7X+m19m4K+R9TLlwedbr/QzhovUPLTbxCN/4WOJs
-# cV1j6rvSf8bVcnSI5Qhjf0m5JRKXcz33Qf8Jvy1vLlTdQpaQf00HUEWRnLvkhdPF
-# gq3dXxfW6Hj1zlE+Qyz5+zyeFi1UMGvs921sRRtr7FtWBdg2K8a9bTdxvIevVbzK
-# ZntnIOfYYxMDcJU9tohcJoJiqCxhnsYvqLs+adYYAeIVDYk5cntz5R85hVg=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFK1g4q4yZaRs2n3S
+# 1p8IzeKS87vvMA0GCSqGSIb3DQEBAQUABIIBAB41NtpZHoygt5E/ZDJMcsfLLEFP
+# eToYGwny3OUC7tArVC+ohjXj+bT6nstEnv+TaZGTedgmrcCj4rRLXnTAr19gy7W4
+# Gv01oGEGILDo4Qk5Ye6VNizQheZ4r9k3aENcL18hAKyI/EcXSvaNhLd43GoMfS6K
+# xRAcitnKcufEXi3MHxizj1ZVer3nx5t7en/fUyiKDKDvW/HmoDRaIQIztZoH0YjO
+# mdXE5RH3Y09Jp+YauBVnerCT9gvGT1sn2TunyRMZvayyVikXR1UYJylYJBJ6QlJv
+# /7qrKZi63p/AmWaAvRdD+aafT+/j5Kh0VdIkaVsSEs1kGuhlexotOING5Us=
 # SIG # End signature block

@@ -148,8 +148,11 @@ function New-DomainController {
         return
     }
 
-    $NextHop = $(Get-NetRoute -AddressFamily IPv4 | Where-Object {$_.NextHop -ne "0.0.0.0"} | Sort-Object RouteMetric)[0].NextHop
-    $PrimaryIP = $(Find-NetRoute -RemoteIPAddress $NextHop | Where-Object {$($_ | Get-Member).Name -contains "IPAddress"}).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
     if ($ServerIP -eq $PrimaryIP) {
         Write-Error "This $($MyInvocation.MyCommand.Name) function must be run remotely (i.e. from a workstation that can access the target Windows Server via PS Remoting)! Halting!"
         $global:FunctionResult = "1"
@@ -748,8 +751,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUj88nLiN1btg7tYCemLdGPOaY
-# zqugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUStnG6AvKcoyLHFTrs/OaT73d
+# gI2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -806,11 +809,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMUW3BaY//Zgj2rd
-# qqJUVB6d6BzyMA0GCSqGSIb3DQEBAQUABIIBACC/5fQgepp//pPqbUESgr5x1BHR
-# b5qQsZ219a4bUdNlvhgFlLZRrOnMQ8P9NQXTDq1g1GHg8rf1KfzCHC+Q/EmwLDRM
-# Vp7rprERa7hhCalB8ouAt308E746my3xKbnSiRqDeyamjblW6ZCy9hB3ZPRJTbU9
-# B3E9PvzTOnwLaFkd79BLrFK3JR37ff5CdpIWMaRFqjP1JqMj2zFVJos7VrdNPOgb
-# 58+L3krrYWC2miIZouZuGifMeSUUxqCTxIKTZ6p76w7QM1DIQZ7zETCO3YsboOT1
-# vtB6fTTtHwJPyyqLUfmv12GKbqv+oh/CUobfvoQtoPGa9sx67/tiMI+NU/g=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI/vqqPIGebT6S3B
+# KmLNb7NHqqbFMA0GCSqGSIb3DQEBAQUABIIBAL59EPRB2FUPAGiJ7DSrAW3PO1LF
+# B1rOEnkgUL1nUZWw0dftv0VfYMVv+UtIEECh3hk/jaPbheooumYMAqvY5ZcyRlF7
+# Fx4/MP8Rv88AJwdx+KXa+Iq1pQ/CnwcEII/zYiWFO46q4JbWhl4HicQI+bMmXq1U
+# PfX/46pXCzYo1LR2Si41NDmgoB85z5pPyki8c4bxQnIbZpWclDva6K9HIYylJff4
+# /dX9dltCyPKnXKWTUVTwXlPxN5FkGuP+7jutfubqzyFbZVJ9pOI9MBViEcC3oXYm
+# a8JjcXrf+ZX76pTZmHbLc270HzAzsmYCt9Zvforntzz1SBAE0zQFJ4nTLvs=
 # SIG # End signature block
