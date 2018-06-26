@@ -276,7 +276,9 @@ function New-RootCA {
                 $null = Add-WindowsFeature @SplatParams
             }
             catch {
+                Write-Error $_
                 Write-Error "Problem with 'Add-WindowsFeature $FeatureName'! Halting!"
+                $SplatParams | Export-CliXml "$HOME\AddWinFeature.xml"
                 $global:FunctionResult = "1"
                 return
             }
@@ -610,7 +612,7 @@ function New-RootCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @()
     if ($PSBoundParameters['RootCAIPOrFQDN']) {
@@ -714,6 +716,8 @@ function New-RootCA {
 
     $RelevantRootCANetworkInfo = $NetworkInfoPSObjects | Where-Object {$_.ServerPurpose -eq "RootCA"}
 
+    $RelevantRootCANetworkInfo | Export-CliXml "$HOME\RelevatneRootCANetInfo.xml"
+
     # Set some defaults if certain paramters are not used
     if (!$CAType) {
         $CAType = "EnterpriseRootCA"
@@ -763,6 +767,8 @@ function New-RootCA {
         CDPUrl                              = $CDPUrl
         AIAUrl                              = $AIAUrl
     }
+
+    $SetupRootCASplatParams | Export-CliXml "$HOME\SetupRootCASplatParams.xml"
 
     # Install any required PowerShell Modules
     <#
@@ -816,7 +822,7 @@ function New-RootCA {
         [System.Collections.ArrayList]$ModulesToTransfer = @()
         foreach ($ModuleResource in $NeededModules) {
             $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
-            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+            if ($ModMapObj.ModulePSCompatibility -ne "WinPS") {
                 $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
                     if (![bool]$(Get-Module -ListAvailable $args[0])) {
                         Install-Module $args[0]
@@ -868,8 +874,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU/80/WpshGagBBf+AlvKH9rkF
-# 3qCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUhkN/eSBWfElcTPDsaOqA6+2o
+# 1mOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -926,11 +932,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJgAo1YJvGRGzh7j
-# XUiRdkaqDgG3MA0GCSqGSIb3DQEBAQUABIIBAIpWcodMIgWbfuS6ps2y3IcKnfiQ
-# /5Lcrbr3dRLPSgVZQhRf0dSbmURIoU8ZjdsOW16sVFDFbAVb9kuSsZAigme5vPiU
-# J2L3IItvDUpulLTB4CHio84M7TzB8wh1faFrvFmEfhOvHetHR1Uoah1ryxEtgpjq
-# 2TzGZP4113F2qyIbeebxZUfYQkjWZyhchdxj2QC2X3sp+x4xXWBxECoYYBqWyeFj
-# hSr0XLpyBHykRzpyw7QVQbLrB0vCsaKAQfVbqhtfxPXjer35J+69/0qOXf1cEoW+
-# c4dSNQos6hTWjUm2v5POuZtelZvLst7eYzQO7sx16rrZH+jJlNQBhJJNaHs=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEsKUYuOLXlouhfO
+# 8/ChgIyPBw9hMA0GCSqGSIb3DQEBAQUABIIBAJ0vMa+bgA9wKaS+3hZXnxPYIIzM
+# AOGWx21VBYuP/iSstfl6uDXm88daK39bcWlpeTAaPBxLpHHLpm+tkMCIhx7rh8dy
+# nKM93eSq5X4Y/Yyo7tkuWEOFKf9SQpHqZjZduv4RyTlwwpAz/cphm0HHSnoImRd4
+# YirhQU6LQw6X/2088x7/1ciXcV1qJwPyp6kXPHhli/8Htgd1JQG+qc3nRN+06YPW
+# A+r+yoM+fN718a1k22JtcmHxXmLJyHzv2FZpNrmAWZZf8IbXd0t4VYjvwoqPndRQ
+# 4JVnIjXfh1sJ/M7TJyCIz6iCk0JgrSrhBuGLUNvNrVHjYaLBajDPHgWoFjM=
 # SIG # End signature block

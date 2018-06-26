@@ -125,6 +125,8 @@ function New-DomainController {
 
     #region >> Prep
 
+    "Starting NewDomianController" | Out-File "$Home\StartnewDC.txt"
+
     if (!$RemoteDSCDirectory) {
         $RemoteDSCDirectory = "C:\DSCConfigs"
     }
@@ -152,7 +154,7 @@ function New-DomainController {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
     if ($ServerIP -eq $PrimaryIP) {
         Write-Error "This $($MyInvocation.MyCommand.Name) function must be run remotely (i.e. from a workstation that can access the target Windows Server via PS Remoting)! Halting!"
         $global:FunctionResult = "1"
@@ -172,6 +174,8 @@ function New-DomainController {
         "xActiveDirectory"
     )
     
+    "Determining Modules to Transfer" | Out-File "$HOME\DetermineModsToTransfer.txt"
+
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
     foreach ($DSCResource in $NeededDSCResources) {
         # NOTE: Usually $Module.ModuleBase is the version number directory, and its parent is the
@@ -188,7 +192,18 @@ function New-DomainController {
 
         switch ($DSCResource) {
             'PSDesiredStateConfiguration' {
-                $PSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+                try {
+                    $PSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+                }
+                catch {
+                    try {
+                        $PSDSCModule = Get-Module -ListAvailable "PSDesiredStateConfiguration"
+                        $PSDSCVersion = $($PSDSCModule.Version | Sort-Object | Get-Unique).ToString()
+                    }
+                    catch {
+                        Write-Verbose "Unable to get PSDesiredStateConfiguration version information from $env:ComputerName"
+                    }
+                }
             }
         
             'xPSDesiredStateConfiguration' {
@@ -200,6 +215,8 @@ function New-DomainController {
             }
         }
     }
+
+    "NewDC1" | Out-File "$HOME\NewDC1.txt"
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
     try {
@@ -254,6 +271,7 @@ function New-DomainController {
 
     
     #region >> Rename Computer
+    "NewDC2" | Out-File "$HOME\NewDC2.txt"
 
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions...
     $Counter = 0
@@ -276,6 +294,8 @@ function New-DomainController {
         $Counter++
     }
 
+    "NewDC3" | Out-File "$HOME\NewDC3.txt"
+
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
         $UserAccount = Get-LocalUser -Name "Administrator"
@@ -296,6 +316,8 @@ function New-DomainController {
         $global:FunctionResult = "1"
         return
     }
+
+    "NewDC4" | Out-File "$HOME\NewDC4.txt"
 
     if ($RemoteHostName -ne $DesiredHostName) {
         $RenameComputerSB = {
@@ -319,6 +341,8 @@ function New-DomainController {
         Write-Host "Sleeping for 5 minutes to give the Server a chance to restart after name change..."
         Start-Sleep -Seconds 300
     }
+
+    "NewDC5" | Out-File "$HOME\NewDC5.txt"
 
     #endregion >> Rename Computer
 
@@ -352,6 +376,8 @@ function New-DomainController {
 
     
     #region >> Prep DSC On the RemoteHost
+
+    "CopyDSCModules" | Out-File "$Home\NewDCModsToTransfer.txt"
 
     try {
         # Copy the DSC PowerShell Modules to the Remote Host
@@ -401,7 +427,7 @@ function New-DomainController {
                 }
                 catch {
                     Write-Error $_
-                    Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+                    Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
                     $global:FunctionResult = "1"
                     return
                 }
@@ -751,8 +777,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUStnG6AvKcoyLHFTrs/OaT73d
-# gI2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQUNw6aPqKLdRijLj8viAZGCr
+# GzOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -809,11 +835,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI/vqqPIGebT6S3B
-# KmLNb7NHqqbFMA0GCSqGSIb3DQEBAQUABIIBAL59EPRB2FUPAGiJ7DSrAW3PO1LF
-# B1rOEnkgUL1nUZWw0dftv0VfYMVv+UtIEECh3hk/jaPbheooumYMAqvY5ZcyRlF7
-# Fx4/MP8Rv88AJwdx+KXa+Iq1pQ/CnwcEII/zYiWFO46q4JbWhl4HicQI+bMmXq1U
-# PfX/46pXCzYo1LR2Si41NDmgoB85z5pPyki8c4bxQnIbZpWclDva6K9HIYylJff4
-# /dX9dltCyPKnXKWTUVTwXlPxN5FkGuP+7jutfubqzyFbZVJ9pOI9MBViEcC3oXYm
-# a8JjcXrf+ZX76pTZmHbLc270HzAzsmYCt9Zvforntzz1SBAE0zQFJ4nTLvs=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLePXzJTcmoKf8tq
+# fTJRWA/PKaGyMA0GCSqGSIb3DQEBAQUABIIBALzdQdNPVlEDFsP4J6pMQayKk4NM
+# K6Xh1ycE3iOtz1LX6wy8ryVygxFcyLLICJ8M4Z2qdlgwakWRXfi9OzU+hdXB614z
+# etvk15wwsO5tLKWAXqjSLEThlvFpHtweCyNF8FX/okDWJ+A5IjiJtL7elH0uwT8q
+# 9rrr7XnxzZJ8HrncIGTnEjMgFmo/kKmwqFGKENKJ8J2Z/wq5eGG7uzBcJWZHy56v
+# 3H/zV2CzuuG8u3uhvl+Nw0guRWVnEGQb9acfteZsKWLLIyHefvEu/4AEUEzuFbj5
+# FFFlUY4gSyk4t2jX9kiU4vYUc8JY699PoqJawN+E27Yn4Ttl6eLufUuB1s0=
 # SIG # End signature block

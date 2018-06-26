@@ -867,7 +867,7 @@ function New-SubordinateCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @(
         [pscustomobject]@{
@@ -1079,7 +1079,7 @@ function New-SubordinateCA {
         [System.Collections.ArrayList]$ModulesToTransfer = @()
         foreach ($ModuleResource in $NeededModules) {
             $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
-            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+            if ($ModMapObj.ModulePSCompatibility -ne "WinPS") {
                 $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
                     if (![bool]$(Get-Module -ListAvailable $args[0])) {
                         Install-Module $args[0]
@@ -1250,8 +1250,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKh2ikwx+CRupKYaodgWq46rV
-# L0Wgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUsrOWP5KLoEAJMWULO3ELzz8A
+# RPegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1308,11 +1308,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC5PYRVUwl/dIvLm
-# +RWqxUj0JIMsMA0GCSqGSIb3DQEBAQUABIIBADOVryCQB8oVtsnJ/bjbeXXa+XJL
-# uXxOPHNWwfpC3FgTC/ymTYCs9F14E6efvvpisQSpLBk8dbIWeQVl7OeEsyWXsShK
-# sbSdH2OKP0RZHxi+gcPDQvKY05PzzT0v/FGtmytxiWEELwU+JbF3O0eFBfflXkP0
-# blZeRGkc1PJVGKS/MhL4Ltt18oSDUsi3nRRGLDHlRyxP7lx5jrwmVrvzD5oGo/U4
-# Rz+WI/QHvsndqmLLTKsTQQBNRVDo3oMQfT+xhIYccxK4Wrw6jh2Ir5cht2pPcow1
-# J+wugJcb2qDWJtr4GtyvjpFvaji+9fLgNDrvdgNAdqTyPosd9RbuPX0V5Co=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFyfuJn/9pbzgXp8
+# VVwaWyRN5RPbMA0GCSqGSIb3DQEBAQUABIIBAH37M2uBkeyPmRqy5N5QTlA4X+Z4
+# ueVpS4kd5Uy0eLTbtN+fcwRoVhOPbdHFAiXAT84VgOWJCYaSfVCQgky5MpDbgoVK
+# s0713eIp5vwRqEuPBdpwynPuC+51TDw64ODDsdN1oHv8fPrAO61qkZycf9t4BgsI
+# t8WeW37pfFUROTnUSdFZdjeinNkUEmgjGKriZ6X8BRI7/IfntCdBClUkKcjP5+Hd
+# S4Fi5hzbrkLiBjCGk+rA/S47+BYi4/zoLvuSaJY2GjINthrfycrJwZZQkCeXdGfA
+# oTyLyratWd78rdLYq2Xi18FRIXADUQze6r/N3Kwcq2uiFbkBFQnQ0QL4WRI=
 # SIG # End signature block

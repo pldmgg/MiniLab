@@ -209,7 +209,7 @@ function Create-Domain {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -875,7 +875,7 @@ function Create-RootCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -1221,7 +1221,7 @@ function Create-RootCA {
                 '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
                 '} | Sort-Object Metric1)[0].InterfaceIndex'
                 '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
-                '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+                '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}'
                 '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
                 '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
                 '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
@@ -1543,7 +1543,7 @@ function Create-SubordinateCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -1893,7 +1893,7 @@ function Create-SubordinateCA {
             '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
             '} | Sort-Object Metric1)[0].InterfaceIndex'
             '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
-            '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+            '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}'
             '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
             '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
             '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
@@ -2292,8 +2292,11 @@ function Create-TwoTierPKI {
         return
     }
 
-    $PrimaryIfIndex = $(Get-NetIPConfiguration | foreach {$_.IPv4DefaultGateway} | Where-Object {$_.DestinationPrefix -eq "0.0.0.0/0"}).ifIndex
-    $PrimaryIP = $(Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $PrimaryIfIndex).IPAddress
+    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+    } | Sort-Object Metric1)[0].InterfaceIndex
+    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     if ($($PSBoundParameters['CreateNewVMs'] -or $PSBoundParameters['NewDomain']) -and
     !$PSBoundParameters['VMStorageDirectory']
@@ -3712,7 +3715,7 @@ function Deploy-HyperVVagrantBoxManually {
     } | Sort-Object Metric1)[0].InterfaceIndex
     "Part7X..." | Out-File "$tempdir\Part7X.txt"
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
     
     "Part7A..." | Out-File "$tempdir\Part7A.txt"
 
@@ -3929,7 +3932,7 @@ function Deploy-HyperVVagrantBoxManually {
                 $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
             } | Sort-Object Metric1)[0].InterfaceIndex
             $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
             foreach ($vSwitchName in $ExternalvSwitches.Name) {
                 $AllRelatedvSwitchInfo = GetvSwitchAllRelatedInfo -vSwitchName $vSwitchName -WarningAction SilentlyContinue
@@ -8750,6 +8753,8 @@ function New-DomainController {
 
     #region >> Prep
 
+    "Starting NewDomianController" | Out-File "$Home\StartnewDC.txt"
+
     if (!$RemoteDSCDirectory) {
         $RemoteDSCDirectory = "C:\DSCConfigs"
     }
@@ -8777,7 +8782,7 @@ function New-DomainController {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
     if ($ServerIP -eq $PrimaryIP) {
         Write-Error "This $($MyInvocation.MyCommand.Name) function must be run remotely (i.e. from a workstation that can access the target Windows Server via PS Remoting)! Halting!"
         $global:FunctionResult = "1"
@@ -8797,6 +8802,8 @@ function New-DomainController {
         "xActiveDirectory"
     )
     
+    "Determining Modules to Transfer" | Out-File "$HOME\DetermineModsToTransfer.txt"
+
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
     foreach ($DSCResource in $NeededDSCResources) {
         # NOTE: Usually $Module.ModuleBase is the version number directory, and its parent is the
@@ -8813,7 +8820,18 @@ function New-DomainController {
 
         switch ($DSCResource) {
             'PSDesiredStateConfiguration' {
-                $PSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+                try {
+                    $PSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+                }
+                catch {
+                    try {
+                        $PSDSCModule = Get-Module -ListAvailable "PSDesiredStateConfiguration"
+                        $PSDSCVersion = $($PSDSCModule.Version | Sort-Object | Get-Unique).ToString()
+                    }
+                    catch {
+                        Write-Verbose "Unable to get PSDesiredStateConfiguration version information from $env:ComputerName"
+                    }
+                }
             }
         
             'xPSDesiredStateConfiguration' {
@@ -8825,6 +8843,8 @@ function New-DomainController {
             }
         }
     }
+
+    "NewDC1" | Out-File "$HOME\NewDC1.txt"
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
     try {
@@ -8879,6 +8899,7 @@ function New-DomainController {
 
     
     #region >> Rename Computer
+    "NewDC2" | Out-File "$HOME\NewDC2.txt"
 
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions...
     $Counter = 0
@@ -8901,6 +8922,8 @@ function New-DomainController {
         $Counter++
     }
 
+    "NewDC3" | Out-File "$HOME\NewDC3.txt"
+
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
         $UserAccount = Get-LocalUser -Name "Administrator"
@@ -8921,6 +8944,8 @@ function New-DomainController {
         $global:FunctionResult = "1"
         return
     }
+
+    "NewDC4" | Out-File "$HOME\NewDC4.txt"
 
     if ($RemoteHostName -ne $DesiredHostName) {
         $RenameComputerSB = {
@@ -8944,6 +8969,8 @@ function New-DomainController {
         Write-Host "Sleeping for 5 minutes to give the Server a chance to restart after name change..."
         Start-Sleep -Seconds 300
     }
+
+    "NewDC5" | Out-File "$HOME\NewDC5.txt"
 
     #endregion >> Rename Computer
 
@@ -8977,6 +9004,8 @@ function New-DomainController {
 
     
     #region >> Prep DSC On the RemoteHost
+
+    "CopyDSCModules" | Out-File "$Home\NewDCModsToTransfer.txt"
 
     try {
         # Copy the DSC PowerShell Modules to the Remote Host
@@ -9026,7 +9055,7 @@ function New-DomainController {
                 }
                 catch {
                     Write-Error $_
-                    Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+                    Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
                     $global:FunctionResult = "1"
                     return
                 }
@@ -9652,7 +9681,9 @@ function New-RootCA {
                 $null = Add-WindowsFeature @SplatParams
             }
             catch {
+                Write-Error $_
                 Write-Error "Problem with 'Add-WindowsFeature $FeatureName'! Halting!"
+                $SplatParams | Export-CliXml "$HOME\AddWinFeature.xml"
                 $global:FunctionResult = "1"
                 return
             }
@@ -9986,7 +10017,7 @@ function New-RootCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @()
     if ($PSBoundParameters['RootCAIPOrFQDN']) {
@@ -10090,6 +10121,8 @@ function New-RootCA {
 
     $RelevantRootCANetworkInfo = $NetworkInfoPSObjects | Where-Object {$_.ServerPurpose -eq "RootCA"}
 
+    $RelevantRootCANetworkInfo | Export-CliXml "$HOME\RelevatneRootCANetInfo.xml"
+
     # Set some defaults if certain paramters are not used
     if (!$CAType) {
         $CAType = "EnterpriseRootCA"
@@ -10139,6 +10172,8 @@ function New-RootCA {
         CDPUrl                              = $CDPUrl
         AIAUrl                              = $AIAUrl
     }
+
+    $SetupRootCASplatParams | Export-CliXml "$HOME\SetupRootCASplatParams.xml"
 
     # Install any required PowerShell Modules
     <#
@@ -10192,7 +10227,7 @@ function New-RootCA {
         [System.Collections.ArrayList]$ModulesToTransfer = @()
         foreach ($ModuleResource in $NeededModules) {
             $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
-            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+            if ($ModMapObj.ModulePSCompatibility -ne "WinPS") {
                 $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
                     if (![bool]$(Get-Module -ListAvailable $args[0])) {
                         Install-Module $args[0]
@@ -11996,7 +12031,7 @@ function New-SubordinateCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     [System.Collections.ArrayList]$NetworkLocationObjsToResolve = @(
         [pscustomobject]@{
@@ -12208,7 +12243,7 @@ function New-SubordinateCA {
         [System.Collections.ArrayList]$ModulesToTransfer = @()
         foreach ($ModuleResource in $NeededModules) {
             $ModMapObj = $script:ModuleDependenciesMap.SuccessfulModuleImports | Where-Object {$_.ModuleName -eq $ModuleResource}
-            if ($PotentialModMapObject.ModulePSCompatibility -ne "WinPS") {
+            if ($ModMapObj.ModulePSCompatibility -ne "WinPS") {
                 $ModuleBase = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
                     if (![bool]$(Get-Module -ListAvailable $args[0])) {
                         Install-Module $args[0]
@@ -12416,8 +12451,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU4PH/W2pIamqrlJzvrObTeXhr
-# rLqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUKpjzYyo+p9p2DOWxnKiyS4f
+# lfSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12474,11 +12509,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGQ+YOYLwJEmQw0/
-# VTGU72BWkLejMA0GCSqGSIb3DQEBAQUABIIBAC3loJBSlHkTko7vKHMN2gM5WG0K
-# 36HzWazF95MmLm9LFWGRkUyiN7UpvPuSAcIZomYX/8Zdwq6dxkB1G4DpDsh3IW17
-# 8w2Jbwjl0xF7qVnzDA7dCQ+IXoQ8Zp8qFsd/PEh2Meyl1yCulaCu/2ije8jERRZO
-# zb10czsA0WSAWZheu+XUC63Tt0kS9cFcjhjQ7h0G25wxfAAmRA7gmmk+B0IcjMi6
-# N0Izs2v3WuKGt0+thNq13Ry2l2WJvdR6nbFRHVpDzxUepWcIhIJTHyUvCkEt3nyF
-# MB+W74n8RBOCus14sjMKYVfrydlvP6jE9Xm+PX9+uf2rE++WHO6e+z1a/IM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGuFDoOnMGFB1vUD
+# qUvMzEMUAEo1MA0GCSqGSIb3DQEBAQUABIIBAAyXGWDCfRDL/94rurpdqk9bUGnv
+# eCRsi8Eo9u9ma0O+kV1cwZjmvs25lrvdmkn2H1VQRWxmg/y9DEZ7/gueiYOH+Ln9
+# 5ym5r3Uk78eXyl9sVlXMe+sKQ4AdcKOMp/AH5OyVnLkvPS5qLc5Z3nNTL/eeF/Gu
+# 30pFpMgsbVWlaXZqer6xFnjmAmpRBplvGIDQw6zovJGH//4kAOqzjmPr6oP0U74L
+# IZZvk+2XAYBaZTfcBvDic7/aCdV3q2AuxI0rVDjZw4H5bqWLmoA1H7+fCHOksgTX
+# PWDTQ4J7b1yjezKW1GjV+YxuvdZLbQDF/VevT+P5abTGvTjrtsCa8f3CJvs=
 # SIG # End signature block

@@ -163,7 +163,7 @@ function Create-Domain {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -671,8 +671,8 @@ function Create-Domain {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUyN2k3yMV8o4NPtdMKwkUT3es
-# Woygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUAPFv+zzlaExEh8RRu+Yzp2cj
+# YzWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -729,11 +729,11 @@ function Create-Domain {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFK1g4q4yZaRs2n3S
-# 1p8IzeKS87vvMA0GCSqGSIb3DQEBAQUABIIBAB41NtpZHoygt5E/ZDJMcsfLLEFP
-# eToYGwny3OUC7tArVC+ohjXj+bT6nstEnv+TaZGTedgmrcCj4rRLXnTAr19gy7W4
-# Gv01oGEGILDo4Qk5Ye6VNizQheZ4r9k3aENcL18hAKyI/EcXSvaNhLd43GoMfS6K
-# xRAcitnKcufEXi3MHxizj1ZVer3nx5t7en/fUyiKDKDvW/HmoDRaIQIztZoH0YjO
-# mdXE5RH3Y09Jp+YauBVnerCT9gvGT1sn2TunyRMZvayyVikXR1UYJylYJBJ6QlJv
-# /7qrKZi63p/AmWaAvRdD+aafT+/j5Kh0VdIkaVsSEs1kGuhlexotOING5Us=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAV/Dcp+vQEf8l5C
+# KHmrZ95yzxXJMA0GCSqGSIb3DQEBAQUABIIBAJr+y66scVbZe/E2k6BQU7Xs5tK1
+# AZxDg5jdUylzNymfE3ctDDohdFokjFSc0xlw9b74mbJ0v81fwZ9lWGmFQ/JMXJp0
+# vhSOWlIuKs5HeG8biurUBwfvFYlYWGEwF+x8WNO3dMcStou/ywkWUEfRcV0YVvQE
+# x0+bKcxbxyFDrNUdPK0cESzjQJtRVRymdwpKKsHtqutxHem+6FTeXkIt8L1SVUj4
+# sR997v/qGRjbBhk95f7z3s6+GdFIJJTEzG/07nmWG4TIJBdT1H95wSdQvW5hTByD
+# gln701TzYhOoCeHWLw7NifqcogWrBq56rgfTl/K9SMhkJol9QMobctWcYz4=
 # SIG # End signature block

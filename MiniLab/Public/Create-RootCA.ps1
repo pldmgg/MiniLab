@@ -158,7 +158,7 @@ function Create-RootCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -504,7 +504,7 @@ function Create-RootCA {
                 '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
                 '} | Sort-Object Metric1)[0].InterfaceIndex'
                 '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
-                '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+                '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}'
                 '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
                 '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
                 '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
@@ -656,8 +656,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQURPGF2HzPEnRPjUEK/6ZF4fja
-# Omegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQURLKrXCKZN12039dB12aDhbaj
+# 3eWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -714,11 +714,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPFwKRExGI4AlW5w
-# pDF+xRqMWn+nMA0GCSqGSIb3DQEBAQUABIIBAJP5cqCdQcqf10eWXjmdTfktOZD4
-# S3hyQwctBNBeMoDo0sH4DefuMIxQN6Wzc9Fd+tZ5EdWkDLFzhp/ao2TtzxmKw2Ju
-# EaytLnuYUpK6wEZiKO08qvKBb2hK69/JobAuVQmzV4wsX2mLCZN2rP7Dn9O328vN
-# St1qD12lFAloHS9kbIc6wc5gFtQ1fqZIZmg+Tf+tiY2vToqdMsnnt9AtPXEW6WDv
-# zfH3q6+PYZNzhaPNkrKSGYDjSb+hmGiYgZtK3O/HmLhszg1Kjj9S2WC7X0XfrI6S
-# ta7ND1z5Gd8bc5N+zQBLYm+ResQEmoo4y1YNU6U/Cfj/YbCw9TaK+Y4Wwkw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFtv39hiMHzWlSa1
+# JOEJ3F+yeVOyMA0GCSqGSIb3DQEBAQUABIIBAJPeTWY9AMH6gfJgLJAfbr8ATLwF
+# 63hQR7OPH/xfmlG7xENfCAGI5EgIxCJkzwkYAfEtRB+mY1lNrutbaIBrxvK0sHSj
+# 8p2xOyIOekxARP7IEuxkFh/QUd4YaPwnDU+ZbVdh9pIwKKI9X0vJhdsnAXeQg2Gg
+# LHs6vOVBX9kOA47Wdmcx4hBUr48OYO/xx4oFBpdjJIHoyCMzhU0f2uta58rZO/ff
+# dbRuDFkxzgVA6WMCOjODEAQL775Z5bzNO3Ko+lHiaaVMg7vTlFUOp6ULCQft+iPi
+# XOBicRWlg5ee6elkHSSO+XaDwD1sdK3HlDkzmjfShvCSfLQdvyz8fGXXR2w=
 # SIG # End signature block

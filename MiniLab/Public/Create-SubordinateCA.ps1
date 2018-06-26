@@ -170,7 +170,7 @@ function Create-SubordinateCA {
         $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -520,7 +520,7 @@ function Create-SubordinateCA {
             '    $_.Destination -eq "0.0.0.0" -and $_.Mask -eq "0.0.0.0"'
             '} | Sort-Object Metric1)[0].InterfaceIndex'
             '$NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}'
-            '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}'
+            '$PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}'
             '$CurrentDNSServerListInfo = Get-DnsClientServerAddress -InterfaceIndex $PrimaryIfIndex -AddressFamily IPv4'
             '$CurrentDNSServerList = $CurrentDNSServerListInfo.ServerAddresses'
             '$UpdatedDNSServerList = [System.Collections.ArrayList][array]$CurrentDNSServerList'
@@ -671,8 +671,8 @@ function Create-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU2SeH4IyLEp6YTbWctkF5hQNC
-# YhOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUNtkV2canOyOnNAzwY6L/u3r8
+# O66gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -729,11 +729,11 @@ function Create-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMNyGOGp15hRZuUL
-# LjxuYdUHqpjuMA0GCSqGSIb3DQEBAQUABIIBAEpIziR2TSLGSLbGbGBPzzQKEKdS
-# +4CNcrrx6iYTGw7XLFUrRQEBvzpBpkOol3sMan0nzV0GBrYTuBK1ARvbzvENc37c
-# KhYzyi7v0l69OL/q3UblP4SsGKVHooJwDjx2z72+6AJBgOaer0m4kguo61CcYz2u
-# JuWp51nm3Rba4R/daz/5eD5BMCF3ztD+N8oPpl8q9tP1OMHBREMxFCnhQLDiyR9t
-# eVDM+M4fdb5uQwgHjLLs8k3s7A725ALrmH50+7SoEPJuFirCdfeMOTYffOcROs7D
-# kWysPWDDdRYD0todQnfvhx5DFoSczy6JvAJH8x7e/LdVftR2aHZ8wv9GI8g=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPs0CnDa6jq+ad9E
+# /ynpNvxMzpJUMA0GCSqGSIb3DQEBAQUABIIBACfxVPmykJqKV/ls6v2xe9Ytcqmv
+# mjB4TJcCuLvLypcdwRUGareLCc3GGtsqb138mwqLIlL8LWukoU2XfGySdj23mhGd
+# MVh7vZr8xO7EzmiaW7w6uJbiybGD0qlCdZ4Sn/iif0JlmXxQBjCxnTzRF3B/hQ49
+# KuUMItFvzkeJ+WWAaFpGCjiRux8l/7Ysg0ZHgLY0xd1zsPCVC0ymf1uDwTu4rLZC
+# GFA5qxOrP1vnGrEBlH5+5mWVSjZjXgHxDfIGPZV2d0qXftpj9Owq/OUhIw1xWVAD
+# yq/1g6Huz6JmWHCVOwaEjrUUEnXPPJ9tNM05e16puZopgS7zS9hbtFJuro8=
 # SIG # End signature block

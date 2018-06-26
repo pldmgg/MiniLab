@@ -352,7 +352,7 @@ function Deploy-HyperVVagrantBoxManually {
     } | Sort-Object Metric1)[0].InterfaceIndex
     "Part7X..." | Out-File "$tempdir\Part7X.txt"
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
     
     "Part7A..." | Out-File "$tempdir\Part7A.txt"
 
@@ -569,7 +569,7 @@ function Deploy-HyperVVagrantBoxManually {
                 $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
             } | Sort-Object Metric1)[0].InterfaceIndex
             $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_.Address}
+            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
 
             foreach ($vSwitchName in $ExternalvSwitches.Name) {
                 $AllRelatedvSwitchInfo = GetvSwitchAllRelatedInfo -vSwitchName $vSwitchName -WarningAction SilentlyContinue
@@ -716,8 +716,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUtASUX1ZW3wKY5LN4DYhpQTzq
-# Sz2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU8ABwWYXnHsdfP9GonzG6VQC2
+# Q16gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -774,11 +774,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMFATnzkIUWQtH8M
-# 4dtqmC/ScwHZMA0GCSqGSIb3DQEBAQUABIIBABLsMey4gPJFvi8fIlNLYg3l6E8q
-# gahJ3gAuUSRc7SJzsMwkeuZbWKO5c2DZQYEEB6MdK1B6otvzSxDUj39pgG7OCXUF
-# LQU7BVxD1FxkhJNS4k2PqxL5z38WcciBl+MBbB9s8IDqDd5Y5zWgH7yrv1frwxvI
-# tgUjxcD7gY1DWpkUwujogfRQyKAvJpB30NHfuWZ92xfGWm92dLLqhncyJQXmA3f6
-# bQwmH0pxNbptmZRQ2wBEzgFEVYytQ76fD/oe6rnN720OXI8ljvhlWMCnEiCzLvk5
-# cxydHXlLuwFd5M/o0+dFUbfVjEmucdIsVykk+yBQ1SJd+S/0HvLM/Pfivs4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBMxFYi1mAhgJRwI
+# Nhl2SoanaThPMA0GCSqGSIb3DQEBAQUABIIBAMJfER86NCGqTRgBGKo+EaEenTso
+# EsANM03zsoselzJfuESRO6voNRYRvjQVg9eZoVZt3/rA6xJdLertjPdsJI2bFljh
+# ayIL6CW3+6XzBF7OJlU+wTWBkQ1L52zANqOd8Rms0lcelN+3eTPf9xVcJDwLbTS9
+# H/0Yo3BZr4fdd9F7fXKkV4dk7md0g7R83HjRv/pXQTRmHoeED6VuaMZMDcFYOYe9
+# VvI3JNXCPntfJwYtROVA84qwaNr8T3efkP4886z6gaBfWFwBiH6Y0dxES9uqS4Rq
+# JYY/cg0en878ytHuRoxZPF8jxYyoDM8dO+calkeQtoSjSP/tBpHWJK126ig=
 # SIG # End signature block
