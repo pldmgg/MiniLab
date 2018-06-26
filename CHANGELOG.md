@@ -3,6 +3,7 @@
 ## 0.9.0 (June 6, 2018)
 
 - Now compatible with PowerShell Core 6.X
+- Fixed issues with networking
 
 ## 0.8.6 (June 6, 2018)
 
