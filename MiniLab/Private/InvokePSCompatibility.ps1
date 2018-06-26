@@ -90,7 +90,6 @@ function InvokePSCompatibility {
         }
 
         if ($GetModDepsSplatParams.Keys.Count -gt 0) {
-            #$GetModDepsSplatParams | Export-CliXml "$HOME\GetModDepsSplatParams.xml"
             $RequiredLocallyAvailableModulesScan = GetModuleDependencies @GetModDepsSplatParams
         }
     }
@@ -221,8 +220,6 @@ function InvokePSCompatibility {
         return
     }
 
-    $RequiredLocallyAvailableModulesScan | Export-CliXml "$HOME\ReqModScanPriorToFilter.xml"
-
     # Now all required modules are available locally, so let's filter to make sure we only try
     # to import the latest versions in case things are side-by-side install
     # Do for PSCoreModules...
@@ -311,8 +308,6 @@ function InvokePSCompatibility {
             }
         }
     }
-
-    $RequiredLocallyAvailableModulesScan | Export-CliXml "$HOME\ReqModScan.xml"
 
     #endregion >> Prep
 
@@ -575,8 +570,8 @@ function InvokePSCompatibility {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUdEmJVYKpMmOLlV3yzmE0pWxg
-# NVmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUfJWaxEUTI18FOWxvSRVeAbLw
+# Uj+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -633,11 +628,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLXiH0RYMhc5ICt7
-# QHJPI2tx/HSIMA0GCSqGSIb3DQEBAQUABIIBAFCbHkHIP58VtA+YUJNdOFWlQpX6
-# gaI30IlPEqwAY7Vu9Q31CBkHw7ILOt67Udg0Asn0l5z0ztKCCEhhlKokXH+yH80k
-# /Bz5wx3iEAf+q3x2ZrEeL3LD6X63Nq0U4tERZlZzY12LhURaMyo2zTbUvOZub5nC
-# Z8gfxBe4J5hXW35gb1jRhTS3fYA46RFv8hbX1FhqVdGnl2xWhA2hdt/XV/GVY00G
-# UFKDtPCcZVDDF+5pTWpmAwMlVo65YJ3fXH566LT2RnDka4HbDjfcDvEhhuEB5x+J
-# 1ILhr52DTMwmmWOYKG7dc+MJ+pU0aXuBF5e3PrT0eSZA2O8Jk91yj3KwDAM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLH5r51NREugp7fM
+# I+hOmZp/Kj4yMA0GCSqGSIb3DQEBAQUABIIBAHyY1U1KWX55l+ckgjH9AHzS7HaT
+# kRy4C6BXs58pM+vvg0M8bLjioHIvFc6/xlH9yq3wjJihfNcEznqyG8RIHR0RIyVF
+# rZALBF9HkwpNLQ9qjk34Yjh/0EejWWhTBnsdxHhc8qDGdmK7gIvbgzXBe6vnRjuU
+# ucEVe16MuNN7I450fiB77BIg2hdxqHZyYIiODEObZBMFQg7jeMm+OZ+G+v4Tq4Nu
+# 4EFE+QHLqAqWmOfzIwG7AHtvN6supjhhrFtpoFOps/bK63eU1zHsuwuDP6kRMOMd
+# fPcA/mZc4FbLGjhZHQ95G/Tp4zFz9vV5RjoPkgLoDdS8yFDwyQ7y7soUnPI=
 # SIG # End signature block

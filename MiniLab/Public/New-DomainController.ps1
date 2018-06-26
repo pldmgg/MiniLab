@@ -125,8 +125,6 @@ function New-DomainController {
 
     #region >> Prep
 
-    "Starting NewDomianController" | Out-File "$Home\StartnewDC.txt"
-
     if (!$RemoteDSCDirectory) {
         $RemoteDSCDirectory = "C:\DSCConfigs"
     }
@@ -173,8 +171,6 @@ function New-DomainController {
         "xPSDesiredStateConfiguration"
         "xActiveDirectory"
     )
-    
-    "Determining Modules to Transfer" | Out-File "$HOME\DetermineModsToTransfer.txt"
 
     [System.Collections.ArrayList]$DSCModulesToTransfer = @()
     foreach ($DSCResource in $NeededDSCResources) {
@@ -215,8 +211,6 @@ function New-DomainController {
             }
         }
     }
-
-    "NewDC1" | Out-File "$HOME\NewDC1.txt"
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
     try {
@@ -271,7 +265,6 @@ function New-DomainController {
 
     
     #region >> Rename Computer
-    "NewDC2" | Out-File "$HOME\NewDC2.txt"
 
     # Waiting for maximum of 15 minutes for the Server to accept new PSSessions...
     $Counter = 0
@@ -294,8 +287,6 @@ function New-DomainController {
         $Counter++
     }
 
-    "NewDC3" | Out-File "$HOME\NewDC3.txt"
-
     $InvCmdCheckSB = {
         # Make sure the Local 'Administrator' account has its password set
         $UserAccount = Get-LocalUser -Name "Administrator"
@@ -316,8 +307,6 @@ function New-DomainController {
         $global:FunctionResult = "1"
         return
     }
-
-    "NewDC4" | Out-File "$HOME\NewDC4.txt"
 
     if ($RemoteHostName -ne $DesiredHostName) {
         $RenameComputerSB = {
@@ -341,8 +330,6 @@ function New-DomainController {
         Write-Host "Sleeping for 5 minutes to give the Server a chance to restart after name change..."
         Start-Sleep -Seconds 300
     }
-
-    "NewDC5" | Out-File "$HOME\NewDC5.txt"
 
     #endregion >> Rename Computer
 
@@ -376,8 +363,6 @@ function New-DomainController {
 
     
     #region >> Prep DSC On the RemoteHost
-
-    "CopyDSCModules" | Out-File "$Home\NewDCModsToTransfer.txt"
 
     try {
         # Copy the DSC PowerShell Modules to the Remote Host
@@ -777,8 +762,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQUNw6aPqKLdRijLj8viAZGCr
-# GzOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUht0Lq/vo0OLrga6AjznJz8Gy
+# SZCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -835,11 +820,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLePXzJTcmoKf8tq
-# fTJRWA/PKaGyMA0GCSqGSIb3DQEBAQUABIIBALzdQdNPVlEDFsP4J6pMQayKk4NM
-# K6Xh1ycE3iOtz1LX6wy8ryVygxFcyLLICJ8M4Z2qdlgwakWRXfi9OzU+hdXB614z
-# etvk15wwsO5tLKWAXqjSLEThlvFpHtweCyNF8FX/okDWJ+A5IjiJtL7elH0uwT8q
-# 9rrr7XnxzZJ8HrncIGTnEjMgFmo/kKmwqFGKENKJ8J2Z/wq5eGG7uzBcJWZHy56v
-# 3H/zV2CzuuG8u3uhvl+Nw0guRWVnEGQb9acfteZsKWLLIyHefvEu/4AEUEzuFbj5
-# FFFlUY4gSyk4t2jX9kiU4vYUc8JY699PoqJawN+E27Yn4Ttl6eLufUuB1s0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPo4YVSx+xs88sNe
+# raBLyxwi+3RHMA0GCSqGSIb3DQEBAQUABIIBAHBpkn2dv9tuHH1uDTF+JdQVvCfw
+# wNdhEgzb1awSaeGg2bEfF00QWsUPU2xja+MYDp5nFzsyQl0o1k/loUVAnJaG+NU1
+# NOJGC4pMn1FiSTBSxwCOPII3HWkbTllaAH656ltLihyLyi+4oLxk8dIPzQKypDKz
+# n7W28hhd5h3SdyEsQclpWQ7YMUVICVYApew4QRXnwy51peMdUhyy1EC4ydJleAEB
+# P34I1VREUUDFQYv0bfJmuw11X+B+jnozuk6kRgfJKu9hb2i1qBdtn8PDJrJ21Miz
+# HsCrpGLdTY3YjtIXjjKSjxlMIgsvXqm3tvzSKUdHIYYfObkHohQPPWGStrw=
 # SIG # End signature block

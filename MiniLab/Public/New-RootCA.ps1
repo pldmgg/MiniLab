@@ -278,7 +278,6 @@ function New-RootCA {
             catch {
                 Write-Error $_
                 Write-Error "Problem with 'Add-WindowsFeature $FeatureName'! Halting!"
-                $SplatParams | Export-CliXml "$HOME\AddWinFeature.xml"
                 $global:FunctionResult = "1"
                 return
             }
@@ -716,8 +715,6 @@ function New-RootCA {
 
     $RelevantRootCANetworkInfo = $NetworkInfoPSObjects | Where-Object {$_.ServerPurpose -eq "RootCA"}
 
-    $RelevantRootCANetworkInfo | Export-CliXml "$HOME\RelevatneRootCANetInfo.xml"
-
     # Set some defaults if certain paramters are not used
     if (!$CAType) {
         $CAType = "EnterpriseRootCA"
@@ -767,8 +764,6 @@ function New-RootCA {
         CDPUrl                              = $CDPUrl
         AIAUrl                              = $AIAUrl
     }
-
-    $SetupRootCASplatParams | Export-CliXml "$HOME\SetupRootCASplatParams.xml"
 
     # Install any required PowerShell Modules
     <#
@@ -874,8 +869,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUhkN/eSBWfElcTPDsaOqA6+2o
-# 1mOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUIAFG8nO6lZuhdK8H2NJtJC3o
+# fFygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -932,11 +927,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEsKUYuOLXlouhfO
-# 8/ChgIyPBw9hMA0GCSqGSIb3DQEBAQUABIIBAJ0vMa+bgA9wKaS+3hZXnxPYIIzM
-# AOGWx21VBYuP/iSstfl6uDXm88daK39bcWlpeTAaPBxLpHHLpm+tkMCIhx7rh8dy
-# nKM93eSq5X4Y/Yyo7tkuWEOFKf9SQpHqZjZduv4RyTlwwpAz/cphm0HHSnoImRd4
-# YirhQU6LQw6X/2088x7/1ciXcV1qJwPyp6kXPHhli/8Htgd1JQG+qc3nRN+06YPW
-# A+r+yoM+fN718a1k22JtcmHxXmLJyHzv2FZpNrmAWZZf8IbXd0t4VYjvwoqPndRQ
-# 4JVnIjXfh1sJ/M7TJyCIz6iCk0JgrSrhBuGLUNvNrVHjYaLBajDPHgWoFjM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEipqHODkCjAno28
+# jNkMazvzJeV6MA0GCSqGSIb3DQEBAQUABIIBAGcgKJjPND9QstOqUth+JinmFYk0
+# rZL7dJnaNSonNBtcToU86FzC/CQegdnCZSWHsswam/auuplSGBcMgG+iq3zJzyj0
+# NoR4AEPsTzuFvqNPhRQzrLfRKq4K86t80ePqFVqpmWMioUZZsdxX/9dy14Io9m57
+# jKPalHqfPKp/Hq2Fx85xOTbDfs5SVFyqgJTcqY/zfPwnCkoHoNnnpax0GWcG7Ynw
+# 5C0nq1HWzX5p+pjWqD9z2wCSeYkh7JdLu4jR93H34YpXgIa5wzntstMtHT+fOOk+
+# fd1Mcb7jGVY/ZcdpIHEAr2Cuki8MKzpfElnso39nRllFafXa45aDaAauUQk=
 # SIG # End signature block
