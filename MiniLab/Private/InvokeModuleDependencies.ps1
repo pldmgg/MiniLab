@@ -22,7 +22,7 @@ function InvokeModuleDependencies {
         $InvPSCompatSplatParams = @{
             InvocationMethod                    = $(Get-Variable "MyInvocation" -Scope 1 -ValueOnly).MyCommand.Name
             ErrorAction                         = "SilentlyContinue"
-            WarningAction                       = "SilentlyContinue"
+            #WarningAction                       = "SilentlyContinue"
         }
         if ($PSBoundParameters['InstallModulesNotAvailableLocally']) {
             $InvPSCompatSplatParams.Add("InstallModulesNotAvailableLocally",$True)
@@ -87,12 +87,11 @@ function InvokeModuleDependencies {
 
     $Output
 }
-
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU6g8ZNpZpqqBIYm4v3g0/EqJO
-# hy2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUw3J57atmpq3PClgnX8Bnu02B
+# 4augggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -149,11 +148,11 @@ function InvokeModuleDependencies {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNhR5/bt3jEUGbWf
-# 10ckkGRksisVMA0GCSqGSIb3DQEBAQUABIIBAHBYygHIuTj7ekinZDhZalb5JnGr
-# Qra89zUSl3zeGfYSvhUVROyNvLhr9mGqj+pTLnIB5voUQHNs+9TC1/+U7S8s1w1q
-# 9oVrT7LAga9xJfNc5/RgXwso485z9UaUArSh7yqc537wLF1mpMXxvKTwAliFiwH1
-# AyMjCGVd25HdBq2xql6mQCD3ZH1XcHimEkOUZyAVmUGTluyzVZ1jb3TRvyWJvIU1
-# pdceuEychWgBNkbO5eW/Jb+7FJx0zZBILynJRQtGjnypTBTYBiKSabZUA2Mcav3v
-# YSFUk5HFzP0pheLRb11hODFX7XY/ffafC/uO/qUCCUc5tmL2yMhZiE22h1s=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHW+ZvInF3/5b7OT
+# Am2FLcZB5V5pMA0GCSqGSIb3DQEBAQUABIIBAL2gu+kkp2VAnHku4tx/oltPYSOy
+# t73pon6TwJWEPvJ+gJ4mcEun8JoymVFqoenZ39aL1Y42A+Hz54WsE3LVKhBM2P42
+# tP8R5XV7NaE13LACu6cUofMDMEPEhXZV150ZWjl5jOnHFQWgV/0FGni9ZAtAmStD
+# p1esl3AdQt+svLTkX9rvdGUt0EpxMdp9a079yIn6Z6J0P2nToBPs4rMeR/PVc0hc
+# 2EDSjw4x2p5u9n/G2MYPPnSd3isjCR/7UI5f2YIka4yTTw2jwgFJcEig7z//VCKR
+# 3XHAQxW5B9J6VMOqRrQ5FI8P6Qh7wydcFIzplGr/fwdhmSCJWZn1Ldtqf6k=
 # SIG # End signature block

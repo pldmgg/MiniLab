@@ -54,7 +54,9 @@ function GetModuleDependencies {
     )
 
     $AllModuleManifestFileItems = foreach ($ModPath in $AllWindowsPSModulePaths) {
-        Get-ChildItem -Path $ModPath -Recurse -File -Filter "*.psd1"
+        if (Test-Path $ModPath) {
+            Get-ChildItem -Path $ModPath -Recurse -File -Filter "*.psd1"
+        }
     }
 
     $ModInfoFromManifests = foreach ($ManFileItem in $AllModuleManifestFileItems) {
@@ -104,7 +106,7 @@ function GetModuleDependencies {
     $AutoFunctionsInfo = $AutoFunctionsInfo| Where-Object {![string]::IsNullOrWhiteSpace($_) -and $_.ManifestFileItem -ne $null}
 
     $FunctionRegex = "([a-zA-Z]|[0-9])+-([a-zA-Z]|[0-9])+"
-    $LinesWithFunctions = $FunctionOrScriptContent -match $FunctionRegex | Where-Object {![bool]$($_ -match "[\s]+#")}
+    $LinesWithFunctions = $($FunctionOrScriptContent -split "`n") -match $FunctionRegex | Where-Object {![bool]$($_ -match "[\s]+#")}
     $FinalFunctionList = $($LinesWithFunctions | Select-String -Pattern $FunctionRegex -AllMatches).Matches.Value | Sort-Object | Get-Unique
     
     [System.Collections.ArrayList]$NeededWinPSModules = @()
@@ -169,12 +171,11 @@ function GetModuleDependencies {
         PSCoreModuleDependencies    = $PSCoreModuleDependencies
     }
 }
-
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUAwl8mn/UiZfBbthyQNvGvM10
-# I4Ggggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU6YIuZa2iqDlGmMZ9h5PIws4b
+# Eaagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -231,11 +232,11 @@ function GetModuleDependencies {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPoZGV7cxQz9DNUb
-# CyO5830MEUezMA0GCSqGSIb3DQEBAQUABIIBAJgT157GL91nJ5SHibTtBDjBiKUP
-# CDtaXwbgCcFVuDQ072N5EPlAvpwkUWXzN1SEG3XRXTukQOdW0gNvQoJdKlL6bWQ1
-# f5NvkJP9IS6cgUigDgMHoPkQCf03Xj8g8Yt8x7eRTxEv2caKU8FhmB7C6J05ej+t
-# Ev6fDFf0MCJlumr/0B9BAAX3Bw7zZThe/BrR7pP1+BB5KODGHF4caCJSCA4d5O58
-# F+xdX5Hg7BqTOwtm/Lmx3jFbSat5Nm2mfczornphZEN3YqqTuZMzxvRXfdoRc35r
-# 2UnvwUXo/CQkBYZ40Fk5qBlJzT5PIZ0j9Sn3ltW4FkfzH5dq49WHq3X08aA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJ8iWGBEfQ+2d4Rn
+# ppUsv1TaNBRcMA0GCSqGSIb3DQEBAQUABIIBAHlOOMJDNZBljfHGhxCg4blww5h1
+# fFBRLGpSk0PVTMyg5pEKkra851qVHhmoW123IFC/Ohhm2V+X7EGeEphljRp6Q+h/
+# Yun8Eh3S0H5L+wYyklFFWIF721FjBvtOGSyBffHaEXJuFSJw/bHIi/C+A5Cx6uWh
+# 5lZ3IOEbbP4Ip30xNnZjTQASJn+efgq4boT+SCKjgKIsY8ADpPTGmybAVa2iAVA6
+# 1HDbmzu0MCE3gx1JFpGF9mlBBbJw92WpHptTlhaQ1R9lCzOfhROllgyvmtCTc84T
+# 2Pelmu+dW5wdQfLyg7VhgEmElb6lpmwpIpHEH2Y7NdY4pWo7snxeHjw/3oQ=
 # SIG # End signature block
