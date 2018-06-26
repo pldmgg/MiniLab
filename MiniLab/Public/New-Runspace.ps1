@@ -1,3 +1,123 @@
+<#
+    .SYNOPSIS
+        The New-Runspace function creates a Runspace that executes the specified ScriptBlock in the background
+        and posts results to a Global Variable called $global:RSSyncHash.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER RunspaceName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the name of the new Runspace that you are creating. The name
+        is represented as a key in the $global:RSSyncHash variable called: <RunspaceName>Result
+
+    .PARAMETER ScriptBlock
+        This parameter is MANDATORY.
+
+        This parameter takes a scriptblock that will be executed in the new Runspace.
+
+    .PARAMETER MirrorCurrentEnv
+        This parameter is OPTIONAL, however, it is set to $True by default.
+
+        This parameter is a switch. If used, all variables, functions, and Modules that are loaded in your
+        current scope will be forwarded to the new Runspace.
+
+        You can prevent the New-Runspace function from automatically mirroring your current environment by using
+        this switch like: -MirrorCurrentEnv:$False 
+
+    .PARAMETER Wait
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, the main PowerShell thread will wait for the Runsapce to return
+        output before proceeeding.
+
+    .EXAMPLE
+        # Open a PowerShell Session, source the function, and -
+
+        PS C:\Users\zeroadmin> $GetProcessResults = Get-Process
+
+        # In the below, Runspace1 refers to your current interactive PowerShell Session...
+
+        PS C:\Users\zeroadmin> Get-Runspace
+
+        Id Name            ComputerName    Type          State         Availability
+        -- ----            ------------    ----          -----         ------------
+        1 Runspace1       localhost       Local         Opened        Busy
+
+        # The below will create a 'Runspace Manager Runspace' (if it doesn't already exist)
+        # to manage all other new Runspaces created by the New-Runspace function.
+        # Additionally, it will create the Runspace that actually runs the -ScriptBlock.
+        # The 'Runspace Manager Runspace' disposes of new Runspaces when they're
+        # finished running.
+
+        PS C:\Users\zeroadmin> New-RunSpace -RunSpaceName PSIds -ScriptBlock {$($GetProcessResults | Where-Object {$_.Name -eq "powershell"}).Id}
+
+        # The 'Runspace Manager Runspace' persists just in case you create any additional
+        # Runspaces, but the Runspace that actually ran the above -ScriptBlock does not.
+        # In the below, 'Runspace2' is the 'Runspace Manager Runspace. 
+
+        PS C:\Users\zeroadmin> Get-Runspace
+
+        Id Name            ComputerName    Type          State         Availability
+        -- ----            ------------    ----          -----         ------------
+        1 Runspace1       localhost       Local         Opened        Busy
+        2 Runspace2       localhost       Local         Opened        Busy
+
+        # You can actively identify (as opposed to infer) the 'Runspace Manager Runspace'
+        # by using one of three Global variables created by the New-Runspace function:
+
+        PS C:\Users\zeroadmin> $global:RSJobCleanup.PowerShell.Runspace
+
+        Id Name            ComputerName    Type          State         Availability
+        -- ----            ------------    ----          -----         ------------
+        2 Runspace2       localhost       Local         Opened        Busy
+
+        # As mentioned above, the New-RunspaceName function creates three Global
+        # Variables. They are $global:RSJobs, $global:RSJobCleanup, and
+        # $global:RSSyncHash. Your output can be found in $global:RSSyncHash.
+
+        PS C:\Users\zeroadmin> $global:RSSyncHash
+
+        Name                           Value
+        ----                           -----
+        PSIdsResult                    @{Done=True; Errors=; Output=System.Object[]}
+        ProcessedJobRecords            {@{Name=PSIdsHelper; PSInstance=System.Management.Automation.PowerShell; Runspace=System.Management.Automation.Runspaces.Loca...
+
+
+        PS C:\Users\zeroadmin> $global:RSSyncHash.PSIdsResult
+
+        Done Errors Output
+        ---- ------ ------
+        True        {1300, 2728, 2960, 3712...}
+
+
+        PS C:\Users\zeroadmin> $global:RSSyncHash.PSIdsResult.Output
+        1300
+        2728
+        2960
+        3712
+        4632
+
+        # Important Note: You don't need to worry about passing variables / functions /
+        # Modules to the Runspace. Everything in your current session/scope is
+        # automatically forwarded by the New-Runspace function:
+
+        PS C:\Users\zeroadmin> function Test-Func {'This is Test-Func output'}
+        PS C:\Users\zeroadmin> New-RunSpace -RunSpaceName FuncTest -ScriptBlock {Test-Func}
+        PS C:\Users\zeroadmin> $global:RSSyncHash
+
+        Name                           Value
+        ----                           -----
+        FuncTestResult                 @{Done=True; Errors=; Output=This is Test-Func output}
+        PSIdsResult                    @{Done=True; Errors=; Output=System.Object[]}
+        ProcessedJobRecords            {@{Name=PSIdsHelper; PSInstance=System.Management.Automation.PowerShell; Runspace=System.Management.Automation.Runspaces.Loca...
+
+        PS C:\Users\zeroadmin> $global:RSSyncHash.FuncTestResult.Output
+        This is Test-Func output  
+#>
 function New-RunSpace {
     [CmdletBinding()]
     Param (
@@ -485,8 +605,8 @@ function New-RunSpace {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU2LsOzWyhJ9dkpzN2R1UmEAcF
-# 2Vugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0GHSM2lXHD+S+Pbjf6P9JWTS
+# KTOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -543,11 +663,11 @@ function New-RunSpace {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKe+0cDPOMO4A6wp
-# PCSqhJOZU5lSMA0GCSqGSIb3DQEBAQUABIIBABoaSE2ulTAWs8hi9wJaf0z3KQeC
-# mTDizQewDM1MiWR8fNPWMH8QFCcL9tLZHdglS6CgJ34dhk3LXjeMSzpoDliT+hiw
-# J5DsXPf5HJaE9YoyftQGTCtXkbnmMkpAFzs/bIhiogNRY9IZWdoRId8ZoeqKXNCo
-# vejQBZRLnehorGT3AXvchmddIxoK0cgU1tXjDaS9JRwMndgNrmuvTX5lE64biC69
-# M8TtzJCdEicewSBcyDXSyokPoTADEIgGctp5CJ7KJdLF2+1CrHyzHYb6MsBSJxwl
-# hTWZHqmqm0kQR1QmRjkgYIwFTe2pffpJGO8KCgAa/nuexPWIk4D9OUQBEW8=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBpbuCYYFw2p/RBg
+# 4YTO+WNYlDn2MA0GCSqGSIb3DQEBAQUABIIBAKZu+QZYCMak6WLSdR0hqy+Iccop
+# c8PC92w8PPBHotO9In3qCuMniYLClDJAjPmSS4MaQhazZUvcoz7pzxLi3kjtkbUG
+# FvTiiwFDsJ8ci65MpvkpwCnEzwdvm1eTYMR9Rl/TLwZrQE5eDDulfSRTU11ZWiYp
+# cNgsL4uZwNySkFOy/R2gw283X0TZ8/CUNDqnIiD+HkJzsWe5rm6ANJT++lYLDw6u
+# pTJsz0Z6JLGJU5gxJb9UGmuw/psLI/rHr8VST3MUpiXOTPP0wT5ICTVcKurfJUo+
+# We8JI9wkveEF/trvQVNX5Yk9xHDVA13EL3lhpT1aM8x2o4sxCUwa2rLNTiQ=
 # SIG # End signature block

@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.0 (June 6, 2018)
+
+- Now compatible with PowerShell Core 6.X
+
 ## 0.8.6 (June 6, 2018)
 
 - Updated how Deploy-HyperVVagrantBoxManually function handles unsecure vagrant ssh keys
