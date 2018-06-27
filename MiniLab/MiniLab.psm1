@@ -15,13 +15,13 @@ foreach ($import in $Private) {
     }
 }
 
-if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
+if (Test-Path "$PSScriptRoot\module.requirements.psd1") {
     $ModuleManifestData = Import-PowerShellDataFile "$PSScriptRoot\module.requirements.psd1"
     $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
 }
 
 # NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
-# add it the the -NeededExternallyAvailableModules string array
+# add it the the -RequiredModules string array just to be certain
 $InvModDepSplatParams = @{
     RequiredModules                     = $ModulesToInstallAndImport
     InstallModulesNotAvailableLocally   = $True
@@ -12472,8 +12472,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU1VgvRBTDq2lD2sgSZ7j3Acd7
-# Tjygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmhJQf+CNRnSCipE6hrtjgriC
+# vHWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12530,11 +12530,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMc5GnRVVgX2SRsU
-# 8Z5eeDzR6NWiMA0GCSqGSIb3DQEBAQUABIIBAI1w67Qo0/XH3faM3n39Y72neEJn
-# L183Wka8a21jTMm2e4fF0faY4ELPv0qmrIVbXHRSp6xnEoHHuGK0gLZ0mrhktrN9
-# O7/2TtwiivsvOKWL1lDBQEng6i+oBkKC8uYSRwx88OyGjHic495l+1xeakd4k5rq
-# pnvOU5fN/fb6/OPzIgHaq86DbVXMWH0pa5fdttq+udriajW9o/jgYycuDZJv2h6a
-# 0lPgHZxPGXA9flZtlO08rA3mbQJO8+7BurFbsn+bHbF9uC0xgWkLPF4NrVcSrRQY
-# 1m2II9MQaEE8GizPcbmdabwCflaEV+U2aZIkP7YB1+yyyZzNEC5RbxlBNP0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFG6p7iF1IEk5ceg8
+# trD+65MP63WlMA0GCSqGSIb3DQEBAQUABIIBALCngFfZf1QWgKfoEfJUZT8568/R
+# P0LYMWnslfWrO868jy1gikiKoT5556G5DjG+FjjqgTRf4PHOtwvDVYhLe0apV7d6
+# XDMaFZYO1rrdGuOl64t3ea2gwvIP/lnOWuGIjifMEjRBGotVgaf5/esuuKw/14mx
+# Vbnsbwa+enIrh8wKWc/92T4+qKykn1ox6NnFt1oui9YCNyGW1Zm90yMlqY/TXgfb
+# too/AmnSdBWK1UNgL6wqSsk66aXvxy9miEu2w/bV6/d7geKKMDR20N4e0k5JBNpm
+# 42MIKmicyaRgMDIHAGn6FKwA2PWt5ME3wmwmdTupciGoRxca5BxusycUSCk=
 # SIG # End signature block

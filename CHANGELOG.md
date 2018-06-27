@@ -1,6 +1,10 @@
 # Change log
 
-## 0.9.0 (June 6, 2018)
+## 0.9.1 (June 27, 2018)
+
+- Minor updates to the Private Functions 'InvokeModuleDependencies', 'InvokePSCompatibility', and 'GetModuleDependencies'
+
+## 0.9.0 (June 25, 2018)
 
 - Now compatible with PowerShell Core 6.X
 - Fixed issues with networking

@@ -81,13 +81,13 @@ foreach ($import in $Private) {
     }
 }
 
-if ($(Test-Path "$PSScriptRoot\module.requirements.psd1")) {
+if (Test-Path "$PSScriptRoot\module.requirements.psd1") {
     $ModuleManifestData = Import-PowerShellDataFile "$PSScriptRoot\module.requirements.psd1"
     $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
 }
 
 # NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
-# add it the the -NeededExternallyAvailableModules string array
+# add it the the -RequiredModules string array just to be certain
 $InvModDepSplatParams = @{
     RequiredModules                     = $ModulesToInstallAndImport
     InstallModulesNotAvailableLocally   = $True
@@ -273,8 +273,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPvGpWaUzU5gGmfvnhMFXA+QD
-# F+Sgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUsRhN3rrvQdKM2GQH3S23Gswu
+# awKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -331,11 +331,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMfRMupGMv+pp6If
-# i8OdU9PPsxsZMA0GCSqGSIb3DQEBAQUABIIBALm6TXCc+4gzNky3JUE/kD9xoAao
-# EpvYy+qoBI1AUPcbr2mILy4R9kW03icdf16qlMaONH2O3/F23U+UzhT2Xlw7mVqc
-# +CBHZUUpzHptW1xVDa2f865MGTnMNmJkuC8bmzJi0ihgGWvvstP1SD9WeFefyMRO
-# xypYvPCC+8eCCUP1TmtXuRoYdkW+PW2eXbMiLj7pvMKy6oi9EK+DkgX4YFSt3OU+
-# lOFi18/2hhLrz2N7ozpUBcqAZd/6csPD0PHTWmOC/ltik5UXybUDZutr5WJ7zMgN
-# rI2mtu9LVIMpifi/QWMuyxEcD8UQ/s8q7OIharboYYe5DzcElDFZdDUTz+A=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGkyIYGIHGFTeA5l
+# VnYm4ngApNkAMA0GCSqGSIb3DQEBAQUABIIBAFcxDXG0LBLTQ8wC2YbwjSCu3j4w
+# vXozqS0VvYph1oRt+uyfnVyvJkTgaOUsieYsEW4rkDj/TJEwj7GT/6gW/3NusQfE
+# Co30zLpXww/qxfVYYmcP8oErxATkR5+TQ1rluNw1E/PiOCIcCcB2BCFWClDthery
+# TR0/uu7juyL5ZECxoa91rd7Ss0dLJOrDRPVo5q4S7r+3HATDy8CwZQR/rsP54leQ
+# itI4VEQt6zoSZn6gsF9oQOA6ExsAiBok0LGyeUxM6KGbCGMWLS3kMacmac0bwLGT
+# Azi5ivE0SuSvTxVDQfL11UJUkR8PASpCU7mnqtzAbelc0x6iRSg05cirSqQ=
 # SIG # End signature block
