@@ -76,12 +76,12 @@ function InvokePSCompatibility {
 
         if (![string]::IsNullOrWhitespace($InvocationMethod)) {
             if ($InvocationMethod -match "\.ps") {
-                if (!$(Test-Path $script:PSCommandPath)) {
-                    Write-Error "The `$script:PSCommandPath '$script:PSCommandPath' was not found! Halting!"
+                if (!$(Test-Path $PSCommandPath)) {
+                    Write-Error "The `$PSCommandPath '$PSCommandPath' was not found! Halting!"
                     $global:FunctionResult = "1"
                     return
                 }
-                $GetModDepsSplatParams.Add("PathToScriptFile",$script:PSCommandPath)
+                $GetModDepsSplatParams.Add("PathToScriptFile",$PSCommandPath)
             }
             else {
                 $GetModDepsSplatParams.Add("NameOfLoadedFunction",$InvocationMethod)
@@ -602,8 +602,8 @@ function InvokePSCompatibility {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUlxFTUMieizNaepA7FRJWdTAJ
-# XCagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5vc9hjD93/BmeP5sirIN/jLI
+# 6pSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -660,11 +660,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKx0HlHM6LlDwv62
-# GD7tKw608aB9MA0GCSqGSIb3DQEBAQUABIIBACBD4v75RsTvgcXr3nXKj2TASvro
-# fwsZddT+szA/YyqxcjGB21j3HyaPK3g/icgKfNgv92qMW/0uM8mnlqq/gab50J6c
-# ynWhBCnJELsXpC2W6nasDRbQEtUZrS1G+v3I4IWh25bzMOSN/yGqmU+NQFPz3AhY
-# 6Yq4WbHqjC67UCExbxbLo/cpvmaS3iEFyoXnCSqjI6msS8aHBMEc4KRipAFfF5n/
-# bUH5+/Q9jk8kvMHWsAFeQh5+W6PZW3CHqoB6Ib71gGLkjBdAuJq021iG3wfrSl74
-# QU117BRoobXN0KJ/vekUHGg5KiYOuqQ/qGTa9r+KQk5GoUYQPRY1m5C/H64=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHd398Jd/v4Z8+bF
+# +hWQc8s3SFfEMA0GCSqGSIb3DQEBAQUABIIBADrD6ZjmpfzAOHxfOr+JQjZMZHE7
+# UHP+yXIJyuZ4f/5X5bhGuoV4ChcogFlzBHkGIfaihKKJchRpi+O434DBiPgTFlPz
+# SFFVL/xfJZ1BbRBJ+knmelkgE8B+6UTl0fZdV1KYjGe/aiuEhVmNsbczflKEwnwY
+# 2milAX/zm+i+ug8J/oPCxDmaw6UmPRHqbNPUToMNTGV2dmGjECxl7ZDovNbW1Oz1
+# JT/x7DW7qfjTchyYT2YZpdahTHf4YjBJBumoLWVgQqfs+mwo93K/CSome35+WzKr
+# nY5XNVEpeKge6RwV2gFty8TzpD8t5royoj2Oz5p1N5JDhJhibR9hLX3Yk5c=
 # SIG # End signature block

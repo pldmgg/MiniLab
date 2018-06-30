@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.2 (June 30, 2018)
+
+- Fixed 'InvokePSCompatibility' reference to PSCommandPath
+
 ## 0.9.1 (June 27, 2018)
 
 - Minor updates to the Private Functions 'InvokeModuleDependencies', 'InvokePSCompatibility', and 'GetModuleDependencies'
