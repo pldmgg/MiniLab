@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.3 (July 1, 2018)
+
+- Fixed permissions issues with 'NT VIRTUAL MACHINE\Virtual Machines'
+
 ## 0.9.2 (June 30, 2018)
 
 - Fixed 'InvokePSCompatibility' reference to PSCommandPath

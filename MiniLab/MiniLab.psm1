@@ -3783,12 +3783,14 @@ function Deploy-HyperVVagrantBoxManually {
             
             $Module = Get-Module MiniLab
             # NOTE: The below $FunctionsForSBUse is loaded when the MiniLab Module is imported
-            $ThisModuleFunctions = $script:FunctionsForSBUse
+            [System.Collections.ArrayList]$ArgsToPass = @()
+            $null = $ArgsToPass.Add($BoxFilePath)
+            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
 
             $FileLockBool = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
-                $args | foreach {Invoke-Expression $_}
-                [bool]$(GetFileLockProcess -FilePath $using:BoxFilePath -ErrorAction SilentlyContinue)
-            } -ArgumentList $ThisModuleFunctions
+                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                [bool]$(GetFileLockProcess -FilePath $args[0] -ErrorAction SilentlyContinue)
+            } -ArgumentList $ArgsToPass
             
             while ($FileLockBool) {
                 Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
@@ -3872,14 +3874,15 @@ function Deploy-HyperVVagrantBoxManually {
         }
 
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
+        $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+            $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+        } | Sort-Object Metric1)[0].InterfaceIndex
+        $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+        $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+        $PrimaryInterfaceAlias = $(Get-CimInstance Win32_NetworkAdapter | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}).NetConnectionId
+
         $ExternalvSwitches = Get-VMSwitch -SwitchType External
         if ($ExternalvSwitches.Count -gt 1) {
-            $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
-                $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
-            } | Sort-Object Metric1)[0].InterfaceIndex
-            $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
-
             foreach ($vSwitchName in $ExternalvSwitches.Name) {
                 $AllRelatedvSwitchInfo = GetvSwitchAllRelatedInfo -vSwitchName $vSwitchName -WarningAction SilentlyContinue
                 if ($($NicInfo.MacAddress -replace ":","") -eq $AllRelatedvSwitchInfo.MacAddress) {
@@ -3888,7 +3891,7 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
         elseif ($ExternalvSwitches.Count -eq 0) {
-            $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $NicInfo.InterfaceAlias
+            $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $PrimaryInterfaceAlias
             $ExternalSwitchCreated = $True
             $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
         }
@@ -3917,7 +3920,20 @@ function Deploy-HyperVVagrantBoxManually {
         }
         Write-Host "Creating VM..."
         $CreateVMOutput = Manage-HyperVVM @NewTempVMParams -Create
-        #FixNTVirtualMachinesPerms -DirectoryPath $VMDestinationDirectory
+        
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            [System.Collections.ArrayList]$ArgsToPass = @()
+            $null = $ArgsToPass.Add($VMDestinationDirectory)
+            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+
+            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+            } -ArgumentList $ArgsToPass
+        }
+        else {
+            FixNTVirtualMachinesPerms -DirectoryPath $VMDestinationDirectory
+        }
 
         Write-Host "Starting VM..."
         #Start-VM -Name $NewVMName
@@ -3928,7 +3944,10 @@ function Deploy-HyperVVagrantBoxManually {
         
         # Cleanup
         #Remove-Item $BoxFilePath -Force
-        Remove-Item $DownloadedVMDir -Recurse -Force
+        <#
+        if (Test-Path $DownloadedVMDir) {
+            Remove-Item $DownloadedVMDir -Recurse -Force
+        }
         
         if ($(Get-VM).Name -contains $NewVMName) {
             $null = Manage-HyperVVM -VMName $NewVMname -Destroy
@@ -3940,6 +3959,7 @@ function Deploy-HyperVVagrantBoxManually {
         if ($ExternalSwitchCreated) {
             Remove-VMSwitch "ToExternal" -Force -ErrorAction SilentlyContinue
         }
+        #>
 
         $global:FunctionResult = "1"
         return
@@ -8319,7 +8339,19 @@ function Manage-HyperVVM {
                     }
 
                     try {
-                        FixNTVirtualMachinesPerms -Directorypath $DirectoryThatMayNeedPermissionsFix
+                        if ($PSVersionTable.PSEdition -eq "Core") {
+                            [System.Collections.ArrayList]$ArgsToPass = @()
+                            $null = $ArgsToPass.Add($DirectoryThatMayNeedPermissionsFix)
+                            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+                
+                            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+                            } -ArgumentList $ArgsToPass
+                        }
+                        else {
+                            FixNTVirtualMachinesPerms -DirectoryPath $DirectoryThatMayNeedPermissionsFix
+                        }
                     }
                     catch {
                         Write-Error $_
@@ -8332,7 +8364,19 @@ function Manage-HyperVVM {
                     $DirectoryThatMayNeedPermissionsFix = $VMVhdFile | Split-Path -Parent
 
                     try {
-                        FixNTVirtualMachinesPerms -DirectoryPath $DirectoryThatMayNeedPermissionsFix
+                        if ($PSVersionTable.PSEdition -eq "Core") {
+                            [System.Collections.ArrayList]$ArgsToPass = @()
+                            $null = $ArgsToPass.Add($DirectoryThatMayNeedPermissionsFix)
+                            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+                
+                            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+                            } -ArgumentList $ArgsToPass
+                        }
+                        else {
+                            FixNTVirtualMachinesPerms -DirectoryPath $DirectoryThatMayNeedPermissionsFix
+                        }
                     }
                     catch {
                         Write-Error $_
@@ -8345,23 +8389,35 @@ function Manage-HyperVVM {
             
             # Also fix permissions on "$env:SystemDrive\Users\Public" and "$env:SystemDrive\ProgramData\Microsoft\Windows\Hyper-V"
             # the because lots of software (like Docker) likes throwing stuff in these locations
-            <#
             $PublicUserDirectoryPath = "$env:SystemDrive\Users\Public"
             $HyperVConfigDir = "$env:SystemDrive\ProgramData\Microsoft\Windows\Hyper-V"
             [System.Collections.ArrayList]$DirsToPotentiallyFix = @($PublicUserDirectoryPath,$HyperVConfigDir)
             
             foreach ($dir in $DirsToPotentiallyFix) {
-                try {
-                    FixNTVirtualMachinesPerms -DirectoryPath $dir
-                }
-                catch {
-                    Write-Error $_
-                    Write-Error "The FixNTVirtualMachinesPerms function failed! Halting!"
-                    $global:FunctionResult = "1"
-                    return
+                if (Test-Path $dir) {
+                    try {
+                        if ($PSVersionTable.PSEdition -eq "Core") {
+                            [System.Collections.ArrayList]$ArgsToPass = @()
+                            $null = $ArgsToPass.Add($dir)
+                            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+                
+                            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+                            } -ArgumentList $ArgsToPass
+                        }
+                        else {
+                            FixNTVirtualMachinesPerms -DirectoryPath $dir
+                        }
+                    }
+                    catch {
+                        Write-Error $_
+                        Write-Error "The FixNTVirtualMachinesPerms function failed! Halting!"
+                        $global:FunctionResult = "1"
+                        return
+                    }
                 }
             }
-            #>
 
             ## END Try and Update Permissions ##
 
@@ -12472,8 +12528,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmhJQf+CNRnSCipE6hrtjgriC
-# vHWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUtLWcTDzx5BLhJRzeT/L08bwO
+# sFCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12530,11 +12586,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFG6p7iF1IEk5ceg8
-# trD+65MP63WlMA0GCSqGSIb3DQEBAQUABIIBALCngFfZf1QWgKfoEfJUZT8568/R
-# P0LYMWnslfWrO868jy1gikiKoT5556G5DjG+FjjqgTRf4PHOtwvDVYhLe0apV7d6
-# XDMaFZYO1rrdGuOl64t3ea2gwvIP/lnOWuGIjifMEjRBGotVgaf5/esuuKw/14mx
-# Vbnsbwa+enIrh8wKWc/92T4+qKykn1ox6NnFt1oui9YCNyGW1Zm90yMlqY/TXgfb
-# too/AmnSdBWK1UNgL6wqSsk66aXvxy9miEu2w/bV6/d7geKKMDR20N4e0k5JBNpm
-# 42MIKmicyaRgMDIHAGn6FKwA2PWt5ME3wmwmdTupciGoRxca5BxusycUSCk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGFw00FxHEkrpmb8
+# J+0XQ0X+VF3vMA0GCSqGSIb3DQEBAQUABIIBAE+YQrzLKyzecKwQcK0K+z25RfhX
+# 802vJo2nSrK2qk4cZ8LuxlokHOtGbeuHbu2xVOu/UA6/bI7w43i7SJGsySbaZdjd
+# TSssoDW1a36b0VrGdD22nTzOqB7IVvnMn6K+XYlzG5GQUglU8ZB67fL1KFuqWSuu
+# zFeqYHEnFWmoI26S3lVEkzPJ/tfJTFVGQ7a+4gjdzcVXKvC6Gr7CCNLsBUky2ui4
+# aL6v/fJhUTipqo8UIfNZ8RRhV29QlYf+QnMlnN2RGOZQSDMo50G5/O0plLCITTyV
+# kxeF6zisPhbMuW6QiYyk9g9tqWbjnkBom8hw042NHdRVNoPeLNQsLGM/VB4=
 # SIG # End signature block

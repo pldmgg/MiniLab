@@ -87,7 +87,8 @@ function FixNTVirtualMachinesPerms {
     if ($NTFSAccessInfo.Account -notcontains "NT VIRTUAL MACHINE\Virtual Machines" -or
     $($NTFSAccessInfo.Account -contains "NT VIRTUAL MACHINE\Virtual Machines" -and ![bool]$($AppliesTo -match "ThisFolderSubfolders"))
     ) {
-        Add-NTFSAccess -Path $DirectoryPath -Account "NT VIRTUAL MACHINE\Virtual Machines" -AccessRights "ReadAndExecute, Synchronize" -AccessType Allow -AppliesTo ThisFolderSubfoldersAndFiles
+        #Add-NTFSAccess -Path $DirectoryPath -Account "NT VIRTUAL MACHINE\Virtual Machines" -AccessRights "ReadAndExecute, Synchronize" -AccessType Allow -AppliesTo ThisFolderSubfoldersAndFiles
+        Add-NTFSAccess -Path $DirectoryPath -Account "NT VIRTUAL MACHINE\Virtual Machines" -AccessRights "FullControl" -AccessType Allow -AppliesTo ThisFolderSubfoldersAndFiles
     }
 
     $ParentDirThatNeedsPermissions = $DirectoryPath | Split-Path -Parent
@@ -105,7 +106,8 @@ function FixNTVirtualMachinesPerms {
         if ($NTFSAccessInfo.Account -notcontains "NT VIRTUAL MACHINE\Virtual Machines" -or
         $($NTFSAccessInfo.Account -contains "NT VIRTUAL MACHINE\Virtual Machines" -and ![bool]$($AppliesTo -match "ThisFolderOnly"))
         ) {
-            Add-NTFSAccess -Path $ParentDirThatNeedsPermissions -Account "NT VIRTUAL MACHINE\Virtual Machines" -AccessRights "ReadAndExecute, Synchronize" -AccessType Allow -AppliesTo ThisFolderOnly
+            #Add-NTFSAccess -Path $ParentDirThatNeedsPermissions -Account "NT VIRTUAL MACHINE\Virtual Machines" -AccessRights "ReadAndExecute, Synchronize" -AccessType Allow -AppliesTo ThisFolderOnly
+            Add-NTFSAccess -Path $ParentDirThatNeedsPermissions -Account "NT VIRTUAL MACHINE\Virtual Machines" -AccessRights "FullControl" -AccessType Allow -AppliesTo ThisFolderOnly
         }
 
         $ParentDirThatNeedsPermissions = $ParentDirThatNeedsPermissions | Split-Path -Parent
@@ -117,8 +119,8 @@ function FixNTVirtualMachinesPerms {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUcjdtssoJ9JOu8HIz8AzV6bjS
-# W7ygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUM/BB/GrgjNGfQkqO15W1IzwN
+# FoKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -175,11 +177,11 @@ function FixNTVirtualMachinesPerms {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNQL35mQaXu9ookz
-# DT7gIWpOfWfxMA0GCSqGSIb3DQEBAQUABIIBACnoX77d/5dRi9e3FnBIOwsPfC+G
-# m7Zl6D+XVpEZNYpTwH7VGu3JfEfybVZss9WrxTB0JT2SBVDNBDh2SWZioZOlTtrW
-# qI2koX7xo6admuKlPZqH59bW0TE2ro9mif2pmv678dXZkx7q3GrZWh6Qq5IajFaY
-# 0lhMn+ydyfrjLHZpUZkpKSfWSQUDHqfuY4EuN99iCcLe3zwlR2sf49ayNPTF7hua
-# YukKaizRKWcy+xqKM0XyYHSBFSuXbsk0U/7z+Ahst/5poJ6hhNydaEAcqlSumqZ1
-# WCG8b/92RNHa7MknFZBqBRlgAWN3iVU6xWdBaIGAXySK4wHBerZW5ZTUFIk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPotxTw2hnPgKeiA
+# Yi5xcuwZyBATMA0GCSqGSIb3DQEBAQUABIIBAIBmyRcl7hSwMRiI7paxMRKo7hmu
+# H6jjlHiK+n7EpjNKyrfDtNQEERUtlXjQPwmD4XH/olzgI1yNk6Kkun/PAnOsXdpm
+# bbq0ekYyeggJv83vcUFJukUOEzq0KLubX/3eRZSPTs5tIV4wzpn7aKfUOpNMQmfG
+# CHUVdlzSrBvmfYhJMFP5M6/8m48HYYhsRmVoBV4DIME9NDBDipMeoIJ+2lMDispU
+# EgI+Zi6EMHzNSEobDnE8Jxd5b6knKlJFXR7/xQl6K9VDlJCjRSSKZiFwvQzhmMU3
+# TZ4zcu8lJxNqpHX5ghx28hrDYOomwBFraUaguXYNvufVYG9lquDhFrD+t7k=
 # SIG # End signature block

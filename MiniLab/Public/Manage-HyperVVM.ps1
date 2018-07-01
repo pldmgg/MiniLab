@@ -433,7 +433,19 @@ function Manage-HyperVVM {
                     }
 
                     try {
-                        FixNTVirtualMachinesPerms -Directorypath $DirectoryThatMayNeedPermissionsFix
+                        if ($PSVersionTable.PSEdition -eq "Core") {
+                            [System.Collections.ArrayList]$ArgsToPass = @()
+                            $null = $ArgsToPass.Add($DirectoryThatMayNeedPermissionsFix)
+                            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+                
+                            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+                            } -ArgumentList $ArgsToPass
+                        }
+                        else {
+                            FixNTVirtualMachinesPerms -DirectoryPath $DirectoryThatMayNeedPermissionsFix
+                        }
                     }
                     catch {
                         Write-Error $_
@@ -446,7 +458,19 @@ function Manage-HyperVVM {
                     $DirectoryThatMayNeedPermissionsFix = $VMVhdFile | Split-Path -Parent
 
                     try {
-                        FixNTVirtualMachinesPerms -DirectoryPath $DirectoryThatMayNeedPermissionsFix
+                        if ($PSVersionTable.PSEdition -eq "Core") {
+                            [System.Collections.ArrayList]$ArgsToPass = @()
+                            $null = $ArgsToPass.Add($DirectoryThatMayNeedPermissionsFix)
+                            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+                
+                            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+                            } -ArgumentList $ArgsToPass
+                        }
+                        else {
+                            FixNTVirtualMachinesPerms -DirectoryPath $DirectoryThatMayNeedPermissionsFix
+                        }
                     }
                     catch {
                         Write-Error $_
@@ -459,23 +483,35 @@ function Manage-HyperVVM {
             
             # Also fix permissions on "$env:SystemDrive\Users\Public" and "$env:SystemDrive\ProgramData\Microsoft\Windows\Hyper-V"
             # the because lots of software (like Docker) likes throwing stuff in these locations
-            <#
             $PublicUserDirectoryPath = "$env:SystemDrive\Users\Public"
             $HyperVConfigDir = "$env:SystemDrive\ProgramData\Microsoft\Windows\Hyper-V"
             [System.Collections.ArrayList]$DirsToPotentiallyFix = @($PublicUserDirectoryPath,$HyperVConfigDir)
             
             foreach ($dir in $DirsToPotentiallyFix) {
-                try {
-                    FixNTVirtualMachinesPerms -DirectoryPath $dir
-                }
-                catch {
-                    Write-Error $_
-                    Write-Error "The FixNTVirtualMachinesPerms function failed! Halting!"
-                    $global:FunctionResult = "1"
-                    return
+                if (Test-Path $dir) {
+                    try {
+                        if ($PSVersionTable.PSEdition -eq "Core") {
+                            [System.Collections.ArrayList]$ArgsToPass = @()
+                            $null = $ArgsToPass.Add($dir)
+                            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+                
+                            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+                            } -ArgumentList $ArgsToPass
+                        }
+                        else {
+                            FixNTVirtualMachinesPerms -DirectoryPath $dir
+                        }
+                    }
+                    catch {
+                        Write-Error $_
+                        Write-Error "The FixNTVirtualMachinesPerms function failed! Halting!"
+                        $global:FunctionResult = "1"
+                        return
+                    }
                 }
             }
-            #>
 
             ## END Try and Update Permissions ##
 
@@ -665,8 +701,8 @@ function Manage-HyperVVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUJEBd2FGOPgkqzN4eZEPMWWb
-# Q+mgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUyJronh8jzr69dd6yNgLNGeq6
+# wJqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -723,11 +759,11 @@ function Manage-HyperVVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAVat6ITzrdskzjZ
-# o8owFbD74eTzMA0GCSqGSIb3DQEBAQUABIIBAE0lAP0ejHo9sE0sS7lNLjhGsSZC
-# 5JlrhAvtWK7uNB7JsA41ij5nMJgLdOs5mikes4ByZckmfnUxFCKoqqN+PUI1T71m
-# DYSyBi/kMGx33M8lCeqFyk0+hbt6Nje7QEesMFvYXzb1wTGRbz2k6/DPxhVayz3b
-# NIBOB3F/Ud0LlxX5u5fZLi730+DSaXy/naspUPCIYUaaOfcCNMJDoXErobAonmOV
-# UXUNlCBbGc+Se0WUCNqzJEQUph3XAedyKJjB2yNfzMizUUMbQVOU2nP2TI79hy0T
-# C5YRni0OWNcDb4D3earaoL7Cn4Owrr64dIv1kOaNvtjVV9XQU2HLnzPcA2o=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOv6Vn6R/02tuM9x
+# uwHPGi+JwQN1MA0GCSqGSIb3DQEBAQUABIIBAMRxQzj0/WBTioS8cw9F1JEaJEfg
+# +3Mmll/iz+LUP+Dx6EliXTbVP8hkfWfuV3AuzlotQQ/EppFgiCbGd/wCDgcsn67U
+# 95PMxl6UNgVuT7WV+QD9072mYWFPl2rJUChA2M1kDNHcc9CExYEBtrP9MiFVgdwm
+# Z8++L6SJUaLJgaRPDmHluwLT7mgxHNlylPZtBcrreCJ2unayIW3mFRad3JIgASOB
+# d2TtRpEZQinn04Fx4QULr+IS8LG+iqEZuBJe/mP+cktBW5yDgbtekAaW5fXgDG2m
+# Yg15rx/uum9HiX4DzUKA7LQJOu1ADVOit4GQs2iq0e/LMI+qX+pEs+amln4=
 # SIG # End signature block

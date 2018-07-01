@@ -420,12 +420,14 @@ function Deploy-HyperVVagrantBoxManually {
             
             $Module = Get-Module MiniLab
             # NOTE: The below $FunctionsForSBUse is loaded when the MiniLab Module is imported
-            $ThisModuleFunctions = $script:FunctionsForSBUse
+            [System.Collections.ArrayList]$ArgsToPass = @()
+            $null = $ArgsToPass.Add($BoxFilePath)
+            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
 
             $FileLockBool = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
-                $args | foreach {Invoke-Expression $_}
-                [bool]$(GetFileLockProcess -FilePath $using:BoxFilePath -ErrorAction SilentlyContinue)
-            } -ArgumentList $ThisModuleFunctions
+                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                [bool]$(GetFileLockProcess -FilePath $args[0] -ErrorAction SilentlyContinue)
+            } -ArgumentList $ArgsToPass
             
             while ($FileLockBool) {
                 Write-Host "$BoxFilePath is currently being used by another process...Waiting for it to become available"
@@ -509,14 +511,15 @@ function Deploy-HyperVVagrantBoxManually {
         }
 
         # Determine the External vSwitch that is associated with the Host Machine's Primary IP
+        $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+            $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+        } | Sort-Object Metric1)[0].InterfaceIndex
+        $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+        $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+        $PrimaryInterfaceAlias = $(Get-CimInstance Win32_NetworkAdapter | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}).NetConnectionId
+
         $ExternalvSwitches = Get-VMSwitch -SwitchType External
         if ($ExternalvSwitches.Count -gt 1) {
-            $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
-                $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
-            } | Sort-Object Metric1)[0].InterfaceIndex
-            $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
-            $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
-
             foreach ($vSwitchName in $ExternalvSwitches.Name) {
                 $AllRelatedvSwitchInfo = GetvSwitchAllRelatedInfo -vSwitchName $vSwitchName -WarningAction SilentlyContinue
                 if ($($NicInfo.MacAddress -replace ":","") -eq $AllRelatedvSwitchInfo.MacAddress) {
@@ -525,7 +528,7 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
         elseif ($ExternalvSwitches.Count -eq 0) {
-            $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $NicInfo.InterfaceAlias
+            $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $PrimaryInterfaceAlias
             $ExternalSwitchCreated = $True
             $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
         }
@@ -554,7 +557,20 @@ function Deploy-HyperVVagrantBoxManually {
         }
         Write-Host "Creating VM..."
         $CreateVMOutput = Manage-HyperVVM @NewTempVMParams -Create
-        #FixNTVirtualMachinesPerms -DirectoryPath $VMDestinationDirectory
+        
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            [System.Collections.ArrayList]$ArgsToPass = @()
+            $null = $ArgsToPass.Add($VMDestinationDirectory)
+            foreach ($FuncString in $script:FunctionsForSBUse) {$null = $ArgsToPass.Add($FuncString)}
+
+            $FixPermissionsResult = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $args[1..$($args.Count-1)] | foreach {Invoke-Expression $_}
+                FixNTVirtualMachinesPerms -DirectoryPath $args[0]
+            } -ArgumentList $ArgsToPass
+        }
+        else {
+            FixNTVirtualMachinesPerms -DirectoryPath $VMDestinationDirectory
+        }
 
         Write-Host "Starting VM..."
         #Start-VM -Name $NewVMName
@@ -565,7 +581,10 @@ function Deploy-HyperVVagrantBoxManually {
         
         # Cleanup
         #Remove-Item $BoxFilePath -Force
-        Remove-Item $DownloadedVMDir -Recurse -Force
+        <#
+        if (Test-Path $DownloadedVMDir) {
+            Remove-Item $DownloadedVMDir -Recurse -Force
+        }
         
         if ($(Get-VM).Name -contains $NewVMName) {
             $null = Manage-HyperVVM -VMName $NewVMname -Destroy
@@ -577,6 +596,7 @@ function Deploy-HyperVVagrantBoxManually {
         if ($ExternalSwitchCreated) {
             Remove-VMSwitch "ToExternal" -Force -ErrorAction SilentlyContinue
         }
+        #>
 
         $global:FunctionResult = "1"
         return
@@ -639,8 +659,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU+8YvOxj/dA/uYs4fPkfNIv5Z
-# iwSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUBh9n2x8jtYQvIER/MhCWHK+b
+# bmSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -697,11 +717,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFO55Sduj8XiofgE/
-# Q29lD83avDNVMA0GCSqGSIb3DQEBAQUABIIBAHx1KKLpgGtU018ofDkPDrWAQvnp
-# Os0qM5YLgFthl5q4xeVnhbjHL34FSjwzVkJMO3Yw/ewgOHpkoWzOdcdb/X2qRT1S
-# ZEiiO5xCtZ1+/NYugCQIH7CQKb9BMZoC7QM44yF3ooBMpJBXWlcuPLmNxJQ2ijtr
-# jfxWpPsPS6vCseZGpaFDuTA7VnOfA2FfxNJqdQKYsEyY3NW5Q38KzY0jGpkeS4mL
-# Cq0vhgMhPo8O1TengZvPcL6/Bw9+e+nfa4oc5GDU0S2hOt5FyGrF7J/NdZEhYV+V
-# /iBkYkXDuRdkr5ViZrmKZVWNGCO2K1XjpImk79mCSFUSOCxeVlBVmbT9Yr4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOuT/3AO+mrmOJ10
+# 32OqP2DcarUcMA0GCSqGSIb3DQEBAQUABIIBAIoUkG2YwUWZ93L5TQ8EpRqp0JiJ
+# N5PsZOux8xrk98RSa4DSwQr8aekxzU37qcSg1R4mPTVu3JHD2h0MnkPSbzsP4XXG
+# S54EZL+n9xFcvAuwMbgWJhRzEFeZFKXrvM0V2aJndJ2MgoDfq0acFRYA2eTENvAl
+# +mOKCne5bMz/mG5RLNnchAyWiJlwxzE+Pbqjl4TA5jr7IUJd8TT/oyGNt65mxx4h
+# BB800AzB8QZ+IBagh0sPW/Y7WgCX0jVTElWegWmnNdXrs6d1axLIjea/885/R3OI
+# Q1jzphbAGlGj7nBRfLWVVefpNgbEA0l7p6pM3avR+qr3MqHnHI29ovpC0TE=
 # SIG # End signature block
