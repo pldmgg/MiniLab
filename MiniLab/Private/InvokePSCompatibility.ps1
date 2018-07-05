@@ -3,7 +3,7 @@ function InvokePSCompatibility {
     Param (
         # $InvocationMethod determines if the GetModuleDependencies function scans a file or loaded function
         [Parameter(Mandatory=$False)]
-        [string]$InvocationMethod = $(Get-Variable "MyInvocation" -Scope 1 -ValueOnly).MyCommand.Name,
+        [string]$InvocationMethod,
 
         [Parameter(Mandatory=$False)]
         [string[]]$RequiredModules,
@@ -19,6 +19,24 @@ function InvokePSCompatibility {
         Write-Error "This function is only meant to be used with PowerShell Core on Windows! Halting!"
         $global:FunctionResult = "1"
         return
+    }
+
+    if (!$InvocationMethod) {
+        $MyInvParentScope = Get-Variable "MyInvocation" -Scope 1 -ValueOnly
+        $PathToFile = $MyInvParentScope.MyCommand.Source
+        $FunctionName = $MyInvParentScope.MyCommand.Name
+
+        if ($PathToFile) {
+            $InvocationMethod = $PathToFile
+        }
+        elseif ($FunctionName) {
+            $InvocationMethod = $FunctionName
+        }
+        else {
+            Write-Error "Unable to determine MyInvocation Source or Name! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
     }
 
     $AllWindowsPSModulePaths = @(
@@ -75,13 +93,15 @@ function InvokePSCompatibility {
         $GetModDepsSplatParams = @{}
 
         if (![string]::IsNullOrWhitespace($InvocationMethod)) {
-            if ($InvocationMethod -match "\.ps") {
-                if (!$(Test-Path $PSCommandPath)) {
-                    Write-Error "The `$PSCommandPath '$PSCommandPath' was not found! Halting!"
+            if ($PathToFile) {
+                if (Test-Path $InvocationMethod) {
+                    $GetModDepsSplatParams.Add("PathToScriptFile",$InvocationMethod)
+                }
+                else {
+                    Write-Error "'$InvocationMethod' was not found! Halting!"
                     $global:FunctionResult = "1"
                     return
                 }
-                $GetModDepsSplatParams.Add("PathToScriptFile",$PSCommandPath)
             }
             else {
                 $GetModDepsSplatParams.Add("NameOfLoadedFunction",$InvocationMethod)
@@ -101,6 +121,8 @@ function InvokePSCompatibility {
         $global:FunctionResult = "1"
         return
     }
+
+    #$RequiredLocallyAvailableModulesScan | Export-CliXml "$HOME\InitialRequiredLocallyAvailableModules.xml" -Force
 
     if (!$RequiredLocallyAvailableModulesScan) {
         Write-Host "InvokePSCompatibility reports that no additional modules need to be loaded." -ForegroundColor Green
@@ -229,6 +251,8 @@ function InvokePSCompatibility {
         }
     }
 
+    #$RequiredLocallyAvailableModulesScan | Export-CliXml "$HOME\RequiredLocallyAvailableModules.xml" -Force
+
     # Now all required modules are available locally, so let's filter to make sure we only try
     # to import the latest versions in case things are side-by-side install
     # Do for PSCoreModules...
@@ -323,7 +347,7 @@ function InvokePSCompatibility {
 
     #region >> Main
 
-    $RequiredLocallyAvailableModulesScan | Export-CliXml "$HOME\ReqModules.xml" -Force
+    #$RequiredLocallyAvailableModulesScan | Export-CliXml "$HOME\ReqModules.xml" -Force
     
     # Start Importing Modules...
     [System.Collections.ArrayList]$SuccessfulModuleImports = @()
@@ -475,8 +499,8 @@ function InvokePSCompatibility {
         }
     }
 
-    $SuccessfulModuleImports | Export-CliXml "$HOME\SuccessfulModImports.xml" -Force
-    $FailedModuleImports | Export-CliXml "$HOME\FailedModuleImports.xml" -Force
+    #$SuccessfulModuleImports | Export-CliXml "$HOME\SuccessfulModImports.xml" -Force
+    #$FailedModuleImports | Export-CliXml "$HOME\FailedModuleImports.xml" -Force
 
     # Now that Modules have been imported, we need to figure out which version of PowerShell we should use
     # for each Module. Modules might be able to be imported to PSCore, but NOT have all of their commands
@@ -547,7 +571,7 @@ function InvokePSCompatibility {
             }
         }
 
-        $UnacceptableUnloadedModules | Export-CliXml "$HOME\UnacceptableUnloadedModules.xml" -Force
+        #$UnacceptableUnloadedModules | Export-CliXml "$HOME\UnacceptableUnloadedModules.xml" -Force
 
         if ($UnacceptableUnloadedModules.Count -gt 0) {
             $WrnMsgA = "The following Modules were not able to be loaded via implicit remoting:`n$($UnacceptableUnloadedModules.ModuleName -join "`n")"
@@ -602,8 +626,8 @@ function InvokePSCompatibility {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5vc9hjD93/BmeP5sirIN/jLI
-# 6pSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQB4mfgYaQKkZPfIzKYVeT36X
+# aOigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -660,11 +684,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHd398Jd/v4Z8+bF
-# +hWQc8s3SFfEMA0GCSqGSIb3DQEBAQUABIIBADrD6ZjmpfzAOHxfOr+JQjZMZHE7
-# UHP+yXIJyuZ4f/5X5bhGuoV4ChcogFlzBHkGIfaihKKJchRpi+O434DBiPgTFlPz
-# SFFVL/xfJZ1BbRBJ+knmelkgE8B+6UTl0fZdV1KYjGe/aiuEhVmNsbczflKEwnwY
-# 2milAX/zm+i+ug8J/oPCxDmaw6UmPRHqbNPUToMNTGV2dmGjECxl7ZDovNbW1Oz1
-# JT/x7DW7qfjTchyYT2YZpdahTHf4YjBJBumoLWVgQqfs+mwo93K/CSome35+WzKr
-# nY5XNVEpeKge6RwV2gFty8TzpD8t5royoj2Oz5p1N5JDhJhibR9hLX3Yk5c=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNuCzPAkC1smf6cF
+# uGlnZ9yWuGbYMA0GCSqGSIb3DQEBAQUABIIBAAk0amFBtrFae4nfJoMyQL0wK66m
+# fsiwAWtDHwaPLaZcoHeQsCoL9uFcwLh3efAIZr9ysymwct/ngH+S7LplkxusXpKM
+# RC/HfasCDd6uVxeoaic2EA8JQspesZU+i0xqwkUCkPl/RiVYXvMXE0UFQOTFTi9M
+# 7ZyygK2lkx70Se8z60vv2s0MIGLqL/k8wtKx63kuG8A351JLWeJoW48fiDQK5X1+
+# Xtz7YrE71gqUKR8VMOgNaP0OHDQOoWkEtxQIHgdzzLrdIyhM5Ly9WzWUd5gWgT/6
+# CtLq0mFNR/E+hFhI+Y4hmOXQakE4yB/HWR8GHyQbSw8aJtgFSY2LzzQU+E4=
 # SIG # End signature block

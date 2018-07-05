@@ -66,7 +66,7 @@ function Get-VagrantBoxManualDownload {
         [switch]$SkipPreDownloadCheck,
 
         [Parameter(Mandatory=$False)]
-        [ValidateSet("Vagrant")]
+        [ValidateSet("Vagrant","AWS")]
         [string]$Repository
     )
 
@@ -178,6 +178,78 @@ function Get-VagrantBoxManualDownload {
         }
     }
 
+    if ($Repository -eq "AWS") {
+        if ($VagrantBox -eq "pldmgg/centos7vswitchtest") {
+            $BoxInfoUrl = $VagrantBoxDownloadUrl = $FinalVagrantBoxDownloadUrl = "https://s3.amazonaws.com/ipxebooting/CentOS7ExternalvSwitchTest.box"
+        }
+        if ($VagrantBox -eq "pldmgg/centos7dhcp") {
+            $BoxInfoUrl = $VagrantBoxDownloadUrl = $FinalVagrantBoxDownloadUrl = "https://s3.amazonaws.com/ipxebooting/CentOS7DHCP.box"
+        }
+        
+        Write-Host "Trying download from $VagrantBoxDownloadUrl ..."
+
+        try {
+            # Make sure the Url exists...
+            $HTTP_Request = [System.Net.WebRequest]::Create($VagrantBoxDownloadUrl)
+            $HTTP_Response = $HTTP_Request.GetResponse()
+
+            Write-Host "Received HTTP Response $($HTTP_Response.StatusCode)"
+        }
+        catch {
+            Write-Error "Unable to reach '$VagrantBoxDownloadUrl'! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        try {
+            $bytes = $HTTP_Response.GetResponseHeader("Content-Length")
+            $BoxSizeInMB = [Math]::Round($bytes / 1MB)
+        }
+        catch {
+            Write-Warning "There was a problem pre-determining how large the .box file to be downloaded is..."
+        }
+
+        if (!$SkipPreDownloadCheck) {
+            # Determine if we have enough space on the $DownloadDirectory's Drive before downloading
+            if ([bool]$(Get-Item $DownloadDirectory).LinkType) {
+                $DownloadDirLogicalDriveLetter = $(Get-Item $DownloadDirectory).Target[0].Substring(0,1)
+            }
+            else {
+                $DownloadDirLogicalDriveLetter = $DownloadDirectory.Substring(0,1)
+            }
+            $DownloadDirDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$DownloadDirLogicalDriveLetter`:'"
+            
+            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -gt $BoxSizeInMB) {
+                $OutFileName = $($VagrantBox -replace '/','-') + "_" + $BoxVersion + ".box"
+            }
+            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -lt $BoxSizeInMB) {
+                Write-Error "Not enough space on $DownloadDirLogicalDriveLetter`:\ Drive to download the compressed .box file and subsequently expand it! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        else {
+            $OutFileName = $($VagrantBox -replace '/','-') + "_" + $BoxVersion + ".box"
+        }
+
+        # Download the .box file
+        try {
+            # System.Net.WebClient is a lot faster than Invoke-WebRequest for large files...
+            Write-Host "Downloading $FinalVagrantBoxDownloadUrl ..."
+            #& $CurlCmd -Lk -o "$DownloadDirectory\$OutFileName" "$FinalVagrantBoxDownloadUrl"
+            $WebClient = [System.Net.WebClient]::new()
+            $WebClient.Downloadfile($FinalVagrantBoxDownloadUrl, "$DownloadDirectory\$OutFileName")
+            $WebClient.Dispose()
+        }
+        catch {
+            $WebClient.Dispose()
+            Write-Error $_
+            Write-Warning "If $FinalVagrantBoxDownloadUrl definitely exists, starting a fresh PowerShell Session could remedy this issue!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
     Get-Item "$DownloadDirectory\$OutFileName"
 
     ##### END Main Body #####
@@ -186,8 +258,8 @@ function Get-VagrantBoxManualDownload {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPVXmeYKno9qUIaG/lkFQ3rXA
-# sdCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUe3J91t42J8zHeXR/XwP60vRb
+# jmCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -244,11 +316,11 @@ function Get-VagrantBoxManualDownload {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFON18VO9kMsihBHu
-# TtweXkonKND0MA0GCSqGSIb3DQEBAQUABIIBADpkEgCiakHiPmhMnlYaaJ2Idunv
-# NCDeGHw9rwBYN46QpHbn9uwP5mw7o47MkDpX9zBeQ6HDeHLCllwyRWkP2n7ZHSSi
-# aazCkOVnkdUxNmrpb18qfpz6VfQSjA2NDxBIv27eSsOqqb/lHnpZDRd2KMFvpf3J
-# 4WC8j95C4P8WbFT3u7ZMQfp0U0Y0pvz905QD7vtvWOTp7lDtFUU3onu3d6yuZzNL
-# 33QrkMRwUrIERBJSHz7tIiRbcW9rLAsKULwLjtiAQcd5viIc4Pv+huqnAoxdSVuv
-# ayRzd2h+n7n8ozzpGQ8viiRvE4rgbOS7G2XaChtliDEyouWYZSKBfTCKuYQ=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDnwQ45nCKyW/24+
+# qJV7pHcHa95cMA0GCSqGSIb3DQEBAQUABIIBAIxTxh4u+JCSFlgGcaRYybyGFXBX
+# 882YS/gCVPNH7JmYli+EqOuOo4ctpAuh66GMLrZK2IkAOZzAFiLW5pLR684fKRYR
+# wGdg5xeBBt5ULay1oVwqiYRwkwk4Dn4CXdBEP5Mjriwj2IysLi3/RdfAO3y6ekWC
+# oxU2gDBimpmDuok1HbU6WboyCJCnccSpS5WitYWYCDoxpqZdr/Va73D4XJFXWjK0
+# 5SgrD7hQM6M8HzCfVirwDJLIJTbdf9Xa2F1vYpSi3t2LmihtbiedPX6hmE8AENEM
+# YnmGrktALvvLfr41KU85x8DPU0zbkCBZUpzqXHP6Dvlm5aQxN18OxFENlzo=
 # SIG # End signature block

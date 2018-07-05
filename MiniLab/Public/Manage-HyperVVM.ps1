@@ -98,6 +98,12 @@ function Manage-HyperVVM {
 
         [Parameter(
             Mandatory=$False,
+            ParameterSetName='Create'    
+        )]
+        [uint64]$VhdSize,
+
+        [Parameter(
+            Mandatory=$False,
             ParameterSetName='Create'
         )]
         [ValidateSet("Heartbeat","Shutdown","Time Synchronization","Guest Service Interface","Key-Value Pair Exchange","VSS")]
@@ -205,44 +211,10 @@ function Manage-HyperVVM {
 
     Write-Output "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
 
-    <#
-    # Explicitly import the Modules we need for this function
-    try {
-        Import-Module Microsoft.PowerShell.Utility
-        Import-Module Microsoft.PowerShell.Management
-        Import-Module Hyper-V
-        Import-Module NetAdapter
-        Import-Module NetTCPIP
-
-        Import-Module PackageManagement
-        Import-Module PowerShellGet
-        if ($(Get-Module -ListAvailable).Name -notcontains "NTFSSecurity") {
-            Install-Module NTFSSecurity
-        }
-
-        try {
-            if ($(Get-Module).Name -notcontains "NTFSSecurity") {Import-Module NTFSSecurity}
-        }
-        catch {
-            if ($_.Exception.GetType().FullName -eq "System.Management.Automation.RuntimeException") {
-                Write-Verbose "NTFSSecurity Module is already loaded..."
-            }
-            else {
-                throw "There was a problem loading the NTFSSecurity Module! Halting!"
-            }
-        }
-    }
-    catch {
-        Write-Error $_
-        $global:FunctionResult = "1"
-        return
-    }
-
-    Write-Host "Modules loaded at $(Get-Date -Format "HH:mm:ss.fff")"
-    #>
-
     # Hard coded for now
-    $global:VhdSize = 60*1024*1024*1024  # 60GB
+    if (!$VhdSize) {
+        $VhdSize = [uint64]30GB
+    }
 
     ##### END Variable/Parameter Transforms and PreRun Prep #####
 
@@ -270,67 +242,51 @@ function Manage-HyperVVM {
         $Ip3 = $switchIp3 + 1
         $switchAddress = "$Ip0.$Ip1.$Ip2.$Ip3"
     
-        $vmSwitch = Hyper-V\Get-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
-        $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
+        $vmSwitch = Get-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
+        $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
         if ($vmSwitch -and $vmNetAdapter) {
             Write-Output "Using existing Switch: $SwitchName"
         } else {
-            # There seems to be an issue on builds equal to 10586 (and
-            # possibly earlier) with the first VMSwitch being created after
-            # Hyper-V install causing an error. So on these builds we create
-            # Dummy switch and remove it.
-            $buildstr = $(Get-WmiObject win32_operatingsystem).BuildNumber
-            $buildNumber = [convert]::ToInt32($buildstr, 10)
-            if ($buildNumber -le 10586) {
-                Write-Output "Enabled workaround for Build 10586 VMSwitch issue"
-    
-                $fakeSwitch = Hyper-V\New-VMSwitch "DummyDesperatePoitras" -SwitchType Internal -ea SilentlyContinue
-                $fakeSwitch | Hyper-V\Remove-VMSwitch -Confirm:$false -Force -ea SilentlyContinue
-            }
-    
             Write-Output "Creating Switch: $SwitchName..."
-    
-            Hyper-V\Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
-            Hyper-V\New-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue | Out-Null
-            $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName
-    
+
+            Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
+            $null = New-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
+            $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName
+
             Write-Output "Switch created."
         }
     
         # Make sure there are no lingering net adapter
-        $netAdapters = Get-NetAdapter | ? { $_.Name.StartsWith("vEthernet ($SwitchName)") }
+        $netAdapters = Get-NetAdapter | Where-Object { $_.Name.StartsWith("vEthernet ($SwitchName)") }
         if (($netAdapters).Length -gt 1) {
             Write-Output "Disable and rename invalid NetAdapters"
     
             $now = (Get-Date -Format FileDateTimeUniversal)
             $index = 1
-            $invalidNetAdapters =  $netAdapters | ? { $_.DeviceID -ne $vmNetAdapter.DeviceId }
-    
+            $invalidNetAdapters = $netAdapters | Where-Object { $_.DeviceID -ne $vmNetAdapter.DeviceId }
+
             foreach ($netAdapter in $invalidNetAdapters) {
-                $netAdapter `
-                    | Disable-NetAdapter -Confirm:$false -PassThru `
-                    | Rename-NetAdapter -NewName "Broken Docker Adapter ($now) ($index)" `
-                    | Out-Null
-    
+                $null = Disable-NetAdapter -Name $netAdapter.Name -Confirm:$false
+                $null = Rename-NetAdapter -Name $netAdapter.Name -NewName "Broken Docker Adapter ($now) ($index)"
                 $index++
             }
         }
     
         # Make sure the Switch has the right IP address
-        $networkAdapter = Get-NetAdapter | ? { $_.DeviceID -eq $vmNetAdapter.DeviceId }
-        if ($networkAdapter | Get-NetIPAddress -IPAddress $switchAddress -ea SilentlyContinue) {
-            $networkAdapter | Disable-NetAdapterBinding -ComponentID ms_server -ea SilentlyContinue
-            $networkAdapter | Enable-NetAdapterBinding  -ComponentID ms_server -ea SilentlyContinue
+        $networkAdapter = Get-NetAdapter | Where-Object { $_.DeviceID -eq $vmNetAdapter.DeviceId }
+        if ($networkAdapter.InterfaceAlias -eq $(Get-NetIPAddress -IPAddress $switchAddress -ea SilentlyContinue).InterfaceAlias) {
+            Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
+            Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
             Write-Output "Using existing Switch IP address"
             return
         }
-    
-        $networkAdapter | Remove-NetIPAddress -Confirm:$false -ea SilentlyContinue
-        $networkAdapter | Set-NetIPInterface -Dhcp Disabled -ea SilentlyContinue
-        $networkAdapter | New-NetIPAddress -AddressFamily IPv4 -IPAddress $switchAddress -PrefixLength ($SwitchSubnetMaskSize) -ea Stop | Out-Null
+
+        Remove-NetIPAddress -InterfaceAlias $networkAdapter.InterfaceAlias -Confirm:$false -ea SilentlyContinue
+        Set-NetIPInterface -InterfaceAlias $networkAdapter.InterfaceAlias -Dhcp Disabled -ea SilentlyContinue
+        New-NetIPAddress -InterfaceAlias $networkAdapter.InterfaceAlias -AddressFamily IPv4 -IPAddress $switchAddress -PrefixLength ($SwitchSubnetMaskSize) -ea Stop | Out-Null
         
-        $networkAdapter | Disable-NetAdapterBinding -ComponentID ms_server -ea SilentlyContinue
-        $networkAdapter | Enable-NetAdapterBinding  -ComponentID ms_server -ea SilentlyContinue
+        Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
+        Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
         Write-Output "Set IP address on switch"
     }
     
@@ -339,13 +295,13 @@ function Manage-HyperVVM {
     
         # Let's remove the IP otherwise a nasty bug makes it impossible
         # to recreate the vswitch
-        $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
+        $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
         if ($vmNetAdapter) {
-            $networkAdapter = Get-NetAdapter | ? { $_.DeviceID -eq $vmNetAdapter.DeviceId }
-            $networkAdapter | Remove-NetIPAddress -Confirm:$false -ea SilentlyContinue
+            $networkAdapter = Get-NetAdapter | Where-Object { $_.DeviceID -eq $vmNetAdapter.DeviceId }
+            Remove-NetIPAddress -InterfaceAlias $networkAdapter.InterfaceAlias -Confirm:$false -ea SilentlyContinue
         }
-    
-        Hyper-V\Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
+
+        Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
     }
 
     function New-HyperVVM {
@@ -385,7 +341,7 @@ function Manage-HyperVVM {
 
         <#
         if ($vm.Generation -ne 2) {
-                Fatal "VM $VmName is a Generation $($vm.Generation) VM. It should be a Generation 2."
+            Fatal "VM $VmName is a Generation $($vm.Generation) VM. It should be a Generation 2."
         }
         #>
 
@@ -404,7 +360,7 @@ function Manage-HyperVVM {
             
             if (!$vhd) {
                 Write-Output "Creating dynamic VHD: $VmVhdFile"
-                $vhd = New-VHD -ComputerName localhost -Path $VmVhdFile -Dynamic -SizeBytes $global:VhdSize
+                $vhd = New-VHD -ComputerName localhost -Path $VmVhdFile -Dynamic -SizeBytes $VhdSize
             }
 
             ## BEGIN Try and Update Permissions ##
@@ -540,7 +496,7 @@ function Manage-HyperVVM {
                 if ($vm.DVDDrives) {
                     Write-Output "Remove existing DVDs"
                     $ExistingDvDDriveInfo = Get-VMDvdDrive -VMName $VMName
-                    Hyper-V\Remove-VMDvdDrive -VMName 'CentOS7Test2' -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
+                    Hyper-V\Remove-VMDvdDrive -VMName $VMName -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
                 }
 
                 Write-Output "Attach DVD $IsoFile"
@@ -548,9 +504,20 @@ function Manage-HyperVVM {
             }
         }
 
-        #$iso = $vm | Hyper-V\Get-VMFirmware | select -ExpandProperty BootOrder | ? { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
-        #$vm | Hyper-V\Set-VMFirmware -EnableSecureBoot Off -FirstBootDevice $iso
-        ##$vm | Hyper-V\Set-VMComPort -number 1 -Path "\\.\pipe\docker$VmName-com1"
+        <#
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $iso = Get-VMFirmware -VMName $args[0] | Select-Object -ExpandProperty BootOrder | Where-Object { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
+                Set-VMFirmware -VMName $args[0] -EnableSecureBoot Off -FirstBootDevice $iso
+                Set-VMComPort -VMName $args[0] -number 1 -Path "\\.\pipe\docker$($args[0])-com1"
+            } -ArgumentList $VmName
+        }
+        else {
+            $iso = Get-VMFirmware -VMName $vm.Name | Select-Object -ExpandProperty BootOrder | Where-Object { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
+            Set-VMFirmware -VMName $vm.Name -EnableSecureBoot Off -FirstBootDevice $iso
+            Set-VMComPort -VMName $vm.Name -number 1 -Path "\\.\pipe\docker$VmName-com1"
+        }
+        #>
 
         # Enable only prefered VM integration services
         [System.Collections.ArrayList]$intSvc = @()
@@ -567,11 +534,11 @@ function Manage-HyperVVM {
         
         Hyper-V\Get-VMIntegrationService -VMName $VMName | foreach {
             if ($PreferredIntegrationServices -contains $_.Name) {
-                Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
+                $null = Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Enabled $($_.Name)"
             }
             else {
-                Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
+                $null = Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Disabled $($_.Name)"
             }
         }
@@ -618,16 +585,18 @@ function Manage-HyperVVM {
             return
         }
 
-        $code = {
-            Param($vmId) # Passing the $vm ref is not possible because it will be disposed already
+        $vmId = $vm.VMId.Guid
 
-            $vm = Hyper-V\Get-VM -Id $vmId -ea SilentlyContinue
+        $code = {
+            #Param($vmId) # Passing the $vm ref is not possible because it will be disposed already
+
+            $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
             if (!$vm) {
-                Write-Output "VM with Id $vmId does not exist"
+                Write-Output "VM with Name $VmName does not exist"
                 return
             }
 
-            $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $vm.Name -Name Shutdown -ea SilentlyContinue
+            $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $VmName -Name Shutdown -ea SilentlyContinue
             if ($shutdownService -and $shutdownService.PrimaryOperationalStatus -eq 'Ok') {
                 Write-Output "Shutdown VM $VmName..."
                 Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -Force -ea SilentlyContinue
@@ -641,10 +610,15 @@ function Manage-HyperVVM {
         }
 
         Write-Output "Stopping VM $VmName..."
-        $job = Start-Job -ScriptBlock $code -ArgumentList $vm.VMId.Guid
-        if (Wait-Job $job -Timeout 20) { Receive-Job $job }
-        Remove-Job -Force $job -ea SilentlyContinue
+        $null = New-Runspace -RunspaceName "StopVM$VmName" -ScriptBlock $code
+        $Counter = 0
+        while ($(Hyper-V\Get-VM -Name $VmName).State -ne "Off") {
+            Write-Verbose "Waiting for $VmName to Stop..."
+            Start-Sleep -Seconds 5
+            $Counter++
+        }
 
+        $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
         if ($vm.State -eq 'Off') {
             Write-Output "VM $VmName is stopped"
             return
@@ -653,10 +627,11 @@ function Manage-HyperVVM {
         # If the VM cannot be stopped properly after the timeout
         # then we have to kill the process and wait till the state changes to "Off"
         for ($count = 1; $count -le 10; $count++) {
-            $ProcessID = (Get-WmiObject -Namespace root\virtualization\v2 -Class Msvm_ComputerSystem -Filter "Name = '$($vm.Id.Guid)'").ProcessID
+            $ProcessID = (Get-WmiObject -Namespace root\virtualization\v2 -Class Msvm_ComputerSystem -Filter "Name = '$vmId'").ProcessID
             if (!$ProcessID) {
                 Write-Output "VM $VmName killed. Waiting for state to change"
                 for ($count = 1; $count -le 20; $count++) {
+                    $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
                     if ($vm.State -eq 'Off') {
                         Write-Output "Killed VM $VmName is off"
                         #Remove-Switch
@@ -671,8 +646,10 @@ function Manage-HyperVVM {
                 Fatal "Killed VM $VmName did not stop"
             }
 
-            Write-Output "Kill VM $VmName process..."
-            Stop-Process $ProcessID -Force -Confirm:$false -ea SilentlyContinue
+            if ($ProcessID) {
+                Write-Output "Kill VM $VmName process..."
+                Stop-Process $ProcessID -Force -Confirm:$false -ea SilentlyContinue
+            }
             Start-Sleep -Seconds 1
         }
 
@@ -701,8 +678,8 @@ function Manage-HyperVVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUyJronh8jzr69dd6yNgLNGeq6
-# wJqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUVaPC+s1zqPeHBUyy7lTgbrPi
+# ybegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -759,11 +736,11 @@ function Manage-HyperVVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOv6Vn6R/02tuM9x
-# uwHPGi+JwQN1MA0GCSqGSIb3DQEBAQUABIIBAMRxQzj0/WBTioS8cw9F1JEaJEfg
-# +3Mmll/iz+LUP+Dx6EliXTbVP8hkfWfuV3AuzlotQQ/EppFgiCbGd/wCDgcsn67U
-# 95PMxl6UNgVuT7WV+QD9072mYWFPl2rJUChA2M1kDNHcc9CExYEBtrP9MiFVgdwm
-# Z8++L6SJUaLJgaRPDmHluwLT7mgxHNlylPZtBcrreCJ2unayIW3mFRad3JIgASOB
-# d2TtRpEZQinn04Fx4QULr+IS8LG+iqEZuBJe/mP+cktBW5yDgbtekAaW5fXgDG2m
-# Yg15rx/uum9HiX4DzUKA7LQJOu1ADVOit4GQs2iq0e/LMI+qX+pEs+amln4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKXjpv8YIhwbZzpo
+# lKpzxwANS4LKMA0GCSqGSIb3DQEBAQUABIIBALRPQudEHCQuihOOd4sGj47WpGR6
+# A3XJ6gMrGjRoEIxwQK6kJ1gJkDdJAQuvPSAnzwqTWIGc7nfkwSzlrsTvakE/UGzE
+# UrHiWc1QJTY0pUKe7GhoCOk+vtDTbn1Lcd8LkB0FC+HP9YQD1Fgaf0dzp+5oNlJr
+# DoZzTM9rJ1jF86bU4PO9NVZuV+vlple970XJwVz/CKwabclJk+dGPfWrIFpxFxH4
+# /xxcL+S3TWptixSlbbb1ugD5fC95pzbIYpgqbkxtO76gB5OI2o09+i0yHX+fJJMb
+# ibEUlbjNYKCJtuvhE/+BiEtpBre0nMReSOKQcZThip7wO8uYPSj2EAfE0cI=
 # SIG # End signature block

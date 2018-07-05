@@ -15,9 +15,10 @@ foreach ($import in $Private) {
     }
 }
 
+[System.Collections.Arraylist]$ModulesToInstallAndImport = @("Hyper-V")
 if (Test-Path "$PSScriptRoot\module.requirements.psd1") {
     $ModuleManifestData = Import-PowerShellDataFile "$PSScriptRoot\module.requirements.psd1"
-    $ModulesToInstallAndImport = $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"}
+    $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"} | foreach {$null = $ModulesToinstallAndImport.Add($_)}
 }
 
 # NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
@@ -3532,7 +3533,7 @@ function Deploy-HyperVVagrantBoxManually {
         [switch]$SkipHyperVInstallCheck,
 
         [Parameter(Mandatory=$False)]
-        [ValidateSet("Vagrant")]
+        [ValidateSet("Vagrant","AWS")]
         [string]$Repository
     )
 
@@ -7718,6 +7719,957 @@ function Get-DSCEncryptionCert {
 }
 
 
+function Get-GuestVMAndHypervisorInfo {
+    [CmdletBinding(DefaultParameterSetName='Default')]
+    Param(
+        [Parameter(
+            Mandatory = $False,
+            ParameterSetName = 'Default'
+        )]
+        [string]$TargetHostNameOrIP,
+
+        [Parameter(
+            Mandatory=$True,
+            ParameterSetName = 'UsingVMName'
+        )]
+        [string]$TargetVMName,
+
+        [Parameter(Mandatory=$False)]
+        [string]$HypervisorFQDNOrIP,
+
+        [Parameter(Mandatory=$False)]
+        $TargetHostNameCreds,
+
+        [Parameter(Mandatory=$False)]
+        $HypervisorCreds,
+
+        # -TryWithoutHypervisorInfo MIGHT result in creating a Local NAT
+        # with an Internal vSwitch on the Target Machine (assuming it's a Guest VM). It depends if
+        # Get-NestedVirtCapabilities detemines whether the Target Machine can use an External vSwitch or not.
+        # If it can, then a Local NAT will NOT be created.
+        # If a NAT already exists on the Target Machine, that NAT will be changed to
+        # 10.0.75.0/24 with IP 10.0.75.1 if it isn't already
+        [Parameter(Mandatory=$False)]
+        [switch]$TryWithoutHypervisorInfo,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$AllowRestarts,
+
+        # -NoMacAddressSpoofing WILL result in creating a Local NAT with an Internal vSwitch on the
+        # Target Machine (assuming it's a Guest VM). Maybe change this parameter to 'CreateNAT' instead
+        # of 'NoMacAddressSpoofing'
+        [Parameter(Mandatory=$False)]
+        [switch]$NoMacAddressSpoofing,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipHyperVInstallCheck,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipExternalvSwitchCheck
+    )
+
+    if ($PSBoundParameters['TargetHostNameCreds']) {
+        if ($TargetHostNameCreds.GetType().FullName -ne "System.Management.Automation.PSCredential") {
+            Write-Error "The object provided to the -TargetHostNameCreds parameter must be a System.Management.Automation.PSCredential! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    if ($PSBoundParameters['HypervisorCreds']) {
+        if ($HypervisorCreds.GetType().FullName -ne "System.Management.Automation.PSCredential") {
+            Write-Error "The object provided to the -HypervisorCreds parameter must be a System.Management.Automation.PSCredential! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    if (!$TargetHostNameOrIP -and !$TargetVMName) {
+        $TargetHostNameOrIP = $env:ComputerName
+    }
+
+    if ($TargetVMName) {
+        if ($TryWithoutHypervisorInfo) {
+            $ErrMsg = "Using the -TargetVMName parameter requires that we gather information from " +
+            "the hypervisor, but the -TryWithoutHypervisorInfo switch was also supplied. Impossible situation. Halting!"
+            Write-Error $ErrMsg
+            $global:FunctionResult = "1"
+            return
+        }
+
+        if (!$HypervisorFQDNOrIP) {
+            # Assume that $env:ComputerName is the hypervisor
+            $HypervisorFQDNOrIP = $env:ComputerName
+            if ($(Get-Module -ListAvailable).Name -notcontains "Hyper-V" -and $(Get-Module).Name -notcontains "Hyper-V") {
+                Write-Warning "The localhost $env:ComputerName does not appear to be a hypervisor!"
+                $HypervisorFQDNOrIP = Read-Host -Prompt "Please enter the FQDN or IP of the hypervisor that manages $TargetVMName"
+            }
+        }
+    }
+
+    # We only REALLY need to resolve the Hypervisor's network location if we are using $TargetVMName
+    if ($HypervisorFQDNOrIP) {
+        try {
+            $HypervisorNetworkInfo = ResolveHost -HostNameOrIP $HypervisorFQDNOrIP -ErrorAction Stop
+        }
+        catch {
+            if ($TargetVMName) {
+                Write-Error "Unable to resolve $HypervisorFQDNOrIP! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+            else {
+                Write-Warning "Unable to resolve $HypervisorFQDNOrIP!"
+                # In which case, we need to TryWithoutHypervisorInfo
+                $TryWithoutHypervisorInfo = $True
+            }
+        }
+    }
+
+    ## BEGIN $TargetVMName adjudication ##
+
+    if ($TargetVMName) {
+        # If $TargetVMName is provided (as opposed to $TargetHostNameOrIP), it is MANDATORY that we get
+        # Hyper-V Hypervisor Info. If we can't for whatever reason, we need to HALT.
+
+        # Make sure the $TargetVMName exists on the hypervisor and get some info about it from the Hypervisor's perspective
+        if ($HypervisorNetworkInfo.HostName -ne $env:ComputerName) {
+            $InvokeCommandSB = {
+                try {
+                    $TargetVMInfoFromHyperV = Get-VM -Name $using:TargetVMName -ErrorAction Stop
+                    $VMProcessorInfo = Get-VMProcessor -VMName $using:TargetVMName
+                    $VMNetworkAdapterInfo = Get-VmNetworkAdapter -VmName $using:TargetVMName
+                    $VMMemoryInfo = Get-VMMemory -VmName $using:TargetVMName
+                }
+                catch {
+                    Write-Error "Unable to find $using:TargetVMName on $($using:HypervisorNetworkInfo.HostName)!"
+                    return
+                }
+
+                # Need to Get $HostNameNetworkInfo via Network Adapter IP
+                $GuestVMIPAddresses = $TargetVMInfoFromHyperV.NetworkAdapters.IPAddresses
+
+                [pscustomobject]@{
+                    HypervisorComputerInfo  = Get-CimInstance Win32_ComputerSystem
+                    HypervisorOSInfo        = Get-CimInstance Win32_OperatingSystem
+                    TargetVMInfoFromHyperV  = $TargetVMInfoFromHyperV
+                    VMProcessorInfo         = $VMProcessorInfo
+                    VMNetworkAdapterInfo    = $VMNetworkAdapterInfo
+                    VMMemoryInfo            = $VMMemoryInfo
+                    GuestVMIPAddresses      = $GuestVMIPAddresses
+                }
+            }
+
+            $GetWorkingCredsSplatParams = @{
+                RemoteHostNameOrIP          = $HypervisorNetworkInfo.FQDN
+                ErrorAction                 = "Stop"
+            }
+            if ($HypervisorCreds) {
+                $GetWorkingCredsSplatParams.Add("AltCredentials",$HypervisorCreds)
+            }
+
+            try {
+                $GetHypervisorCredsInfo = GetWorkingCredentials @GetWorkingCredsSplatParams
+                if (!$GetHypervisorCredsInfo.DeterminedCredsThatWorkedOnRemoteHost) {throw "Can't determine working credentials for $($HypervisorNetworkInfo.FQDN)!"}
+                
+                if ($GetHypervisorCredsInfo.CurrentLoggedInUserCredsWorked -eq $True) {
+                    $HypervisorCreds = $null
+                }
+
+                $HypervisorInvCmdLocation = $GetHypervisorCredsInfo.RemoteHostWorkingLocation
+            }
+            catch {
+                Write-Error $_
+                if ($PSBoundParameters['HypervisorCreds']) {
+                    Write-Error "The GetWorkingCredentials function failed! Check the credentials provided to the -HypervisorCreds parameter! Halting!"
+                }
+                else {
+                    Write-Error "The GetWorkingCredentials function failed! Try using the -HypervisorCreds parameter! Halting!"
+                }
+                $global:FunctionResult = "1"
+                return
+            }
+
+            $InvCmdSplatParams = @{
+                ComputerName        = $HypervisorInvCmdLocation
+                ScriptBlock         = $InvokeCommandSB
+                ErrorAction         = "Stop"
+            }
+            if ($HypervisorCreds) {
+                $InvCmdSplatParams.Add("Credential",$HypervisorCreds)
+            }
+            
+            try {
+                $InvokeCommandOutput = Invoke-Command @InvCmdSplatParams
+
+                $HypervisorComputerInfo = $InvokeCommandOutput.HypervisorComputerInfo
+                $HypervisorOSInfo = $InvokeCommandOutput.HypervisorOSInfo
+                $TargetVMInfoFromHyperV = $InvokeCommandOutput.TargetVMInfoFromHyperV
+                $VMProcessorInfo = $InvokeCommandOutput.VMProcessorInfo
+                $VMNetworkAdapterInfo = $InvokeCommandOutput.VMNetworkAdapterInfo
+                $VMMemoryInfo = $InvokeCommandOutput.VMMemoryInfo
+                $GuestVMIPAddresses = $InvokeCommandOutput.GuestVMIPAddresses
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The Get-GuestVMAndHypervisorInfo function was unable to gather information (i.e. `$HypervisorComputerInfo etc) about the Hyper-V host! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        else {
+            # Guest VM Info from Hypervisor Perspective
+            try {
+                $TargetVMInfoFromHyperV = Get-VM -Name $TargetVMName -ErrorAction Stop
+                $VMProcessorInfo = Get-VMProcessor -VMName $TargetVMName
+                $VMNetworkAdapterInfo = Get-VmNetworkAdapter -VmName $TargetVMName
+                $VMMemoryInfo = Get-VMMemory -VmName $TargetVMName
+                $HypervisorComputerInfo = Get-CimInstance Win32_ComputerSystem
+                $HypervisorOSInfo = Get-CimInstance Win32_OperatingSystem
+                $GuestVMIPAddresses = $TargetVMInfoFromHyperV.NetworkAdapters.IPAddresses
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The Get-GuestVMAndHypervisorInfo function was unable to gather information (i.e. `$HypervisorComputerInfo etc) about the Hyper-V host! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        # Now, we need to get $HostNameOSInfo and $HostNameComputerInfo
+        [System.Collections.ArrayList]$ResolvedIPs = @()
+        foreach ($IPAddr in $GuestVMIPAddresses) {
+            try {
+                $HostNameNetworkInfoPrep = ResolveHost -HostNameOrIP $IPAddr -ErrorAction Stop
+
+                $null = $ResolvedIPs.Add($HostNameNetworkInfoPrep)
+            }
+            catch {
+                Write-Verbose "Unable to resolve $IPAddr"
+            }
+        }
+
+        # If we didn't resolve any additional info beyond just IP Address, HALT
+        if ($ResolvedIP.Count -eq 0 -or ![bool]$($ResolvedIP.HostName -match "[\w]")) {
+            Write-Error "Unable to resolve any network information regarding $TargetVMName! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        if ($ResolvedIPs.Count -gt 1) {
+            # Choose NetworkInfo that is on the same domain as our workstation
+            $NTDomainInfo = Get-CimInstance Win32_NTDomain
+            foreach ($ResolvedIP in $ResolvedIPs) {
+                if ($ResolvedIP.Domain -eq $NTDomainInfo.DnsForestName) {
+                    $HostNameNetworkInfo = $ResolvedIP
+                }
+            }
+            # If we still don't have one, pick one that is on the same subnet as our workstation's primary IP
+            if (!$HostNameNetworkInfo) {
+                $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+                    $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+                } | Sort-Object Metric1)[0].InterfaceIndex
+                $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+                $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                $Mask = $NicInfo.IPSubnet | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                $IPRange = GetIPRange -ip $PrimaryIP -mask $Mask
+
+                foreach ($ResolvedIP in $ResolvedIPs) {
+                    if ($IPRange -contains $ResolvedIP.IPAddressList[0]) {
+                        $HostNameNetworkInfo = $ResolvedIP
+                    }
+                }
+            }
+            # If we still don't have one, pick one that we can reach
+            if (!$HostNameNetworkInfo) {
+                foreach ($ResolvedIP in $ResolvedIPs) {
+                    $Ping = [System.Net.NetworkInformation.Ping]::new()
+                    $PingResult =$Ping.Send($($ResolvedIP.IPAddressList[0]),1000)
+                    if ($PingResult.Status -eq "Success") {
+                        $HostNameNetworkInfo = $ResolvedIP
+                    }
+                }
+            }
+            # If we still don't have one, just pick one
+            if (!$HostNameNetworkInfo) {
+                $HostNameNetworkInfo = $ResolvedIPs[0]
+            }
+        }
+        else {
+            $HostNameNetworkInfo = $ResolvedIPs[0]
+        }
+
+        # Now we need to get some info about the Guest VM
+        $InvokeCommandSB = {
+            [pscustomobject]@{
+                HostNameComputerInfo  = Get-CimInstance Win32_ComputerSystem
+                HostNameOSInfo        = Get-CimInstance Win32_OperatingSystem
+                HostNameProcessorInfo = Get-CimInstance Win32_Processor
+                HostNameBIOSInfo      = Get-CimInstance Win32_BIOS
+            }
+        }
+
+        $GetWorkingCredsSplatParams = @{
+            RemoteHostNameOrIP          = $HostNameNetworkInfo.FQDN
+            ErrorAction                 = "Stop"
+        }
+        if ($TargetHostNameCreds) {
+            $GetWorkingCredsSplatParams.Add("AltCredentials",$TargetHostNameCreds)
+        }
+
+        try {
+            $GetTargetHostCredsInfo = GetWorkingCredentials @GetWorkingCredsSplatParams
+            if (!$GetTargetHostCredsInfo.DeterminedCredsThatWorkedOnRemoteHost) {throw "Can't determine working credentials for $($HostNameNetworkInfo.FQDN)!"}
+            
+            if ($GetTargetHostCredsInfo.CurrentLoggedInUserCredsWorked -eq $True) {
+                $TargetHostNameCreds = $null
+            }
+            
+            $TargetHostInvCmdLocation = $GetTargetHostCredsInfo.RemoteHostWorkingLocation
+        }
+        catch {
+            Write-Error $_
+            if ($PSBoundParameters['TargetHostNameCreds']) {
+                Write-Error "The GetWorkingCredentials function failed! Check the credentials provided to the -TargetHostNameCreds parameter! Halting!"
+            }
+            else {
+                Write-Error "The GetWorkingCredentials function failed! Try using the -TargetHostNameCreds parameter! Halting!"
+            }
+            $global:FunctionResult = "1"
+            return
+        }
+
+        $InvCmdSplatParams = @{
+            ComputerName    = $TargetHostInvCmdLocation
+            ScriptBlock     = $InvokeCommandSB
+            ErrorAction     = "Stop"
+        }
+        if ($TargetHostNameCreds) {
+            $InvCmdSplatParams.Add("Credential",$TargetHostNameCreds)
+        }
+
+        try {
+            $InvokeCommandOutput = Invoke-Command @InvCmdSplatParams
+
+            #$HostNameVirtualStatusInfo = Get-ComputerVirtualStatus -ComputerName $HostNameNetworkInfo.FQDN -WarningAction SilentlyContinue -ErrorAction Stop
+            $HostNameComputerInfo = $InvokeCommandOutput.HostNameComputerInfo
+            $HostNameOSInfo = $InvokeCommandOutput.HostNameOSInfo
+            $HostNameProcessorInfo = $InvokeCommandOutput.HostNameProcessorInfo
+            $HostNameBIOSInfo = $InvokeCommandOutput.HostNameBIOSInfo
+        }
+        catch {
+            Write-Error $_
+            Write-Error "The Get-GuestVMAndHypervisorInfo function was unable to gather information (i.e. `$HostNameComputerInfo, etc) about the Target Guest VM! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Now we have $HypervisorNetworkInfo, $HypervisorComputerInfo, $HypervisorOSInfo, $TargetVMInfoFromHyperV, 
+        # $HostNameNetworkInfo, $HostNameComputerInfo, $HostNameOSInfo, and $HostNameBIOSInfo
+    }
+
+    ## END $TargetVMName adjudication ##
+
+
+    ## BEGIN $TargetHostNameOrIP adjudication ##
+
+    if ($TargetHostNameOrIP) {
+        # If $TargetHostNameOrIP is provided (as opposed to $TargetVMName), we's LIKE TO
+        # get information from the Hyper-V Hypervisor, but it's not strictly necessary.
+        # However, like with $TargetVMName it is still MANDATORY that we get info about
+        # the Target Host. If we can't for whatever reason, we need to HALT
+
+        # We need to be able to get Network Info about the Target Host regardless of whether or not
+        # our workstation is actually the Target Host. So if we can't get the info, HALT
+        try {
+            $HostNameNetworkInfo = ResolveHost -HostNameOrIP $TargetHostNameOrIP -ErrorAction Stop
+        }
+        catch {
+            Write-Error "Unable to resolve $TargetHostNameOrIP! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # BEGIN Get Guest VM Info # 
+        
+        if ($HostNameNetworkInfo.HostName -ne $env:ComputerName) {
+            $InvokeCommandSB = {
+                $IntegrationServicesRegistryPath = "HKLM:\SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters"
+                $HostNameBiosInfoSB = Get-CimInstance Win32_BIOS
+                $HostNameComputerInfoSB = Get-CimInstance Win32_ComputerSystem
+                $HostNameOSInfoSB = Get-CimInstance Win32_OperatingSystem
+                $HostNameProcessorInfoSB = Get-CimInstance Win32_Processor
+
+                $HostNameIntegrationServicesPresentSB = Test-Path $IntegrationServicesRegistryPath
+
+                if ($HostNameIntegrationServicesPresentSB) {
+                    $HostNameGuestVMInfoSB = Get-ItemProperty $IntegrationServicesRegistryPath
+                }
+                else {
+                    $HostNameGuestVMInfoSB = "IntegrationServices_Not_Installed"
+                }
+
+                [pscustomobject]@{
+                    HostNameComputerInfo  = $HostNameComputerInfoSB
+                    HostNameOSInfo        = $HostNameOSInfoSB
+                    HostNameProcessorInfo = $HostNameProcessorInfoSB
+                    HostNameBIOSInfo      = $HostNameBiosInfoSB
+                    HostNameGuestVMInfo   = $HostNameGuestVMInfoSB
+                }
+            }
+
+            $GetWorkingCredsSplatParams = @{
+                RemoteHostNameOrIP          = $HostNameNetworkInfo.FQDN
+                ErrorAction                 = "Stop"
+            }
+            if ($TargetHostNameCreds) {
+                $GetWorkingCredsSplatParams.Add("AltCredentials",$TargetHostNameCreds)
+            }
+    
+            try {
+                $GetTargetHostCredsInfo = GetWorkingCredentials @GetWorkingCredsSplatParams
+                if (!$GetTargetHostCredsInfo.DeterminedCredsThatWorkedOnRemoteHost) {throw "Can't determine working credentials for $($HostNameNetworkInfo.FQDN)!"}
+                
+                if ($GetTargetHostCredsInfo.CurrentLoggedInUserCredsWorked -eq $True) {
+                    $TargetHostNameCreds = $null
+                }
+
+                $TargetHostInvCmdLocation = $GetTargetHostCredsInfo.RemoteHostWorkingLocation
+            }
+            catch {
+                Write-Error $_
+                if ($PSBoundParameters['TargetHostNameCreds']) {
+                    Write-Error "The GetWorkingCredentials function failed! Check the credentials provided to the -TargetHostNameCreds parameter! Halting!"
+                }
+                else {
+                    Write-Error "The GetWorkingCredentials function failed! Try using the -TargetHostNameCreds parameter! Halting!"
+                }
+                $global:FunctionResult = "1"
+                return
+            }
+
+            $InvCmdSplatParams = @{
+                ComputerName    = $TargetHostInvCmdLocation
+                ScriptBlock     = $InvokeCommandSB
+                ErrorAction     = "Stop"
+            }
+            if ($TargetHostNameCreds) {
+                $InvCmdSplatParams.Add("Credential",$TargetHostNameCreds)
+            }
+    
+            try {
+                $InvokeCommandOutput = Invoke-Command @InvCmdSplatParams
+
+                #$HostNameVirtualStatusInfo = Get-ComputerVirtualStatus -ComputerName $HostNameNetworkInfo.FQDN -WarningAction SilentlyContinue -ErrorAction Stop
+                $HostNameComputerInfo = $InvokeCommandOutput.HostNameComputerInfo
+                $HostNameOSInfo = $InvokeCommandOutput.HostNameOSInfo
+                $HostNameProcessorInfo = $InvokeCommandOutput.HostNameProcessorInfo
+                $HostNameBIOSInfo = $InvokeCommandOutput.HostNameBIOSInfo
+                $HostNameGuestVMInfo = $InvokeCommandOutput.HostNameGuestVMInfo
+            }
+            catch {
+                Write-Error $_
+                Write-Error "The Get-GuestVMAndHypervisorInfo function was unable to gather information about $TargetHostInvCmdLocation (i.e. `$HostNameComputerInfo, etc)! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        else {
+            $IntegrationServicesRegistryPath = "HKLM:\SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters"
+            $HostNameBiosInfo = Get-CimInstance Win32_BIOS
+            $HostNameIntegrationServicesPresent = Test-Path $IntegrationServicesRegistryPath
+
+            if ($HostNameIntegrationServicesPresent) {
+                $HostNameGuestVMInfo = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters"
+            }
+            else {
+                $HostNameGuestVMInfo = "IntegrationServices_Not_Installed"
+            }
+
+            $HostNameComputerInfo = Get-CimInstance Win32_ComputerSystem
+            $HostNameOSInfo = Get-CimInstance Win32_OperatingSystem
+            $HostNameProcessorInfo = Get-CimInstance Win32_Processor
+            $HostNameBIOSInfo = Get-CimInstance Win32_BIOS
+
+            $TargetHostInvCmdLocation = $env:ComputerName
+        }
+
+        if ($HostNameBIOSInfo.SMBIOSBIOSVersion -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+        $HostNameBIOSInfo.Manufacturer -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+        $HostNameBIOSInfo.Name -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+        $HostNameBIOSInfo.SerialNumber -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+        $HostNameBIOSInfo.Version -match "Hyper-V|VirtualBox|VMWare|Xen|VRTUAL" -or
+        $HostNameIntegrationServicesPresent) {
+            Add-Member -InputObject $HostNameBIOSInfo NoteProperty -Name "IsVirtual" -Value $True
+        }
+        else {
+            Add-Member -InputObject $HostNameBIOSInfo NoteProperty -Name "IsVirtual" -Value $False
+        }
+
+        if (!$HostNameBIOSInfo.IsVirtual) {
+            Write-Error "This function is meant to determine if a Guest VM is capable of Nested Virtualization, but $TargetHostNameOrIP is a physical machine! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        if (!$($HostNameBIOSInfo.SMBIOSBIOSVersion -match "Hyper-V" -or $HostNameBIOSInfo.Name -match "Hyper-V")) {
+            Write-Warning "The hypervisor for $($HostNameNetworkInfo.FQDN) is NOT Microsoft's Hyper-V. Unable to get additional information about the hypervisor!"
+            $HypervisorIsHyperV = $False
+            $TryWithoutHypervisorInfo = $True
+        }
+        else {
+            $HypervisorIsHyperV = $True
+        }
+
+        # END Get Guest VM Info #
+
+        # BEGIN Get Hypervisor Info #
+
+        if ($HypervisorIsHyperV -and !$TryWithoutHypervisorInfo) {
+            # Now we need to try and get some info about the hypervisor
+            if ($HostNameGuestVMInfo -eq "IntegrationServices_Not_Installed") {
+                # Still need the FQDN/Location of the hypervisor
+                if (!$HypervisorFQDNOrIP -and !$TryWithoutHypervisorInfo) {
+                    while (!$HypervisorFQDNOrIP) {
+                        Write-Warning "The localhost $env:ComputerName does not appear to be a hypervisor!"
+                        $HypervisorFQDNOrIP = Read-Host -Prompt "Please enter the FQDN or IP of the hypervisor that manages $TargetHostInvCmdLocation"
+                    }
+                }
+            }
+
+            if ($HostNameGuestVMInfo.PhysicalHostNameFullyQualified) {
+                $HypervisorFQDNOrIPToResolve = $HostNameGuestVMInfo.PhysicalHostNameFullyQualified
+            }
+            elseif ($HypervisorFQDNOrIP) {
+                $HypervisorFQDNOrIPToResolve = $HypervisorFQDNOrIP
+            }
+            
+            # Now we need the FQDN of the hypervisor...
+            try {
+                $HypervisorNetworkInfo = ResolveHost -HostNameOrIP $HypervisorFQDNOrIPToResolve -ErrorAction Stop
+            }
+            catch {
+                Write-Warning "Unable to resolve $HypervisorFQDNOrIPToResolve! Trying without hypervisor info..."
+                $TryWithoutHypervisorInfo = $True
+            }
+            
+            try {
+                # Still need the name of the Guest VM according the the hypervisor
+                if ($HypervisorNetworkInfo.HostName -ne $env:ComputerName) {
+                    try {
+                        $InvokeCommandSB = {
+                            # We an determine the $TargetVMName by finding the Guest VM Network Adapter with an IP that matches
+                            # $HostNameNetworkInfo.IPAddressList
+                            $TargetVMName = $(Get-VM | Where-Object {$_.NetworkAdapters.IPAddresses -contains $using:HostNameNetworkInfo.IPAddressList[0]}).Name
+
+                            try {
+                                $TargetVMInfoFromHyperV = Get-VM -Name $TargetVMName -ErrorAction Stop
+                                $VMProcessorInfo = Get-VMProcessor -VMName $TargetVMName
+                                $VMNetworkAdapterInfo = Get-VmNetworkAdapter -VmName $TargetVMName
+                                $VMMemoryInfo = Get-VMMemory -VmName $TargetVMName
+                            }
+                            catch {
+                                $TargetVMInfoFromHyperV = "Unable_to_find_VM"
+                            }
+
+                            [pscustomobject]@{
+                                HypervisorComputerInfo  = Get-CimInstance Win32_ComputerSystem
+                                HypervisorOSInfo        = Get-CimInstance Win32_OperatingSystem
+                                TargetVMInfoFromHyperV  = $TargetVMInfoFromHyperV
+                                VMProcessorInfo         = $VMProcessorInfo
+                                VMNetworkAdapterInfo    = $VMNetworkAdapterInfo
+                                VMMemoryInfo            = $VMMemoryInfo
+                            }
+                        }
+
+                        $GetWorkingCredsSplatParams = @{
+                            RemoteHostNameOrIP          = $HypervisorNetworkInfo.FQDN
+                            ErrorAction                 = "Stop"
+                        }
+                        if ($HypervisorCreds) {
+                            $GetWorkingCredsSplatParams.Add("AltCredentials",$HypervisorCreds)
+                        }
+            
+                        try {
+                            $GetHypervisorCredsInfo = GetWorkingCredentials @GetWorkingCredsSplatParams
+                            if (!$GetHypervisorCredsInfo.DeterminedCredsThatWorkedOnRemoteHost) {throw "Can't determine working credentials for $($HypervisorNetworkInfo.FQDN)!"}
+                            
+                            if ($GetHypervisorCredsInfo.CurrentLoggedInUserCredsWorked -eq $True) {
+                                $HypervisorCreds = $null
+                            }
+            
+                            $HypervisorInvCmdLocation = $GetHypervisorCredsInfo.RemoteHostWorkingLocation
+                        }
+                        catch {
+                            if ($PSBoundParameters['HypervisorCreds']) {
+                                throw "The GetWorkingCredentials function failed! Check the credentials provided to the -HypervisorCreds parameter! Halting!"
+                            }
+                            else {
+                                throw "The GetWorkingCredentials function failed! Try using the -HypervisorCreds parameter! Halting!"
+                            }
+                        }
+
+                        $InvCmdSplatParams = @{
+                            ComputerName        = $HypervisorInvCmdLocation
+                            ScriptBlock         = $InvokeCommandSB
+                            ErrorAction         = "Stop"
+                        }
+                        if ($HypervisorCreds) {
+                            $InvCmdSplatParams.Add("Credential",$HypervisorCreds)
+                        }
+
+                        try {
+                            $InvokeCommandOutput = Invoke-Command @InvCmdSplatParams
+                            
+                            $HypervisorComputerInfo = $InvokeCommandOutput.HypervisorComputerInfo
+                            $HypervisorOSInfo = $InvokeCommandOutput.HypervisorOSInfo
+                            $TargetVMInfoFromHyperV = $InvokeCommandOutput.TargetVMInfoFromHyperV
+                            $VMProcessorInfo = $InvokeCommandOutput.VMProcessorInfo
+                            $VMNetworkAdapterInfo = $InvokeCommandOutput.VMNetworkAdapterInfo
+                            $VMMemoryInfo = $InvokeCommandOutput.VMMemoryInfo
+                        }
+                        catch {
+                            throw "The Get-GuestVMAndHypervisorInfo function was not able to gather information (i.e. `$HypervisorComputerInfo, etc) about the Hyper-V Host and the Target Guest VM by remoting into the Hyper-V Host! Halting!"
+                        }
+                    }
+                    catch {
+                        if (!$TryWithoutHypervisorInfo) {
+                            Write-Error $_
+                            Write-Error "Unable to get Hyper-V Hypervisor info! Halting!"
+                            $global:FunctionResult = "1"
+                            return
+                        }
+                        else {
+                            Write-Verbose "Unabel to get info about the hypervisor. Trying without hypervisor info..."
+                        }
+                    }
+                }
+                else {
+                    # We an determine the $TargetVMName by finding the Guest VM Network Adapter with an IP that matches
+                    # $HostNameNetworkInfo.IPAddressList
+                    $TargetVMName = $(Get-VMNetworkAdapter -All | Where-Object {$_.IPAddresses -contains $HostNameNetworkInfo.IPAddressList[0]}).VMName
+                    #$TargetVMName = $(Get-VM | Where-Object {$_.NetworkAdapters.IPAddresses -contains $HostNameNetworkInfo.IPAddressList[0]}).Name
+
+                    try {
+                        $TargetVMInfoFromHyperV = Get-VM -Name $TargetVMName -ErrorAction Stop
+                        $VMProcessorInfo = Get-VMProcessor -VMName $TargetVMName
+                        $VMNetworkAdapterInfo = Get-VmNetworkAdapter -VmName $TargetVMName
+                        $VMMemoryInfo = Get-VMMemory -VmName $TargetVMName
+                    }
+                    catch {
+                        $TargetVMInfoFromHyperV = "Unable_to_find_VM"
+                    }
+
+                    $HypervisorComputerInfo = Get-CimInstance Win32_ComputerSystem
+                    $HypervisorOSInfo = Get-CimInstance Win32_OperatingSystem
+                }
+            }
+            catch {
+                if (!$TryWithoutHypervisorInfo) {
+                    Write-Error $_
+                    Write-Error "Unable to get Hyper-V Hypervisor info! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Write-Verbose "Unable to get info about the hypervisor. Trying without hypervisor info..."
+                }
+            }
+
+            if ($TargetVMInfoFromHyperV -eq "Unable_to_find_VM") {
+                Write-Error "Unable to find VM $TargetVMName on the specified hypervisor $($HypervisorNetworkInfo.FQDN)! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        elseif (!$HypervisorIsHyperV) {
+            $TryWithoutHypervisorInfo = $True
+        }
+        elseif ((!$HypervisorIsHyperV -and !$TryWithoutHypervisorInfo)) {
+            $ErrMsg = "Unable to get info about $($HostNameNetworkInfo.FQDN) from the hypervisor! " +
+            "If you would like to try without hypervisor information, use the -TryWithoutHypervisorInfo switch. Halting!"
+            Write-Error $ErrMsg
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Now we have $HypervisorNetworkInfo, $HypervisorComputerInfo, $HypervisorOSInfo, $TargetVMInfoFromHyperV, 
+        # $HostNameGuestVMInfo, $HostNameNetworkInfo, $HostNameComputerInfo, and $HostNameOSInfo, $HostNameBIOSInfo,
+        # and $HostNameProcessorInfo
+
+        # End Get Hypervisor Info #
+
+    }
+
+    ## END $TargetHostNameOrIP adjudication ##
+
+    # NOTE: $TryWithoutHypervisorInfo should never be $True if -TargetVMName parameter is used
+    if ($($TryWithoutHypervisorInfo -or $NoMacAddressSpoofing) -and !$Hypervisorcreds -and
+    !$GuestVMAndHVInfo.HypervisorCreds -and !$SkipExternalvSwitchCheck
+    ) {
+        if ($HostNameNetworkInfo.HostName -ne $env:ComputerName) {
+            $InvokeCommandSB = {Get-Module -ListAvailable -Name Hyper-V}
+            
+            $InvCmdSplatParams = @{
+                ComputerName    = $TargetHostInvCmdLocation
+                ScriptBlock     = $InvokeCommandSB
+                ErrorAction     = "SilentlyContinue"
+            }
+            if ($TargetHostNameCreds) {
+                $InvCmdSplatParams.Add("Credential",$TargetHostNameCreds)
+            }
+            
+            $HyperVInstallCheck = [bool]$(Invoke-Command @InvCmdSplatParams)
+
+            $FunctionsForRemoteUse = @(
+                ${Function:GetElevation}.Ast.Extent.Text    
+                ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+                ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+                ${Function:NewUniqueString}.Ast.Extent.Text
+                ${Function:GetvSwitchAllRelatedInfo}.Ast.Extent.Text
+                ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text
+                ${Function:Manage-HyperVVM}.Ast.Extent.Text
+                ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
+                ${Function:FixVagrantPrivateKeyPerms}.Ast.Extent.Text
+                ${Function:InstallFeatureDism}.Ast.Extent.Text
+                ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+                ${Function:TestHyperVExternalvSwitch}.Ast.Extent.Text
+                'Install-Module ProgramManagement; Import-Module ProgramManagement'
+                ${Function:GetPendingReboot}.Ast.Extent.Text
+            )
+            
+            $InvokeCommandSB = {
+                # Load the functions we packed up:
+                $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
+
+                # Check for pre-existing PendingReboot
+                if ($PSVersionTable.PSEdition -eq "Core") {
+                    $GetPendingRebootAsString = ${Function:GetPendingReboot}.Ast.Extent.Text
+                    
+                    $RebootPendingCheck = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                        Invoke-Expression $args[0]
+                        $(GetPendingReboot).RebootPending
+                    } -ArgumentList $GetPendingRebootAsString
+
+                    $RebootPendingFileCheck = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                        Invoke-Expression $args[0]
+                        $(GetPendingReboot).PendFileRenVal
+                    } -ArgumentList $GetPendingRebootAsString
+                }
+                else {
+                    $RebootPendingCheck = $(GetPendingReboot).RebootPending
+                    $RebootPendingFileCheck = $(GetPendingReboot).PendFileRenVal
+                }
+
+                if (!$RebootPendingCheck -or $RebootPendingFileCheck -eq $null) {
+                    $TestHyperVExternalSwitchSplatParams = @{}
+                    if ($using:SkipHyperVInstallCheck) {
+                        $TestHyperVExternalSwitchSplatParams.Add("SkipHyperVInstallCheck",$True)
+                    }
+                    if ($using:AllowRestarts) {
+                        $TestHyperVExternalSwitchSplatParams.Add("AllowRestarts",$True)
+                    }
+
+                    $TestHyperVExternalSwitchResults = TestHyperVExternalvSwitch @TestHyperVExternalSwitchSplatParams
+
+                    $TestHyperVExternalSwitchResults
+                }
+                else {
+                    [pscustomobject]@{RestartNeeded = $True}
+                    return
+                }
+            }
+
+            $InvCmdSplatParams = @{
+                ComputerName    = $TargetHostInvCmdLocation
+                ScriptBlock     = $InvokeCommandSB
+                ErrorAction     = "SilentlyContinue"
+            }
+            if ($TargetHostNameCreds) {
+                $InvCmdSplatParams.Add("Credential",$TargetHostNameCreds)
+            }
+
+            try {
+                $TestHyperVExternalSwitchResults = Invoke-Command @InvCmdSplatParams -ErrorAction SilentlyContinue -ErrorVariable ICTHVSErr
+                if (!$TestHyperVExternalSwitchResults) {throw "The Invoke-Command TestHyperVExternalvSwitch function failed!"}
+            }
+            catch {
+                Write-Error $_
+                if ($($ICTHVSErr | Out-String) -match "The operation has timed out") {
+                    Write-Error "There was a problem downloading the Vagrant Box to be used to test the External vSwitch! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Write-Host "Errors for Invoke-Command TestHyperVExternalvSwitch function are as follows:"
+                    Write-Error $($ICTHVSErr | Out-String)
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+
+            if ($TestHyperVExternalSwitchResults -eq "RestartNeeded" -or $TestHyperVExternalSwitchResults.RestartNeeded) {
+                Write-Warning "You must restart $TargetHostInvCmdLocation before the Get-GuestVMAndHypervisorInfo function can proceed! Halting!"
+                [pscustomobject]@{RestartNeeded = $True}
+                return
+            }
+        }
+        else {
+            $HyperVInstallCheck = [bool]$(Get-Module -ListAvailable -Name Hyper-V)
+
+            try {
+                # Check for pre-existing PendingReboot
+                if ($PSVersionTable.PSEdition -eq "Core") {
+                    $GetPendingRebootAsString = ${Function:GetPendingReboot}.Ast.Extent.Text
+                    
+                    $RebootPendingCheck = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                        Invoke-Expression $args[0]
+                        $(GetPendingReboot).RebootPending
+                    } -ArgumentList $GetPendingRebootAsString
+
+                    $RebootPendingFileCheck = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                        Invoke-Expression $args[0]
+                        $(GetPendingReboot).PendFileRenVal
+                    } -ArgumentList $GetPendingRebootAsString
+                }
+                else {
+                    $RebootPendingCheck = $(GetPendingReboot).RebootPending
+                    $RebootPendingFileCheck = $(GetPendingReboot).PendFileRenVal
+                }
+
+                if (!$RebootPendingCheck -or $RebootPendingFileCheck -eq $null) {
+                    # Use the TestHyperVExternalvSwitch function here
+                    $TestHyperVExternalSwitchSplatParams = @{
+                        ErrorAction         = "SilentlyContinue"
+                        ErrorVariable       = "THVSErr"
+                    }
+                    if ($HyperVInstallCheck) {
+                        $TestHyperVExternalSwitchSplatParams.Add("SkipHyperVInstallCheck",$True)
+                    }
+                    $TestHyperVExternalSwitchResults = TestHyperVExternalvSwitch @TestHyperVExternalSwitchSplatParams
+                    if (!$TestHyperVExternalSwitchResults) {throw "The TestHyperVExternalvSwitch function failed!"}
+
+                    if ($TestHyperVExternalSwitchResults -eq "RestartNeeded") {
+                        Write-Warning "You must restart $env:ComputerName before the Get-GuestVMAndHypervisorInfo function can proceed! Halting!"
+
+                        if ($AllowRestarts) {
+                            Restart-Computer -Confirm:$False -Force
+                        }
+
+                        [pscustomobject]@{RestartNeeded = $True}
+                        return
+                    }
+                }
+                else {
+                    Write-Warning "There is currently a reboot pending. Please restart $env:ComputerName before proceeding. Halting!"
+                    [pscustomobject]@{RestartNeeded = $True}
+                    return
+                }
+            }
+            catch {
+                Write-Error $_
+                if ($($THVSErr | Out-String) -match "The operation has timed out") {
+                    Write-Error "There was a problem downloading the Vagrant Box to be used to test the External vSwitch! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Write-Host "Errors for the TestHyperVExternalvSwitch function are as follows:"
+                    Write-Error $($THVSErr | Out-String)
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+        }
+
+        if ($TestHyperVExternalSwitchResults -eq $null) {
+            Write-Error "There was a problem with the TestHyperVExternalvSwitch function! This usually has to do with AWS or Vagrant websites throttling traffic. Try starting a fresh PowerShell Session. Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    if ($HypervisorCreds -eq $null -and $GetHypervisorCredsInfo.DeterminedCredsThatWorkedOnRemoteHost) {
+        $FinalHypervisorCreds = whoami
+    }
+    else {
+        $FinalHypervisorCreds = $HypervisorCreds
+    }
+
+    $Output = [ordered]@{
+        HypervisorNetworkInfo           = $HypervisorNetworkInfo
+        HypervisorInvCmdLocation        = $HypervisorInvCmdLocation
+        HypervisorComputerInfo          = $HypervisorComputerInfo
+        HypervisorOSInfo                = $HypervisorOSInfo
+        TargetVMInfoFromHyperV          = $TargetVMInfoFromHyperV
+        VMProcessorInfo                 = $VMProcessorInfo
+        VMNetworkAdapterInfo            = $VMNetworkAdapterInfo
+        VMMemoryInfo                    = $VMMemoryInfo
+        HypervisorCreds                 = $FinalHypervisorCreds
+        HostNameNetworkInfo             = $HostNameNetworkInfo
+        TargetHostInvCmdLocation        = $TargetHostInvCmdLocation
+        HostNameComputerInfo            = $HostNameComputerInfo
+        HostNameOSInfo                  = $HostNameOSInfo
+        HostNameProcessorInfo           = $HostNameProcessorInfo
+        HostNameBIOSInfo                = $HostNameBIOSInfo
+        TargetHostNameCreds             = if ($TargetHostNameCreds -eq $null) {whoami} else {$TargetHostNameCreds}
+    }
+
+    if ($TryWithoutHypervisorInfo) {
+        if ($HyperVInstallCheck -eq $False) {
+            $RestartNeeded = $True
+            if ($AllowRestarts) {
+                $RestartOccurred = $True
+            }
+            else {
+                $RestartOccurred = $False
+            }
+        }
+        else {
+            $RestartNeeded = $False
+            $RestartOccurred = $False
+        }
+
+        $Output.Add("RestartNeeded",$RestartNeeded)
+        $Output.Add("RestartOccurred",$RestartOccurred)
+
+        if (!$SkipExternalvSwitchCheck) {
+            if ($TestHyperVExternalSwitchResults.VirtualizationExtensionsExposed -eq $null) {
+                $Output.Add("VirtualizationExtensionsExposed",$False)
+            }
+            else {
+                $Output.Add("VirtualizationExtensionsExposed",$TestHyperVExternalSwitchResults.VirtualizationExtensionsExposed)
+            }
+
+            if ($TestHyperVExternalSwitchResults.MacAddressSpoofingEnabled -eq $null) {
+                $Output.Add("MacAddressSpoofingEnabled","Unknown")
+            }
+            else {
+                $Output.Add("MacAddressSpoofingEnabled",$TestHyperVExternalSwitchResults.MacAddressSpoofingEnabled)
+            }
+        }
+        else {
+            if ($(Confirm-AWSVM -EA SilentlyContinue) -or $(Confirm-AzureVM -EA SilentlyContinue) -or
+            $(Confirm-GoogleComputeVM -EA SilentlyContinue)
+            ) {
+                $Output.Add("VirtualizationExtensionsExposed",$True)
+                $Output.Add("MacAddressSpoofingEnabled",$False)
+            }
+            else {
+                # No other choice but to assume both are $True...
+                $Output.Add("VirtualizationExtensionsExposed",$True)
+                $Output.Add("MacAddressSpoofingEnabled",$True)
+            }
+        }
+    }
+    else {
+        $Output.Add("VirtualizationExtensionsExposed",$VMProcessorInfo.ExposeVirtualizationExtensions)
+        $Output.Add("MacAddressSpoofingEnabled",$($VMNetworkAdapterInfo.MacAddressSpoofing -contains "On"))
+    }
+
+    [pscustomobject]$Output
+}
+
+
 <#
     .SYNOPSIS
         This function downloads a Vagrant Box (.box file) to the specified -DownloadDirectory
@@ -7786,7 +8738,7 @@ function Get-VagrantBoxManualDownload {
         [switch]$SkipPreDownloadCheck,
 
         [Parameter(Mandatory=$False)]
-        [ValidateSet("Vagrant")]
+        [ValidateSet("Vagrant","AWS")]
         [string]$Repository
     )
 
@@ -7898,8 +8850,974 @@ function Get-VagrantBoxManualDownload {
         }
     }
 
+    if ($Repository -eq "AWS") {
+        if ($VagrantBox -eq "pldmgg/centos7vswitchtest") {
+            $BoxInfoUrl = $VagrantBoxDownloadUrl = $FinalVagrantBoxDownloadUrl = "https://s3.amazonaws.com/ipxebooting/CentOS7ExternalvSwitchTest.box"
+        }
+        if ($VagrantBox -eq "pldmgg/centos7dhcp") {
+            $BoxInfoUrl = $VagrantBoxDownloadUrl = $FinalVagrantBoxDownloadUrl = "https://s3.amazonaws.com/ipxebooting/CentOS7DHCP.box"
+        }
+        
+        Write-Host "Trying download from $VagrantBoxDownloadUrl ..."
+
+        try {
+            # Make sure the Url exists...
+            $HTTP_Request = [System.Net.WebRequest]::Create($VagrantBoxDownloadUrl)
+            $HTTP_Response = $HTTP_Request.GetResponse()
+
+            Write-Host "Received HTTP Response $($HTTP_Response.StatusCode)"
+        }
+        catch {
+            Write-Error "Unable to reach '$VagrantBoxDownloadUrl'! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        try {
+            $bytes = $HTTP_Response.GetResponseHeader("Content-Length")
+            $BoxSizeInMB = [Math]::Round($bytes / 1MB)
+        }
+        catch {
+            Write-Warning "There was a problem pre-determining how large the .box file to be downloaded is..."
+        }
+
+        if (!$SkipPreDownloadCheck) {
+            # Determine if we have enough space on the $DownloadDirectory's Drive before downloading
+            if ([bool]$(Get-Item $DownloadDirectory).LinkType) {
+                $DownloadDirLogicalDriveLetter = $(Get-Item $DownloadDirectory).Target[0].Substring(0,1)
+            }
+            else {
+                $DownloadDirLogicalDriveLetter = $DownloadDirectory.Substring(0,1)
+            }
+            $DownloadDirDriveInfo = Get-WmiObject Win32_LogicalDisk -ComputerName $env:ComputerName -Filter "DeviceID='$DownloadDirLogicalDriveLetter`:'"
+            
+            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -gt $BoxSizeInMB) {
+                $OutFileName = $($VagrantBox -replace '/','-') + "_" + $BoxVersion + ".box"
+            }
+            if ($([Math]::Round($DownloadDirDriveInfo.FreeSpace / 1MB)-2000) -lt $BoxSizeInMB) {
+                Write-Error "Not enough space on $DownloadDirLogicalDriveLetter`:\ Drive to download the compressed .box file and subsequently expand it! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        else {
+            $OutFileName = $($VagrantBox -replace '/','-') + "_" + $BoxVersion + ".box"
+        }
+
+        # Download the .box file
+        try {
+            # System.Net.WebClient is a lot faster than Invoke-WebRequest for large files...
+            Write-Host "Downloading $FinalVagrantBoxDownloadUrl ..."
+            #& $CurlCmd -Lk -o "$DownloadDirectory\$OutFileName" "$FinalVagrantBoxDownloadUrl"
+            $WebClient = [System.Net.WebClient]::new()
+            $WebClient.Downloadfile($FinalVagrantBoxDownloadUrl, "$DownloadDirectory\$OutFileName")
+            $WebClient.Dispose()
+        }
+        catch {
+            $WebClient.Dispose()
+            Write-Error $_
+            Write-Warning "If $FinalVagrantBoxDownloadUrl definitely exists, starting a fresh PowerShell Session could remedy this issue!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
     Get-Item "$DownloadDirectory\$OutFileName"
 
+    ##### END Main Body #####
+}
+
+
+function Install-Docker {
+    [CmdletBinding(DefaultParameterSetName='Default')]
+    Param(
+        [Parameter(Mandatory = $False)]
+        [ValidateSet("BareMetal","GuestVM")]
+        [string]$InstallEnvironment,
+
+        [Parameter(
+            Mandatory = $False,
+            ParameterSetName = 'Default'
+        )]
+        [string]$TargetHostNameOrIP,
+
+        [Parameter(
+            Mandatory=$False,
+            ParameterSetName = 'UsingVMName'
+        )]
+        [string]$TargetVMName,
+
+        [Parameter(Mandatory=$False)]
+        [string]$HypervisorFQDNOrIP,
+
+        [Parameter(Mandatory=$False)]
+        $TargetHostNameCreds,
+
+        [Parameter(Mandatory=$False)]
+        $HypervisorCreds,
+
+        [Parameter(
+            Mandatory=$True,
+            ParameterSetName = 'InfoAlreadyCollected'
+        )]
+        $GuestVMAndHVInfo, # Uses output of Get-GuestVMAndHypervisorInfo function
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipPrompt,
+
+        [Parameter(Mandatory=$False)]
+        [ValidateScript({
+            $(($_ % 4) -eq 0) -and $($_ -ge 4)
+        })]
+        [int]$GuestVMMemoryInGB, # Use this parameter if you are installing Docker on a GuestVM and want to increase that GuestVM's memory
+
+        [Parameter(Mandatory=$False)]
+        [switch]$AllowRestarts,
+
+        [Parameter(Mandatory=$False)]
+        [ValidateScript({
+            $(($_ % 2) -eq 0) -and $($_ -ge 2)
+        })]
+        [int]$MobyLinuxVMMemoryInGB = 2,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$UsePackageManagement,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$TryWithoutHypervisorInfo,
+
+        # -NoMacAddressSpoofing WILL result in creating a Local NAT with an Internal vSwitch on the
+        # Target Machine (assuming it's a Guest VM). Maybe change this parameter to 'CreateNAT' instead
+        # of 'NoMacAddressSpoofing'
+        [Parameter(Mandatory=$False)]
+        [switch]$NoMacAddressSpoofing,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipHyperVInstallCheck,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$SkipEnableNestedVM,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$RecreateMobyLinuxVM,
+
+        [Parameter(Mandatory=$False)]
+        [string]$NATIP,
+
+        [Parameter(Mandatory=$False)]
+        [string]$NATNetworkMask,
+
+        [Parameter(Mandatory=$False)]
+        [string]$NATName,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$PreRelease,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$AllowLogout
+    )
+
+    ##### BEGIN Variable/Parameter Transforms and PreRun Prep #####
+
+    if ($PSBoundParameters['TargetHostNameCreds']) {
+        if ($TargetHostNameCreds.GetType().FullName -ne "System.Management.Automation.PSCredential") {
+            Write-Error "The object provided to the -TargetHostNameCreds parameter must be a System.Management.Automation.PSCredential! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    if ($PSBoundParameters['HypervisorCreds']) {
+        if ($HypervisorCreds.GetType().FullName -ne "System.Management.Automation.PSCredential") {
+            Write-Error "The object provided to the -HypervisorCreds parameter must be a System.Management.Automation.PSCredential! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    if (!$GuestVMAndHVInfo) {
+        if (!$TargetHostNameOrIP -and !$TargetVMName) {
+            $TargetHostNameOrIP = $env:ComputerName
+        }
+
+        try {
+            $HostNameNetworkInfo = ResolveHost -HostNameOrIP $TargetHostNameOrIP
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+
+        $GetWorkingCredsSplatParams = @{
+            RemoteHostNameOrIP          = $HostNameNetworkInfo.FQDN
+            ErrorAction                 = "Stop"
+        }
+        if ($TargetHostNameCreds) {
+            $GetWorkingCredsSplatParams.Add("AltCredentials",$TargetHostNameCreds)
+        }
+        
+        try {
+            $GetTargetHostCredsInfo = GetWorkingCredentials @GetWorkingCredsSplatParams
+            if (!$GetTargetHostCredsInfo.DeterminedCredsThatWorkedOnRemoteHost) {throw "Can't determine working credentials for $($HostNameNetworkInfo.FQDN)!"}
+            
+            if ($GetTargetHostCredsInfo.CurrentLoggedInUserCredsWorked -eq $True) {
+                $TargetHostNameCreds = $null
+            }
+
+            $TargetHostInvCmdLocation = $GetTargetHostCredsInfo.RemoteHostWorkingLocation
+        }
+        catch {
+            Write-Error $_
+            if ($PSBoundParameters['TargetHostNameCreds']) {
+                Write-Error "The GetWorkingCredentials function failed! Check the credentials provided to the -TargetHostNameCreds parameter! Halting!"
+            }
+            else {
+                Write-Error "The GetWorkingCredentials function failed! Try using the -TargetHostNameCreds parameter! Halting!"
+            }
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    # Determine the $InstallEnvironment (either "BareMetal" or "GuestVM")
+    if (!$InstallEnvironment) {
+        if ($GuestVMAndHVInfo -or $TargetVMName) {
+            $InstallEnvironment = "GuestVM"
+        }
+        if (!$GuestVMAndHVInfo -and !$TargetVMName) {
+            if ($TargetHostInvCmdLocation -match $env:ComputerName) {
+                $IntegrationServicesRegistryPath = "HKLM:\SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters"
+                $HostNameBiosInfo = Get-CimInstance Win32_BIOS
+                $HostNameIntegrationServicesPresent = Test-Path $IntegrationServicesRegistryPath
+
+                if ($HostNameIntegrationServicesPresent) {
+                    $HostNameGuestVMInfo = Get-ItemProperty $IntegrationServicesRegistryPath
+                }
+            }
+            else {
+                # Determine if $TargetHostNameOrIP is Physical or Virtual
+                try {
+                    $EnvProbeSB = {
+                        $IntegrationServicesRegistryPath = "HKLM:\SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters"
+                        $HostNameBiosInfoSB = Get-CimInstance Win32_BIOS
+                        $HostNameIntegrationServicesPresentSB = Test-Path $IntegrationServicesRegistryPath
+
+                        $Output = [ordered]@{
+                            HostNameBIOSInfo                    = $HostNameBiosInfoSB
+                            HostNameIntegrationServicesPresent  = $HostNameIntegrationServicesPresentSB
+                        }
+
+                        if ($HostNameIntegrationServicesPresentSB) {
+                            $HostNameGuestVMInfoSB = Get-ItemProperty $IntegrationServicesRegistryPath
+                            $Output.Add("HostNameGuestVMInfo",$HostNameGuestVMInfoSB)
+                        }
+
+                        [pscustomobject]$Output
+                    }
+
+                    $EnvProbeSplatParams = @{
+                        ComputerName    = $TargetHostInvCmdLocation
+                        ScriptBlock     = $EnvProbeSB
+                        ErrorAction     = "Stop"
+                    }
+                    if ($TargetHostNameCreds -ne $null) {
+                        $EnvProbeSplatParams.Add("Credential",$TargetHostNameCreds)
+                    }
+
+                    try {
+                        $InvokeCommandOutput = Invoke-Command @EnvProbeSplatParams
+
+                        $HostNameBiosInfo = $InvokeCommandOutput.HostNameBIOSInfo
+                        $HostNameIntegrationServicesPresent = $InvokeCommandOutput.HostNameIntegrationServicesPresent
+                        if ($HostNameIntegrationServicesPresent) {
+                            $HostNameGuestVMInfo = $InvokeCommandOutput.HostNameGuestVMInfo
+                        }
+                    }
+                    catch {
+                        Write-Error $_
+                        Write-Error "Probing the Target Machine failed to determine if it is Physical or Virtual failed! Halting!"
+                        $global:FunctionResult = "1"
+                        return
+                    }
+                }
+                catch {
+                    Write-Error $_
+                    Write-Error "Unable to get `$HostNameBIOSInfo or `$HostnameIntegrationServicesPresent! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+
+            if ($HostNameBIOSInfo.SMBIOSBIOSVersion -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+            $HostNameBIOSInfo.Manufacturer -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+            $HostNameBIOSInfo.Name -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+            $HostNameBIOSInfo.SerialNumber -match "Hyper-V|VirtualBox|VMWare|Xen" -or
+            $HostNameBIOSInfo.Version -match "Hyper-V|VirtualBox|VMWare|Xen|VRTUAL" -or
+            $HostNameIntegrationServicesPresent -eq $True
+            ) {
+                Add-Member -InputObject $HostNameBIOSInfo NoteProperty -Name "IsVirtual" -Value $True
+            }
+            else {
+                Add-Member -InputObject $HostNameBIOSInfo NoteProperty -Name "IsVirtual" -Value $False
+            }
+
+            if ($HostNameBIOSInfo.IsVirtual) {
+                $InstallEnvironment = "GuestVM"
+            }
+            else {
+                $InstallEnvironment = "BareMetal"
+            }
+        }
+    }
+
+    if ($InstallEnvironment -eq "BareMetal" -and $GuestVMMemoryInGB) {
+        $GuestVMMemErrMsg = "The -GuestVMMemoryInGB parameter should only be used if Docker is going to be installed" +
+        "on a Guest VM and you would like to increase the amount of memory available to that Guest VM! Halting!"
+        Write-Error $GuestVMMemErrMsg
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if ([bool]$PSBoundParameters['MobyLinuxVMMemoryInGB']) {
+        $MobyLinuxVMMemoryInMB = [Math]::Round($MobyLinuxVMMemoryInGB * 1KB)
+    }
+
+    # Constants
+    #$DockerToolsUrl = "https://download.docker.com/win/stable/DockerToolbox.exe"
+    #$DockerCEUrl = "https://download.docker.com/win/stable/Docker%20for%20Windows%20Installer.exe"
+
+    # Gather Information about the target install environment. If it's a GuestVM, then changes will be made
+    # to the Hyper-V hypervisor and Guest VM as needed to allow for Nested Virtualization, which may or may not
+    # involve restarting the Guest VM. Otherwise, these 'if' blocks are just responsible for defining
+    # $Locale, i.e. the machine that is running this function - either the "Hypervisor", "GuestVM",
+    # "BareMetalTarget", or "Elsewhere"
+    if ($InstallEnvironment -eq "GuestVM") {
+        # We might need credentials for the hypervisor...
+        if ($HostNameGuestVMInfo) {
+            $HyperVLocationToResolve = $HostNameGuestVMInfo.PhysicalHostNameFullyQualified
+        }
+        elseif ($HypervisorFQDNOrIP) {
+            $HyperVLocationToResolve = $HypervisorFQDNOrIP
+        }
+        else {
+            $HyperVLocationToResolve = Read-Host -Prompt "Please enter the IP, FQDN, or DNS-Resolvable hostname of the Hyper-V machine hosting the Guest VM."
+        }
+
+        try {
+            try {
+                Write-Host "HereB"
+                $HypervisorNetworkInfo = ResolveHost -HostNameOrIP $HyperVLocationToResolve -ErrorAction Stop
+            }
+            catch {
+                throw "Unable to resolve $HyperVLocationToResolve! Halting!"
+            }
+
+            $GetWorkingCredsSplatParams = @{
+                RemoteHostNameOrIP          = $HypervisorNetworkInfo.FQDN
+                ErrorAction                 = "Stop"
+            }
+            if ($HypervisorCreds) {
+                $GetWorkingCredsSplatParams.Add("AltCredentials",$HypervisorCreds)
+            }
+        
+            try {
+                $GetHypervisorCredsInfo = GetWorkingCredentials @GetWorkingCredsSplatParams
+                if (!$GetHypervisorCredsInfo.DeterminedCredsThatWorkedOnRemoteHost) {throw "Can't determine working credentials for $($HypervisorNetworkInfo.FQDN)!"}
+                
+                if ($GetHypervisorCredsInfo.CurrentLoggedInUserCredsWorked -eq $True) {
+                    $HypervisorCreds = $null
+                }
+        
+                $HypervisorInvCmdLocation = $GetHypervisorCredsInfo.RemoteHostWorkingLocation
+            }
+            catch {
+                if ($PSBoundParameters['HypervisorCreds']) {
+                    throw "The GetWorkingCredentials function failed! Check the credentials provided to the -HypervisorCreds parameter! Halting!"
+                }
+                else {
+                    throw "The GetWorkingCredentials function failed! Try using the -HypervisorCreds parameter! Halting!"
+                }
+            }
+        }
+        catch {
+            if ($TryWithoutHypervisorInfo) {
+                $HypervisorNetworkInfo = $null
+                $HypervisorComputerInfo = $null
+                $HypervisorOSInfo = $null
+            }
+            else {
+                Write-Error $_
+                Write-Error "Unable to get Hyper-V Hypervisor info! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        if (![bool]$PSBoundParameters['GuestVMAndHVInfo']) {
+            $GetVMAndHVSplatParams = @{}
+        
+            if ($($TargetHostNameOrIP -or $TargetHostInvCmdLocation) -and $GetVMAndHVSplatParams.Keys -notcontains "TargetHostNameOrIP") {
+                if ($TargetHostInvCmdLocation) {
+                    $GetVMAndHVSplatParams.Add("TargetHostNameOrIP",$TargetHostInvCmdLocation)
+                }
+                elseif ($TargetHostNameOrIP) {
+                    $GetVMAndHVSplatParams.Add("TargetHostNameOrIP",$TargetHostNameOrIP)
+                }
+            }
+            elseif ($TargetVMName -and $GetVMAndHVSplatParams.Keys -notcontains "TargetVMName") {
+                $GetVMAndHVSplatParams.Add("TargetVMName",$TargetVMName)
+            }
+
+            if ($TargetHostNameCreds -and $GetVMAndHVSplatParams.Keys -notcontains "TargetHostNameCreds") {
+                $GetVMAndHVSplatParams.Add("TargetHostNameCreds",$TargetHostNameCreds)
+            }
+
+            if ($($HypervisorFQDNOrIP -or $HypervisorInvCmdLocation) -and $GetVMAndHVSplatParams.Keys -notcontains "HypervisorFQDNOrIP") {
+                if ($HypervisorInvCmdLocation) {
+                    $GetVMAndHVSplatParams.Add("HypervisorFQDNOrIP",$HypervisorInvCmdLocation)
+                }
+                elseif ($HypervisorFQDNOrIP) {
+                    $GetVMAndHVSplatParams.Add("HypervisorFQDNOrIP",$HypervisorFQDNOrIP)
+                }
+            }
+
+            if ($HypervisorCreds -and $GetVMAndHVSplatParams.Keys -notcontains "HypervisorCreds") {
+                $GetVMAndHVSplatParams.Add("HypervisorCreds",$HypervisorCreds)
+            }
+            
+            if ($($TryWithoutHypervisorInfo -and $GetVMAndHVSplatParams.Keys -notcontains "TryWithoutHypervisorInfo") -or 
+            $($(ConfirmAWSVM -EA SilentlyContinue) -or $(ConfirmAzureVM -EA SilentlyContinue) -or
+            $(ConfirmGoogleComputeVM -EA SilentlyContinue))
+            ) {
+                $GetVMAndHVSplatParams.Add("TryWithoutHypervisorInfo",$True)
+            }
+
+            if ($AllowRestarts -and $GetVMAndHVSplatParams.Keys -notcontains "AllowRestarts") {
+                $GetVMAndHVSplatParams.Add("AllowRestarts",$True)
+            }
+
+            if ($NoMacAddressSpoofing -and $GetVMAndHVSplatParams.Keys -notcontains "NoMacAddressSpoofing") {
+                $GetVMAndHVSplatParams.Add("NoMacAddressSpoofing",$True)
+            }
+
+            if ($SkipHyperVInstallCheck -and $GetVMAndHVSplatParams.Keys -notcontains "SkipHyperVInstallCheck") {
+                $GetVMAndHVSplatParams.Add("SkipHyperVInstallCheck",$True)
+            }
+
+            if ($SkipExternalvSwitchCheck -and $GetVMAndHVSplatParams.Keys -notcontains "SkipExternalvSwitchCheck") {
+                $GetVMAndHVSplatParams.Add("SkipExternalvSwitchCheck",$True)
+            }
+
+            try {
+                $GuestVMAndHVInfo = Get-GuestVMAndHypervisorInfo @GetVMAndHVSplatParams -ErrorAction SilentlyContinue -ErrorVariable GGIErr
+                if (!$GuestVMAndHVInfo) {throw "The Get-GuestVMAndHypervisorInfo function failed! Halting!"}
+
+                if ($PSVersionTable.PSEdition -eq "Core") {
+                    $GetPendingRebootAsString = ${Function:GetPendingReboot}.Ast.Extent.Text
+                    
+                    $RebootPendingCheck = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                        Invoke-Expression $args[0]
+                        $(GetPendingReboot).RebootPending
+                    } -ArgumentList $GetPendingRebootAsString
+
+                    $RebootPendingFileCheck = Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                        Invoke-Expression $args[0]
+                        $(GetPendingReboot).PendFileRenVal
+                    } -ArgumentList $GetPendingRebootAsString
+                }
+                else {
+                    $RebootPendingCheck = $(GetPendingReboot).RebootPending
+                    $RebootPendingFileCheck = $(GetPendingReboot).PendFileRenVal
+                }
+
+                if ($GuestVMAndHVInfo.RestartNeeded -and !$AllowRestarts) {
+                    Write-Verbose "A restart might be necessary before Docker CE can be instelled on $env:ComputerName..."
+                }
+            }
+            catch {
+                Write-Error $_
+                if ($($GGIErr | Out-String) -match "The operation has timed out") {
+                    Write-Error "There was a problem downloading the Vagrant Box to be used to test the External vSwitch! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+                else {
+                    Write-Host "Errors for the Get-GuestVMAndHypervisorInfo function are as follows:"
+                    Write-Error $($GGIErr | Out-String)
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+        }
+        else {
+            $ValidGuestVMAndHVInfoNoteProperties = @(
+                "HypervisorNetworkInfo"
+                "HypervisorInvCmdLocation"
+                "HypervisorComputerInfo"
+                "HypervisorOSInfo"
+                "TargetVMInfoFromHyperV"
+                "VMProcessorInfo"
+                "VMNetworkAdapterInfo"
+                "VMMemoryInfo"
+                "HypervisorCreds"
+                "HostNameNetworkInfo"
+                "TargetHostInvCmdLocation"
+                "HostNameComputerInfo"
+                "HostNameOSInfo"
+                "HostNameProcessorInfo"
+                "HostNameBIOSInfo"
+                "TargetHostNameCreds"
+                "RestartNeeded"
+                "RestartOccurred"
+                "VirtualizationExtensionsExposed"
+                "MacAddressSpoofingEnabled"
+            )
+            [System.Collections.ArrayList]$FoundIssueWithGuestVMAndHVInfo = @()
+            $ParamObjMembers = $($GuestVMAndHVInfo | Get-Member -MemberType NoteProperty).Name
+            foreach ($noteProp in $ParamObjMembers) {
+                if ($ValidGuestVMAndHVInfoNoteProperties -notcontains $noteProp) {
+                    $null = $FoundIssueWithGuestVMAndHVInfo.Add($noteProp)
+                }
+            }
+            if ($FoundIssueWithGuestVMAndHVInfo.Count -gt 3) {
+                $ParamObjMembers
+                Write-Error "The object provided to the -GuestVMAndHVInfo parameter is invalid! It must be output from the Get-GuestVMAndHypervisorInfo function! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        if (!$GuestVMAndHVInfo) {
+            Write-Error "There was a problem with the Get-GuestVMandHypervisorInfo function! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        if ($GuestVMAndHVInfo.RestartOccurred -eq $True) {
+            Write-Error "$($GuestVMAndHVInfo.HostNameNetworkInfo.FQDN) was restarted! Please re-run the Install-Docker function after $($GuestVMAndHVInfo.FQDN) has finished restarting (approximately 5 minutes)."
+            $global:FunctionResult = "1"
+            return
+        }
+
+        if ($GuestVMAndHVInfo.HypervisorCreds -ne $null) {
+            $HypervisorCreds = $GuestVMAndHVInfo.HypervisorCreds
+        }
+        if ($GuestVMAndHVInfo.TargetHostNameCreds -ne $null) {
+            $TargetHostNameCreds = $GuestVMAndHVInfo.TargetHostNameCreds
+            if ($TargetHostNameCreds -eq $(whoami)) {
+                $TargetHostNameCreds = $null
+            }
+        }
+
+        if ($($GuestVMAndHVInfo.VirtualizationExtensionsExposed -eq $False -or
+        $GuestVMAndHVInfo.VirtualizationExtensionsExposed -match "Unknown") -and $TryWithoutHypervisorInfo) {
+            Write-Error "The Guest VM $($GuestVMAndHVInfo.HostNameNetworkInfo.FQDN) is not capable of running 64-bit Nested VMs! Since DockerCE depends on the MobyLinux VM, DockerCE will NOT be installed! Try the EnableNestedVM function for remediation. Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Determine where this function is being run
+        if ($env:ComputerName -eq $GuestVMAndHVInfo.HypervisorNetworkInfo.HostName) {
+            $Locale = "Hypervisor"
+        }
+        elseif ($env:ComputerName -eq $GuestVMAndHVInfo.HostNameNetworkInfo.HostName) {
+            $Locale = "GuestVM"
+        }
+        else {
+            $Locale = "Elsewhere"
+        }
+
+        if (!$SkipEnableNestedVM) {
+            $EnableNestedVMSplatParams = @{
+                GuestVMAndHVInfo        = $GuestVMAndHVInfo
+                SkipPrompt              = $True
+                ErrorAction             = "SilentlyContinue"
+                ErrorVariable           = "ENVErr"
+                WarningAction           = "SilentlyContinue"
+            }
+            if ($AllowRestarts) {
+                if ($env:ComputerName -eq $GuestVMAndHVInfo.HostNameNetworkInfo.HostName) {
+                    $DefaultRestartWarning = "If any restarts occur, Vagrant will NOT have been installed " +
+                    "(only prerequisites will have been configured). To complete Vagrant installation after restart, " +
+                    "you must re-run the Install-Vagrant function AFTER restarting!"
+                    Write-Warning $DefaultRestartWarning
+                }
+                $EnableNestedVMSplatParams.Add("AllowRestarts",$True)
+            }
+            if ($TryWithoutHypervisorInfo) {
+                $EnableNestedVMSplatParams.Add("TryWithoutHypervisorInfo",$True)
+            }
+            if ($NoMacAddressSpoofing) {
+                $EnableNestedVMSplatParams.Add("NoMacAddressSpoofing",$True)
+            }
+            if ($SkipHyperVInstallCheck) {
+                $EnableNestedVMSplatParams.Add("SkipHyperVInstallCheck",$True)
+            }
+            if ($NATIP) {
+                $EnableNestedVMSplatParams.Add("NATIP",$NATIP)
+            }
+            if ($NATNetworkMask) {
+                $EnableNestedVMSplatParams.Add("NATNetworkMask",$NATNetworkMask)
+            }
+            if ($NATName) {
+                $EnableNestedVMSplatParams.Add("NATName",$NATName)
+            }
+    
+            try {
+                $EnableNestedVMResults = EnableNestedVM @EnableNestedVMSplatParams
+                if (!$EnableNestedVMResults) {throw "The EnableNestedVM function failed! Halting!"}
+            }
+            catch {
+                Write-Error $_
+                Write-Host "Errors for the EnableNestedVM function are as follows:"
+                Write-Error $($ENVErr | Out-String)
+                $global:FunctionResult = "1"
+                return
+            }
+
+            if ($EnableNestedVMResults.RestartOccurred) {
+                if ($EnableNestedVMResults.GuestVMSettingsThatWereChanged -contains "HyperVInstall") {
+                    Write-Host "Sleeping for 300 seconds to wait for restart after Hyper-V install..."
+                    Start-Sleep -Seconds 300
+
+                    $GetVMAndHVSplatParams = @{}
+        
+                    if ($($TargetHostNameOrIP -or $TargetHostInvCmdLocation) -and $GetVMAndHVSplatParams.Keys -notcontains "TargetHostNameOrIP") {
+                        if ($TargetHostInvCmdLocation) {
+                            $GetVMAndHVSplatParams.Add("TargetHostNameOrIP",$TargetHostInvCmdLocation)
+                        }
+                        elseif ($TargetHostNameOrIP) {
+                            $GetVMAndHVSplatParams.Add("TargetHostNameOrIP",$TargetHostNameOrIP)
+                        }
+                    }
+                    elseif ($TargetVMName -and $GetVMAndHVSplatParams.Keys -notcontains "TargetVMName") {
+                        $GetVMAndHVSplatParams.Add("TargetVMName",$TargetVMName)
+                    }
+
+                    if ($TargetHostNameCreds -and $GetVMAndHVSplatParams.Keys -notcontains "TargetHostNameCreds") {
+                        $GetVMAndHVSplatParams.Add("TargetHostNameCreds",$TargetHostNameCreds)
+                    }
+
+                    if ($($HypervisorFQDNOrIP -or $HypervisorInvCmdLocation) -and $GetVMAndHVSplatParams.Keys -notcontains "HypervisorFQDNOrIP") {
+                        if ($HypervisorInvCmdLocation) {
+                            $GetVMAndHVSplatParams.Add("HypervisorFQDNOrIP",$HypervisorInvCmdLocation)
+                        }
+                        elseif ($HypervisorFQDNOrIP) {
+                            $GetVMAndHVSplatParams.Add("HypervisorFQDNOrIP",$HypervisorFQDNOrIP)
+                        }
+                    }
+
+                    if ($HypervisorCreds -and $GetVMAndHVSplatParams.Keys -notcontains "HypervisorCreds") {
+                        $GetVMAndHVSplatParams.Add("HypervisorCreds",$HypervisorCreds)
+                    }
+                    
+                    if ($($TryWithoutHypervisorInfo -and $GetVMAndHVSplatParams.Keys -notcontains "TryWithoutHypervisorInfo") -or 
+                    $($(ConfirmAWSVM -EA SilentlyContinue) -or $(ConfirmAzureVM -EA SilentlyContinue) -or
+                    $(ConfirmGoogleComputeVM -EA SilentlyContinue))
+                    ) {
+                        $GetVMAndHVSplatParams.Add("TryWithoutHypervisorInfo",$True)
+                    }
+
+                    if ($AllowRestarts -and $GetVMAndHVSplatParams.Keys -notcontains "AllowRestarts") {
+                        $GetVMAndHVSplatParams.Add("AllowRestarts",$True)
+                    }
+
+                    if ($NoMacAddressSpoofing -and $GetVMAndHVSplatParams.Keys -notcontains "NoMacAddressSpoofing") {
+                        $GetVMAndHVSplatParams.Add("NoMacAddressSpoofing",$True)
+                    }
+
+                    if ($SkipHyperVInstallCheck -and $GetVMAndHVSplatParams.Keys -notcontains "SkipHyperVInstallCheck") {
+                        $GetVMAndHVSplatParams.Add("SkipHyperVInstallCheck",$True)
+                    }
+
+                    if ($SkipExternalvSwitchCheck -and $GetVMAndHVSplatParams.Keys -notcontains "SkipExternalvSwitchCheck") {
+                        $GetVMAndHVSplatParams.Add("SkipExternalvSwitchCheck",$True)
+                    }
+
+                    try {
+                        $GuestVMAndHVInfo = Get-GuestVMAndHypervisorInfo @GetVMAndHVSplatParams -ErrorAction SilentlyContinue -ErrorVariable GGIErr
+                        if (!$GuestVMAndHVInfo) {throw "The Get-GuestVMAndHypervisorInfo function failed! Halting!"}
+                    }
+                    catch {
+                        Write-Error $_
+                        if ($($GGIErr | Out-String) -match "The operation has timed out") {
+                            Write-Error "There was a problem downloading the Vagrant Box to be used to test the External vSwitch! Halting!"
+                            $global:FunctionResult = "1"
+                            return
+                        }
+                        else {
+                            Write-Host "Errors for the Get-GuestVMAndHypervisorInfo function are as follows:"
+                            Write-Error $($GGIErr | Out-String)
+                            $global:FunctionResult = "1"
+                            return
+                        }
+                    }
+
+                    $EnableNestedVMSplatParams = @{
+                        GuestVMAndHVInfo        = $GuestVMAndHVInfo
+                        SkipPrompt              = $True
+                        ErrorAction             = "SilentlyContinue"
+                        ErrorVariable           = "ENVErr"
+                        WarningAction           = "SilentlyContinue"
+                        SkipHyperVInstallCheck  = $True
+                    }
+                    if ($TryWithoutHypervisorInfo) {
+                        $EnableNestedVMSplatParams.Add("TryWithoutHypervisorInfo",$True)
+                    }
+                    if ($NoMacAddressSpoofing) {
+                        $EnableNestedVMSplatParams.Add("NoMacAddressSpoofing",$True)
+                    }
+                    if ($NATIP) {
+                        $EnableNestedVMSplatParams.Add("NATIP",$NATIP)
+                    }
+                    if ($NATNetworkMask) {
+                        $EnableNestedVMSplatParams.Add("NATNetworkMask",$NATNetworkMask)
+                    }
+                    if ($NATName) {
+                        $EnableNestedVMSplatParams.Add("NATName",$NATName)
+                    }
+                    
+                    try {
+                        $EnableNestedVMResults = EnableNestedVM @EnableNestedVMSplatParams
+                        if (!$EnableNestedVMResults) {throw "The EnableNestedVM function failed! Halting!"}
+                    }
+                    catch {
+                        Write-Error $_
+                        Write-Host "Errors for the EnableNestedVM function are as follows:"
+                        Write-Error $($ENVErr | Out-String)
+                        $global:FunctionResult = "1"
+                        return
+                    }
+                }
+                else {
+                    Write-Host "Sleeping for 180 seconds to wait for Guest VM to be ready..."
+                    Start-Sleep -Seconds 180
+                }
+            }
+
+            if ($EnableNestedVMResults.UnsatisfiedChanges.Count -gt 1 -or
+            $($EnableNestedVMResults.UnsatisfiedChanges.Count -eq 1 -and $EnableNestedVMResults.UnsatisfiedChanges[0] -ne "None")
+            ) {
+                $GuestVMReady = $False
+            }
+            else {
+                $GuestVMReady = $True
+            }
+
+            if (!$GuestVMReady) {
+                $EnableNestedVMResults
+                Write-Error "The EnableNestedVM function was not able to make all necessary changes to the Guest VM $($GuestVMAndHVInfo.HostNameNetworkInfo.HostName)! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+    }
+    if ($InstallEnvironment -eq "BareMetal") {
+        # Determine where this function is being run
+        try {
+            Write-Host "HereC"
+            $HostNameNetworkInfo = ResolveHost -HostNameOrIP $TargetHostNameOrIP
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+
+        if ($env:ComputerName -match "$($HostNameNetworkInfo.HostName)|$($HostNameNetworkInfo.FQDN)") {
+            $Locale = "BareMetalTarget"
+        }
+        else {
+            $Locale = "Elsewhere"
+        }
+
+        if ($AllowRestarts) {
+            if ($env:ComputerName -eq $HostNameNetworkInfo.HostName) {
+                $DefaultRestartWarning = "If any restarts occur, Docker will NOT have been installed " +
+                "(only prerequisites will have been configured). To complete Docker installation after restart, " +
+                "you must re-run the Install-Docker function AFTER restarting!"
+                Write-Warning $DefaultRestartWarning
+            }
+        }
+    }
+
+    ##### END Variable/Parameter Transforms and PreRun Prep #####
+
+
+    ##### BEGIN Main Body #####
+
+    if ($InstallEnvironment -eq "GuestVM") {
+        Write-Host "Attempting to install DockerCE on Guest VM..."
+    }
+    if ($InstallEnvironment -eq "BareMetal") {
+        if ($PSBoundParameters['NoMacAddressSpoofing'] -or $PSBoundParameters['GuestVMAndHVInfo'] -or
+        $PSBoundParameters['SkipEnableNestedVM'] -or $PSBoundParameters['GuestVMMemoryInGB'] -or
+        $PSBoundParameters['HypervisorFQDNOrIP'] -or $PSBoundParameters['HypervisorCreds']
+        ) {
+            $ErrMsg = "The parameters -NoMacAddressSpoofing, -GuestVMAndHVInfo, -SkipEnableNestedVM, -GuestVMMemoryInGB, " +
+            "-HypervisorFQDNOrIP, and -HypervisorCreds are only meant to be used when installing Docer CE on a " +
+            "Guest VM, but the install environment was determined to be Bare Metal! Halting!"
+            Write-Error $ErrMsg
+            $global:FunctionResult = "1"
+            return
+        }
+        Write-Host "Attempting to install DockerCE on Baremetal..."
+    }
+
+    if ($Locale -match "GuestVM|BareMetalTarget") {
+        $DoDockerInstallSplatParams = @{}
+        if ($MobyLinuxVMMemoryInGB) {
+            $DoDockerInstallSplatParams.Add("MobyLinuxVMMemoryInGB",$MobyLinuxVMMemoryInGB)
+        }
+        if ($AllowRestarts) {
+            $DoDockerInstallSplatParams.Add("AllowRestarts",$True)
+        }
+        if ($SkipHyperVInstallCheck) {
+            $DoDockerInstallSplatParams.Add("SkipHyperVInstallCheck",$True)
+        }
+        if ($RecreateMobyLinuxVM) {
+            $DoDockerInstallSplatParams.Add("RecreateMobyLinuxVM",$RecreateMobyLinuxVM)
+        }
+        if ($PreRelease) {
+            $DoDockerInstallSplatParams.Add("PreRelease",$True)
+        }
+        if ($AllowLogout) {
+            $DoDockerInstallSplatParams.Add("AllowLogout",$True)
+        }
+
+        try {
+            DoDockerInstall @DoDockerInstallSplatParams
+        }
+        catch {
+            Write-Error $_
+            Write-Error "The DoDockerInstall function failed! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+    if ($Locale -match "Hypervisor|Elsewhere") {
+        # Solution to define local function in remote Invoke-Command ScriptBlock from:
+        # https://www.reddit.com/r/PowerShell/comments/7oux5q/invokecommandas_on_remote_machine_using/
+        $FunctionsForRemoteUse = @(
+            ${Function:Update-PackageManagement}.Ast.Extent.Text
+            ${Function:Manual-PSGalleryModuleInstall}.Ast.Extent.Text
+            ${Function:GetElevation}.Ast.Extent.Text
+            ${Function:Install-Program}.Ast.Extent.Text
+            ${Function:Install-ChocolateyCmdLine}.Ast.Extent.Text
+            ${Function:Refresh-ChocolateyEnv}.Ast.Extent.Text
+            ${Function:InstallFeatureDism}.Ast.Extent.Text
+            ${Function:InstallHyperVFeatures}.Ast.Extent.Text
+            ${Function:TestIsValidIPAddress}.Ast.Extent.Text
+            ${Function:GetvSwitchAllRelatedInfo}.Ast.Extent.Text
+            ${Function:DoDockerInstall}.Ast.Extent.Text
+            ${Function:GetFileLockProcess}.Ast.Extent.Text
+        )
+    
+        $RunDockerInstallSB = {
+            # Load the functions we packed up:
+            $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
+
+            $DoDockerInstallSplatParams = @{}
+            if ($using:MobyLinuxVMMemoryInGB) {
+                $DoDockerInstallSplatParams.Add("MobyLinuxVMMemoryInGB",$using:MobyLinuxVMMemoryInGB)
+            }
+            if ($using:AllowRestarts) {
+                $DoDockerInstallSplatParams.Add("AllowRestarts",$True)
+            }
+            if ($using:SkipHyperVInstallCheck) {
+                $DoDockerInstallSplatParams.Add("SkipHyperVInstallCheck",$True)
+            }
+            if ($using:RecreateMobyLinuxVM) {
+                $DoDockerInstallSplatParams.Add("RecreateMobyLinuxVM",$True)
+            }
+            if ($using:PreRelease) {
+                $DoDockerInstallSplatParams.Add("PreRelease",$True)
+            }
+    
+            DoDockerInstall @DoDockerInstallSplatParams
+        }
+    
+        if ($GuestVMAndHVInfo) {
+            # The fact that $GuestVMAndHVInfo has TargetHostNameCreds means that they work because the
+            # Get-GuestVMAndHypervisorInfo function figured that out for us.
+            $TargetHostNameCreds = $GuestVMAndHVInfo.TargetHostNameCreds
+            if ($TargetHostNameCreds -eq $(whoami)) {
+                $TargetHostNameCreds = $null
+            }
+    
+            $TargetHostInvCmdLocation = $GuestVMAndHVInfo.TargetHostInvCmdLocation
+        }
+
+        $DockerInstallSplatParams = @{
+            ComputerName        = $TargetHostInvCmdLocation
+            ScriptBlock         = $RunDockerInstallSB
+        }
+        if ($TargetHostNameCreds) {
+            $DockerInstallSplatParams.Add("Credential",$TargetHostNameCreds)
+        }
+    
+        try {
+            $InvokeCommandOutput = Invoke-Command @DockerInstallSplatParams -ErrorAction SilentlyContinue -ErrorVariable DoDockerErr
+    
+            if ($InvokeCommandOutput -eq "Restarting") {
+                Write-Host "$($TargetHostInvCmdLocation) is restarting..."
+            }
+            elseif ($InvokeCommandOutput -eq $null) {
+                throw "The DoDockerInstall function failed!"
+            }
+            elseif ($InvokeCommandOutput -ne $null) {
+                $InvokeCommandOutput
+                return
+            }
+        }
+        catch {
+            if ($($_ | Out-String) -match "The I/O operation has been aborted") {
+                $CaughtRestarting = $True
+            }
+            else {
+                Write-Error $_
+                Write-Host "Errors for the DoDockerInstall function are as follows:"
+                Write-Error $($DoDockerErr | Out-String)
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+    
+        # Run the DoDockerInstall function again on the Target Guest VM
+        if ($InvokeCommandOutput -eq "Restarting" -or $CaughtRestarting) {
+            # IMPORTANT NOTE: Depending on the Hyper-V features that needed to be Enabled, in the first run
+            # of DoDocker install, the Guest VM might restart TWICE before it's ready.
+            # With each restart, the OS takes about 90 seconds to boot, and feature installation
+            # operations take about 60 seconds per reboot, so we're looking at 300 seconds, ande we'll
+            # add another 60 seconds just to make sure, making it 360 seconds
+            Write-Host "Sleeping for 360 seconds..."
+            Start-Sleep -Seconds 360
+            Write-Host "Running DoDockerInstall post-restart..."
+    
+            try {
+                $InvokeCommandOutput = Invoke-Command @DockerInstallSplatParams -ErrorAction SilentlyContinue -ErrorVariable DoDockerErr
+    
+                if ($InvokeCommandOutput -eq "Restarting") {
+                    Write-Host "$($TargetHostInvCmdLocation) is restarting..."
+                }
+                elseif ($InvokeCommandOutput -eq $null) {
+                    throw "The DoDockerInstall function failed!"
+                }
+                elseif ($InvokeCommandOutput -ne $null) {
+                    $InvokeCommandOutput
+                    return
+                }
+            }
+            catch {
+                Write-Error $_
+                Write-Host "Errors for the DoDockerInstall function are as follows:"
+                Write-Error $($DoDockerErr | Out-String)
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+    }
+    
     ##### END Main Body #####
 }
 
@@ -8001,6 +9919,12 @@ function Manage-HyperVVM {
         )]
         [ValidateSet(1,2)]
         [int]$VMGen = 2,
+
+        [Parameter(
+            Mandatory=$False,
+            ParameterSetName='Create'    
+        )]
+        [uint64]$VhdSize,
 
         [Parameter(
             Mandatory=$False,
@@ -8111,44 +10035,10 @@ function Manage-HyperVVM {
 
     Write-Output "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
 
-    <#
-    # Explicitly import the Modules we need for this function
-    try {
-        Import-Module Microsoft.PowerShell.Utility
-        Import-Module Microsoft.PowerShell.Management
-        Import-Module Hyper-V
-        Import-Module NetAdapter
-        Import-Module NetTCPIP
-
-        Import-Module PackageManagement
-        Import-Module PowerShellGet
-        if ($(Get-Module -ListAvailable).Name -notcontains "NTFSSecurity") {
-            Install-Module NTFSSecurity
-        }
-
-        try {
-            if ($(Get-Module).Name -notcontains "NTFSSecurity") {Import-Module NTFSSecurity}
-        }
-        catch {
-            if ($_.Exception.GetType().FullName -eq "System.Management.Automation.RuntimeException") {
-                Write-Verbose "NTFSSecurity Module is already loaded..."
-            }
-            else {
-                throw "There was a problem loading the NTFSSecurity Module! Halting!"
-            }
-        }
-    }
-    catch {
-        Write-Error $_
-        $global:FunctionResult = "1"
-        return
-    }
-
-    Write-Host "Modules loaded at $(Get-Date -Format "HH:mm:ss.fff")"
-    #>
-
     # Hard coded for now
-    $global:VhdSize = 60*1024*1024*1024  # 60GB
+    if (!$VhdSize) {
+        $VhdSize = [uint64]30GB
+    }
 
     ##### END Variable/Parameter Transforms and PreRun Prep #####
 
@@ -8176,67 +10066,51 @@ function Manage-HyperVVM {
         $Ip3 = $switchIp3 + 1
         $switchAddress = "$Ip0.$Ip1.$Ip2.$Ip3"
     
-        $vmSwitch = Hyper-V\Get-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
-        $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
+        $vmSwitch = Get-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
+        $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
         if ($vmSwitch -and $vmNetAdapter) {
             Write-Output "Using existing Switch: $SwitchName"
         } else {
-            # There seems to be an issue on builds equal to 10586 (and
-            # possibly earlier) with the first VMSwitch being created after
-            # Hyper-V install causing an error. So on these builds we create
-            # Dummy switch and remove it.
-            $buildstr = $(Get-WmiObject win32_operatingsystem).BuildNumber
-            $buildNumber = [convert]::ToInt32($buildstr, 10)
-            if ($buildNumber -le 10586) {
-                Write-Output "Enabled workaround for Build 10586 VMSwitch issue"
-    
-                $fakeSwitch = Hyper-V\New-VMSwitch "DummyDesperatePoitras" -SwitchType Internal -ea SilentlyContinue
-                $fakeSwitch | Hyper-V\Remove-VMSwitch -Confirm:$false -Force -ea SilentlyContinue
-            }
-    
             Write-Output "Creating Switch: $SwitchName..."
-    
-            Hyper-V\Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
-            Hyper-V\New-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue | Out-Null
-            $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName
-    
+
+            Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
+            $null = New-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
+            $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName
+
             Write-Output "Switch created."
         }
     
         # Make sure there are no lingering net adapter
-        $netAdapters = Get-NetAdapter | ? { $_.Name.StartsWith("vEthernet ($SwitchName)") }
+        $netAdapters = Get-NetAdapter | Where-Object { $_.Name.StartsWith("vEthernet ($SwitchName)") }
         if (($netAdapters).Length -gt 1) {
             Write-Output "Disable and rename invalid NetAdapters"
     
             $now = (Get-Date -Format FileDateTimeUniversal)
             $index = 1
-            $invalidNetAdapters =  $netAdapters | ? { $_.DeviceID -ne $vmNetAdapter.DeviceId }
-    
+            $invalidNetAdapters = $netAdapters | Where-Object { $_.DeviceID -ne $vmNetAdapter.DeviceId }
+
             foreach ($netAdapter in $invalidNetAdapters) {
-                $netAdapter `
-                    | Disable-NetAdapter -Confirm:$false -PassThru `
-                    | Rename-NetAdapter -NewName "Broken Docker Adapter ($now) ($index)" `
-                    | Out-Null
-    
+                $null = Disable-NetAdapter -Name $netAdapter.Name -Confirm:$false
+                $null = Rename-NetAdapter -Name $netAdapter.Name -NewName "Broken Docker Adapter ($now) ($index)"
                 $index++
             }
         }
     
         # Make sure the Switch has the right IP address
-        $networkAdapter = Get-NetAdapter | ? { $_.DeviceID -eq $vmNetAdapter.DeviceId }
-        if ($networkAdapter | Get-NetIPAddress -IPAddress $switchAddress -ea SilentlyContinue) {
-            $networkAdapter | Disable-NetAdapterBinding -ComponentID ms_server -ea SilentlyContinue
-            $networkAdapter | Enable-NetAdapterBinding  -ComponentID ms_server -ea SilentlyContinue
+        $networkAdapter = Get-NetAdapter | Where-Object { $_.DeviceID -eq $vmNetAdapter.DeviceId }
+        if ($networkAdapter.InterfaceAlias -eq $(Get-NetIPAddress -IPAddress $switchAddress -ea SilentlyContinue).InterfaceAlias) {
+            Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
+            Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
             Write-Output "Using existing Switch IP address"
             return
         }
-    
-        $networkAdapter | Remove-NetIPAddress -Confirm:$false -ea SilentlyContinue
-        $networkAdapter | Set-NetIPInterface -Dhcp Disabled -ea SilentlyContinue
-        $networkAdapter | New-NetIPAddress -AddressFamily IPv4 -IPAddress $switchAddress -PrefixLength ($SwitchSubnetMaskSize) -ea Stop | Out-Null
+
+        Remove-NetIPAddress -InterfaceAlias $networkAdapter.InterfaceAlias -Confirm:$false -ea SilentlyContinue
+        Set-NetIPInterface -InterfaceAlias $networkAdapter.InterfaceAlias -Dhcp Disabled -ea SilentlyContinue
+        New-NetIPAddress -InterfaceAlias $networkAdapter.InterfaceAlias -AddressFamily IPv4 -IPAddress $switchAddress -PrefixLength ($SwitchSubnetMaskSize) -ea Stop | Out-Null
         
-        $networkAdapter | Disable-NetAdapterBinding -ComponentID ms_server -ea SilentlyContinue
-        $networkAdapter | Enable-NetAdapterBinding  -ComponentID ms_server -ea SilentlyContinue
+        Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
+        Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
         Write-Output "Set IP address on switch"
     }
     
@@ -8245,13 +10119,13 @@ function Manage-HyperVVM {
     
         # Let's remove the IP otherwise a nasty bug makes it impossible
         # to recreate the vswitch
-        $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
+        $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
         if ($vmNetAdapter) {
-            $networkAdapter = Get-NetAdapter | ? { $_.DeviceID -eq $vmNetAdapter.DeviceId }
-            $networkAdapter | Remove-NetIPAddress -Confirm:$false -ea SilentlyContinue
+            $networkAdapter = Get-NetAdapter | Where-Object { $_.DeviceID -eq $vmNetAdapter.DeviceId }
+            Remove-NetIPAddress -InterfaceAlias $networkAdapter.InterfaceAlias -Confirm:$false -ea SilentlyContinue
         }
-    
-        Hyper-V\Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
+
+        Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
     }
 
     function New-HyperVVM {
@@ -8291,7 +10165,7 @@ function Manage-HyperVVM {
 
         <#
         if ($vm.Generation -ne 2) {
-                Fatal "VM $VmName is a Generation $($vm.Generation) VM. It should be a Generation 2."
+            Fatal "VM $VmName is a Generation $($vm.Generation) VM. It should be a Generation 2."
         }
         #>
 
@@ -8310,7 +10184,7 @@ function Manage-HyperVVM {
             
             if (!$vhd) {
                 Write-Output "Creating dynamic VHD: $VmVhdFile"
-                $vhd = New-VHD -ComputerName localhost -Path $VmVhdFile -Dynamic -SizeBytes $global:VhdSize
+                $vhd = New-VHD -ComputerName localhost -Path $VmVhdFile -Dynamic -SizeBytes $VhdSize
             }
 
             ## BEGIN Try and Update Permissions ##
@@ -8446,7 +10320,7 @@ function Manage-HyperVVM {
                 if ($vm.DVDDrives) {
                     Write-Output "Remove existing DVDs"
                     $ExistingDvDDriveInfo = Get-VMDvdDrive -VMName $VMName
-                    Hyper-V\Remove-VMDvdDrive -VMName 'CentOS7Test2' -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
+                    Hyper-V\Remove-VMDvdDrive -VMName $VMName -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
                 }
 
                 Write-Output "Attach DVD $IsoFile"
@@ -8454,9 +10328,20 @@ function Manage-HyperVVM {
             }
         }
 
-        #$iso = $vm | Hyper-V\Get-VMFirmware | select -ExpandProperty BootOrder | ? { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
-        #$vm | Hyper-V\Set-VMFirmware -EnableSecureBoot Off -FirstBootDevice $iso
-        ##$vm | Hyper-V\Set-VMComPort -number 1 -Path "\\.\pipe\docker$VmName-com1"
+        <#
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            Invoke-WinCommand -ComputerName localhost -ScriptBlock {
+                $iso = Get-VMFirmware -VMName $args[0] | Select-Object -ExpandProperty BootOrder | Where-Object { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
+                Set-VMFirmware -VMName $args[0] -EnableSecureBoot Off -FirstBootDevice $iso
+                Set-VMComPort -VMName $args[0] -number 1 -Path "\\.\pipe\docker$($args[0])-com1"
+            } -ArgumentList $VmName
+        }
+        else {
+            $iso = Get-VMFirmware -VMName $vm.Name | Select-Object -ExpandProperty BootOrder | Where-Object { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
+            Set-VMFirmware -VMName $vm.Name -EnableSecureBoot Off -FirstBootDevice $iso
+            Set-VMComPort -VMName $vm.Name -number 1 -Path "\\.\pipe\docker$VmName-com1"
+        }
+        #>
 
         # Enable only prefered VM integration services
         [System.Collections.ArrayList]$intSvc = @()
@@ -8473,11 +10358,11 @@ function Manage-HyperVVM {
         
         Hyper-V\Get-VMIntegrationService -VMName $VMName | foreach {
             if ($PreferredIntegrationServices -contains $_.Name) {
-                Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
+                $null = Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Enabled $($_.Name)"
             }
             else {
-                Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
+                $null = Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
                 Write-Output "Disabled $($_.Name)"
             }
         }
@@ -8524,16 +10409,18 @@ function Manage-HyperVVM {
             return
         }
 
-        $code = {
-            Param($vmId) # Passing the $vm ref is not possible because it will be disposed already
+        $vmId = $vm.VMId.Guid
 
-            $vm = Hyper-V\Get-VM -Id $vmId -ea SilentlyContinue
+        $code = {
+            #Param($vmId) # Passing the $vm ref is not possible because it will be disposed already
+
+            $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
             if (!$vm) {
-                Write-Output "VM with Id $vmId does not exist"
+                Write-Output "VM with Name $VmName does not exist"
                 return
             }
 
-            $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $vm.Name -Name Shutdown -ea SilentlyContinue
+            $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $VmName -Name Shutdown -ea SilentlyContinue
             if ($shutdownService -and $shutdownService.PrimaryOperationalStatus -eq 'Ok') {
                 Write-Output "Shutdown VM $VmName..."
                 Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -Force -ea SilentlyContinue
@@ -8547,10 +10434,15 @@ function Manage-HyperVVM {
         }
 
         Write-Output "Stopping VM $VmName..."
-        $job = Start-Job -ScriptBlock $code -ArgumentList $vm.VMId.Guid
-        if (Wait-Job $job -Timeout 20) { Receive-Job $job }
-        Remove-Job -Force $job -ea SilentlyContinue
+        $null = New-Runspace -RunspaceName "StopVM$VmName" -ScriptBlock $code
+        $Counter = 0
+        while ($(Hyper-V\Get-VM -Name $VmName).State -ne "Off") {
+            Write-Verbose "Waiting for $VmName to Stop..."
+            Start-Sleep -Seconds 5
+            $Counter++
+        }
 
+        $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
         if ($vm.State -eq 'Off') {
             Write-Output "VM $VmName is stopped"
             return
@@ -8559,10 +10451,11 @@ function Manage-HyperVVM {
         # If the VM cannot be stopped properly after the timeout
         # then we have to kill the process and wait till the state changes to "Off"
         for ($count = 1; $count -le 10; $count++) {
-            $ProcessID = (Get-WmiObject -Namespace root\virtualization\v2 -Class Msvm_ComputerSystem -Filter "Name = '$($vm.Id.Guid)'").ProcessID
+            $ProcessID = (Get-WmiObject -Namespace root\virtualization\v2 -Class Msvm_ComputerSystem -Filter "Name = '$vmId'").ProcessID
             if (!$ProcessID) {
                 Write-Output "VM $VmName killed. Waiting for state to change"
                 for ($count = 1; $count -le 20; $count++) {
+                    $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
                     if ($vm.State -eq 'Off') {
                         Write-Output "Killed VM $VmName is off"
                         #Remove-Switch
@@ -8577,8 +10470,10 @@ function Manage-HyperVVM {
                 Fatal "Killed VM $VmName did not stop"
             }
 
-            Write-Output "Kill VM $VmName process..."
-            Stop-Process $ProcessID -Force -Confirm:$false -ea SilentlyContinue
+            if ($ProcessID) {
+                Write-Output "Kill VM $VmName process..."
+                Stop-Process $ProcessID -Force -Confirm:$false -ea SilentlyContinue
+            }
             Start-Sleep -Seconds 1
         }
 
@@ -12489,6 +14384,44 @@ function New-SubordinateCA {
 }
 
 
+function Recreate-MobyLinuxVM {
+    [CmdletBinding()]
+    Param(
+        [Parameter(Mandatory=$False)]
+        [ValidateScript({
+            $(($_ % 2) -eq 0) -and $($_ -ge 2)
+        })]
+        [int]$MobyLinuxVMMemoryInGB = 2
+    )
+
+    if ([bool]$PSBoundParameters['MobyLinuxVMMemoryInGB']) {
+        $MobyLinuxVMMemoryInMB = [Math]::Round($MobyLinuxVMMemoryInGB * 1KB)
+    }
+
+    try {
+        $DockerDir = $($(Get-Command docker).Source -split "\\Docker\\Resources\\")[0] + "\Docker"
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $MobyLinuxISOPath = $(Get-ChildItem -Path "C:\Program Files\Docker" -Recurse -File -Filter "docker-for-win.iso").FullName
+    if (!$MobyLinuxISOPath) {
+        Write-Error "Unable to find docker-for-win.iso! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if ([bool]$(Get-VM -Name MobyLinuxVM -ErrorAction SilentlyContinue)) {
+        MobyLinuxBetter -Destroy
+    }
+
+    MobyLinuxBetter -VmName MobyLinuxVM -IsoFile $MobyLinuxISOPath -Create -Memory $MobyLinuxVMMemoryInMB
+}
+
+
 [System.Collections.ArrayList]$FunctionsForSBUse = @(
     ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
     ${Function:GetDomainController}.Ast.Extent.Text
@@ -12528,8 +14461,8 @@ function New-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUtLWcTDzx5BLhJRzeT/L08bwO
-# sFCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUEIT8y9PlHGPb4DxA0u8wapx9
+# TAKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -12586,11 +14519,11 @@ function New-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGFw00FxHEkrpmb8
-# J+0XQ0X+VF3vMA0GCSqGSIb3DQEBAQUABIIBAE+YQrzLKyzecKwQcK0K+z25RfhX
-# 802vJo2nSrK2qk4cZ8LuxlokHOtGbeuHbu2xVOu/UA6/bI7w43i7SJGsySbaZdjd
-# TSssoDW1a36b0VrGdD22nTzOqB7IVvnMn6K+XYlzG5GQUglU8ZB67fL1KFuqWSuu
-# zFeqYHEnFWmoI26S3lVEkzPJ/tfJTFVGQ7a+4gjdzcVXKvC6Gr7CCNLsBUky2ui4
-# aL6v/fJhUTipqo8UIfNZ8RRhV29QlYf+QnMlnN2RGOZQSDMo50G5/O0plLCITTyV
-# kxeF6zisPhbMuW6QiYyk9g9tqWbjnkBom8hw042NHdRVNoPeLNQsLGM/VB4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEHTLNl3DICCaF1P
+# zFKgsf1HpLGAMA0GCSqGSIb3DQEBAQUABIIBAA+HY3GYi7qyNfeskbYWUIgLhC5J
+# 7Nm7IOA37wyXVgULp4SFjyLcZuhRXGHWK4EhnYfBm2dJ+PS2ZFHnSDKxHiul3ahc
+# kHov632BEbDunqlXdewPji6gRG/gGbAiJUYljLvllwLmLFU5JnUQmXek7IFc6Z8z
+# PmDmbqw0t6WrIyRJaATqwpCaSQHOE6EWs/1l1mtx5v7q1hKwGU5PGjFX49tHTo2C
+# FbPt4x1DILhbfkTRzeDREGxe2hVYWE12BtxgMooHjRXWEp1KAINphMWh4YNTPxtG
+# kQcqCY3gtnGgYwFJim2Yw3i179iB5Q2VvVgxdUjUme/9dWfghWiHLKMbwLE=
 # SIG # End signature block

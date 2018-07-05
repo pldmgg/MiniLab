@@ -20,10 +20,26 @@ function InvokeModuleDependencies {
 
     if ($PSVersionTable.PSEdition -eq "Core") {
         $InvPSCompatSplatParams = @{
-            InvocationMethod                    = $(Get-Variable "MyInvocation" -Scope 1 -ValueOnly).MyCommand.Name
             ErrorAction                         = "SilentlyContinue"
             #WarningAction                       = "SilentlyContinue"
         }
+
+        $MyInvParentScope = Get-Variable "MyInvocation" -Scope 1 -ValueOnly
+        $PathToFile = $MyInvParentScope.MyCommand.Source
+        $FunctionName = $MyInvParentScope.MyCommand.Name
+
+        if ($PathToFile) {
+            $InvPSCompatSplatParams.Add("InvocationMethod",$PathToFile)
+        }
+        elseif ($FunctionName) {
+            $InvPSCompatSplatParams.Add("InvocationMethod",$FunctionName)
+        }
+        else {
+            Write-Error "Unable to determine MyInvocation Source or Name! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+
         if ($PSBoundParameters['InstallModulesNotAvailableLocally']) {
             $InvPSCompatSplatParams.Add("InstallModulesNotAvailableLocally",$True)
         }
@@ -91,8 +107,8 @@ function InvokeModuleDependencies {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUIRe0OG32vrkjIYPT2BmGj3hJ
-# U4Sgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUxf5LCOboV1RmJqqUCe6OT0qn
+# D4agggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -149,11 +165,11 @@ function InvokeModuleDependencies {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFkIwEorsm1K9UX9
-# yrVuvC3osk3CMA0GCSqGSIb3DQEBAQUABIIBAECUhrGp/9ohcvXtiIBrOEFMJ1x2
-# 4bNESOdxA94WwfeD0+JKqkA2HcYCaE3JK8etzOqqhswI+CNK8/Lq8wduuP4sx2Gw
-# AnwwA6NPXo0X3nTuBFO4J8UPdG7jON57dMiMEFqMMFMzrEFrwkGofftQByMKuaJ7
-# Rlz93GwIGIsbr9dU08IsJBoNoZv9xBZEaqKOwAwNOtdW193fB7WMvWKOf+R/gB4h
-# aXbEDyyOdCrB4SdbZmnbHIp4POBNoH7JA5VlmoxqGVGEK0HG41JmvDfZNUxj/SQB
-# +hwUD7js43nnhqmTIYQfuaJ1LO1j91CBILnQWHq5FAmDCbsJbB1MsbT/B9U=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKz4yZ8Vnoas8jvE
+# MPPk4mBtUzfmMA0GCSqGSIb3DQEBAQUABIIBADADiY7S2ajfVFDx8Xie86TOKcxV
+# otbGuugX4e9Ok9oGggU02VRSz6BR4ftANpLOhqJL75/VOx77+B3lnafFmzoN1ywm
+# /Jdu7Chzk/db6gDyGHHJZ8uj4MxSfMQywnpIwjV7bkqlsceu6lpGWs+4XHq+yNv4
+# 56q9A0KIHgMZV3lEtsChxstZdudL1AgH9N+8n82AUsXGl9P5+Fv7Ytbc1HU/dCOk
+# I1XzghWsUZ9EdT+XMx0zbm4OvqwtAbFfY9kTqXhClXzUwIv1iFlIfVGiI9BUciv7
+# 87XbTDnKWN6bAPU4aGUWPgGr6B7ovHdTCT/2To78Sj3hp8OXQVt6+4vD2Aw=
 # SIG # End signature block

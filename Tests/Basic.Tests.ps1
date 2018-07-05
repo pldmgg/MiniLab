@@ -54,19 +54,30 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Module = Get-Module $env:BHProjectName
         $Module.Name -eq $env:BHProjectName | Should Be $True
         $Commands = $Module.ExportedCommands.Keys
+        $Commands -contains 'ConfirmAWSVM' | Should Be $False
+        $Commands -contains 'ConfirmAzureVM' | Should Be $False
+        $Commands -contains 'ConfirmGoogleComputeVM' | Should Be $False
+        $Commands -contains 'ConvertSize' | Should Be $False
+        $Commands -contains 'DoDockerinstall' | Should Be $False
+        $Commands -contains 'EnableNestedVM' | Should Be $False
         $Commands -contains 'FixNTVirtualMachinesPerms' | Should Be $False
         $Commands -contains 'GetDomainController' | Should Be $False
         $Commands -contains 'GetElevation' | Should Be $False
         $Commands -contains 'GetFileLockProcess' | Should Be $False
+        $Commands -contains 'GetIPRange' | Should Be $False
         $Commands -contains 'GetModMapObject' | Should Be $False
         $Commands -contains 'GetModuleDependencies' | Should Be $False
         $Commands -contains 'GetNativePath' | Should Be $False
+        $Commands -contains 'GetNestedVirtCapabilities' | Should Be $False
         $Commands -contains 'GetVSwitchAllRelatedInfo' | Should Be $False
         $Commands -contains 'GetWinPSInCore' | Should Be $False
+        $Commands -contains 'GetWorkingCredentials' | Should Be $False
         $Commands -contains 'InstallFeatureDism' | Should Be $False
         $Commands -contains 'InstallHyperVFeatures' | Should Be $False
         $Commands -contains 'InvokeModuleDependencies' | Should Be $False
         $Commands -contains 'InvokePSCompatibility' | Should Be $False
+        $Commands -contains 'ManualPSGalleryModuleInstall' | Should Be $False
+        $Commands -contains 'MobyLinuxBetter' | Should Be $False
         $Commands -contains 'NewUniqueString' | Should Be $False
         $Commands -contains 'PauseForWarning' | Should Be $False
         $Commands -contains 'ResolveHost' | Should Be $False
@@ -82,29 +93,42 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'Generate-Certificate' | Should Be $True
         $Commands -contains 'Get-DSCEncryptionCert' | Should Be $True
         $Commands -contains 'Get-VagrantBoxManualDownload' | Should Be $True
+        $Commands -contains 'Install-Docker' | Should Be $True
         $Commands -contains 'Manage-HyperVVM' | Should Be $True
         $Commands -contains 'New-DomainController' | Should Be $True
         $Commands -contains 'New-RootCA' | Should Be $True
+        $Commands -contains 'New-Runspace' | Should Be $True
         $Commands -contains 'New-SelfSignedCertificateEx' | Should Be $True
         $Commands -contains 'New-SubordinateCA' | Should Be $True
-        $Commands -contains 'New-Runspace' | Should Be $True
+        $Commands -contains 'Recreate-MobyLinuxVM' | Should Be $True
     }
 
     It "Module '$env:BHProjectName' Private Functions Are Available in Internal Scope" {
         $Module = Get-Module $env:BHProjectName
+        [bool]$Module.Invoke({Get-Item function:ConfirmAWSVM}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:ConfirmAzureVM}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:ConfirmGoogleComputeVM}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:ConvertSize}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:DoDockerInstall}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:EnableNestedVM}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:FixNTVirtualMachinesPerms}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetDomainController}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetElevation}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetFileLockProcess}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:GetIPRange}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetModMapObject}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetModuleDependencies}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetNativePath}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:GetNestedVirtCapabilities}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetVSwitchAllRelatedInfo}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetWinPSInCore}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:GetWorkingCredentials}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:InstallFeatureDism}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:InstallHyperVFeatures}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:InvokeModuleDependencies}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:InvokePSCompatibility}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:ManualPSGalleryModuleInstall}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:MobyLinuxBetter}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:NewUniqueString}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:PauseForWarning}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:ResolveHost}) | Should Be $True
@@ -116,8 +140,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU+3Qg+fIkqEF8+2ke7CTnec5P
-# 0Z6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUqzoPsFb/spteR8pVDS6oiPyQ
+# dQqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -174,11 +198,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLCLR7uhvQEhGwWq
-# D6bCLZPZs33SMA0GCSqGSIb3DQEBAQUABIIBAEd67xPkSPRpUCe2IL20IP75jd+x
-# JqPxbruC30bxgA/ZoFBZDV95mpljyLz6E1FLPTNGgiYXvyABEfqhESKOv1/9iYqc
-# dMwrOA28J/oGxYK8qK2R0aBoCAsJYaHW6sEcNH1rRFlwTBo5+wsTnGN+ZAuk4pIu
-# HnwpkiuXUVZDhU1R1PkXUuT7YDG+KX1t/CQEXjbXfTVOF6Z3sSQHBQLuCXbx6rzH
-# zqFLZFiSPcccixwfEZ2vffLvjWRk+AQU582MSgDgGwoDwl0N4uBFkvEGZjz8shKM
-# EpwnVo/0n7R+qVDAtKVND9NMATSjCfRD9HH0jOhkcUXlohiHZMM8JgoIp9s=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOpFz5WU0RINPv17
+# f1PTrP7SVgLfMA0GCSqGSIb3DQEBAQUABIIBAJqlMEI3Ib8WIxLDVvsKSMfUI1Bp
+# GkB5TqXr1wUxMcoTM8ZhUUUkuJpxmcB85JabxLX0YD8I7gLKKwby0azZqVwtCXTa
+# CTirDOpkyBzkcYTdF+/vCi3CAK+0mP3TpuQd5FAp6PJoZQ7A81R8IZPQ8UpGvpst
+# EVT1Ug5ysslKaGbdgzJhP8z7vkXGNwYXFZIXMz1VBOuDZrDH2XnI/8hYoAjSCwyz
+# nbfrUxKJ/c5yj9gDbKgMp7Q69Y0hQEWc8UgKfWa29EdTl4VybsU3PBGyBVzpPoL2
+# RPWn8SDJqW76BNFpsINlri5kYzSaO/GSpHB1ER7charHeS5CJYUEcyIrj+w=
 # SIG # End signature block
