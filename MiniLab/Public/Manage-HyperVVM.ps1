@@ -209,7 +209,7 @@ function Manage-HyperVVM {
         return
     }
 
-    Write-Output "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
+    Write-Host "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
 
     # Hard coded for now
     if (!$VhdSize) {
@@ -245,21 +245,21 @@ function Manage-HyperVVM {
         $vmSwitch = Get-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
         $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
         if ($vmSwitch -and $vmNetAdapter) {
-            Write-Output "Using existing Switch: $SwitchName"
+            Write-Host "Using existing Switch: $SwitchName"
         } else {
-            Write-Output "Creating Switch: $SwitchName..."
+            Write-Host "Creating Switch: $SwitchName..."
 
             Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
             $null = New-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
             $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName
 
-            Write-Output "Switch created."
+            Write-Host "Switch created."
         }
     
         # Make sure there are no lingering net adapter
         $netAdapters = Get-NetAdapter | Where-Object { $_.Name.StartsWith("vEthernet ($SwitchName)") }
         if (($netAdapters).Length -gt 1) {
-            Write-Output "Disable and rename invalid NetAdapters"
+            Write-Host "Disable and rename invalid NetAdapters"
     
             $now = (Get-Date -Format FileDateTimeUniversal)
             $index = 1
@@ -277,7 +277,7 @@ function Manage-HyperVVM {
         if ($networkAdapter.InterfaceAlias -eq $(Get-NetIPAddress -IPAddress $switchAddress -ea SilentlyContinue).InterfaceAlias) {
             Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
             Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
-            Write-Output "Using existing Switch IP address"
+            Write-Host "Using existing Switch IP address"
             return
         }
 
@@ -287,11 +287,11 @@ function Manage-HyperVVM {
         
         Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
         Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
-        Write-Output "Set IP address on switch"
+        Write-Host "Set IP address on switch"
     }
     
     function Remove-Switch {
-        Write-Output "Destroying Switch $SwitchName..."
+        Write-Host "Destroying Switch $SwitchName..."
     
         # Let's remove the IP otherwise a nasty bug makes it impossible
         # to recreate the vswitch
@@ -326,7 +326,7 @@ function Manage-HyperVVM {
                 $null = New-Item -ItemType Directory -Path $SnapShotDir -Force
             }
 
-            Write-Output "Creating VM $VmName..."
+            Write-Host "Creating VM $VmName..."
             $vm = Hyper-V\New-VM -Name $VmName -Generation $VMGen -NoVHD
 
             $SetVMSplatParams = @{
@@ -346,11 +346,11 @@ function Manage-HyperVVM {
         #>
 
         if ($vm.State -ne "Off") {
-            Write-Output "VM $VmName is $($vm.State). Cannot change its settings."
+            Write-Host "VM $VmName is $($vm.State). Cannot change its settings."
             return
         }
 
-        Write-Output "Setting CPUs to $CPUs and Memory to $Memory MB"
+        Write-Host "Setting CPUs to $CPUs and Memory to $Memory MB"
         $Memory = ([Math]::min($Memory, (Hyper-V\Get-VMMemory -VMName $VMName).MaximumPerNumaNode))
         Hyper-V\Set-VM -Name $VMName -MemoryStartupBytes ($Memory*1024*1024) -ProcessorCount $CPUs -StaticMemory
 
@@ -359,7 +359,7 @@ function Manage-HyperVVM {
             $vhd = Get-VHD -Path $VmVhdFile -ea SilentlyContinue
             
             if (!$vhd) {
-                Write-Output "Creating dynamic VHD: $VmVhdFile"
+                Write-Host "Creating dynamic VHD: $VmVhdFile"
                 $vhd = New-VHD -ComputerName localhost -Path $VmVhdFile -Dynamic -SizeBytes $VhdSize
             }
 
@@ -473,33 +473,33 @@ function Manage-HyperVVM {
 
             if ($vm.HardDrives.Path -ne $VmVhdFile) {
                 if ($vm.HardDrives) {
-                    Write-Output "Remove existing VHDs"
+                    Write-Host "Remove existing VHDs"
                     Hyper-V\Remove-VMHardDiskDrive $vm.HardDrives -ea SilentlyContinue
                 }
 
-                Write-Output "Attach VHD $VmVhdFile"
+                Write-Host "Attach VHD $VmVhdFile"
                 $null = Hyper-V\Add-VMHardDiskDrive -VMName $VMName -Path $VmVhdFile
             }
         }
 
         $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -VMName $VMName
         if (!$vmNetAdapter) {
-            Write-Output "Attach Net Adapter"
+            Write-Host "Attach Net Adapter"
             $vmNetAdapter = Hyper-V\Add-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName -Passthru
         }
 
-        Write-Output "Connect Switch $SwitchName"
+        Write-Host "Connect Switch $SwitchName"
         Hyper-V\Connect-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName
 
         if ($IsoFile) {
             if ($vm.DVDDrives.Path -ne $IsoFile) {
                 if ($vm.DVDDrives) {
-                    Write-Output "Remove existing DVDs"
+                    Write-Host "Remove existing DVDs"
                     $ExistingDvDDriveInfo = Get-VMDvdDrive -VMName $VMName
                     Hyper-V\Remove-VMDvdDrive -VMName $VMName -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
                 }
 
-                Write-Output "Attach DVD $IsoFile"
+                Write-Host "Attach DVD $IsoFile"
                 Hyper-V\Add-VMDvdDrive -VMName $VMName -Path $IsoFile
             }
         }
@@ -535,40 +535,40 @@ function Manage-HyperVVM {
         Hyper-V\Get-VMIntegrationService -VMName $VMName | foreach {
             if ($PreferredIntegrationServices -contains $_.Name) {
                 $null = Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
-                Write-Output "Enabled $($_.Name)"
+                Write-Host "Enabled $($_.Name)"
             }
             else {
                 $null = Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
-                Write-Output "Disabled $($_.Name)"
+                Write-Host "Disabled $($_.Name)"
             }
         }
         #$vm | Hyper-V\Disable-VMConsoleSupport
         Hyper-V\Enable-VMConsoleSupport -VMName $VMName
 
-        Write-Output "VM created."
+        Write-Host "VM created."
     }
 
     function Remove-HyperVVM {
-        Write-Output "Removing VM $VmName..."
+        Write-Host "Removing VM $VmName..."
 
         Hyper-V\Remove-VM $VmName -Force -ea SilentlyContinue
 
         if (!$KeepVolume) {
             $VmVhdFile = Get-Vhd-Root
-            Write-Output "Delete VHD $VmVhdFile"
+            Write-Host "Delete VHD $VmVhdFile"
             Remove-Item $VmVhdFile -ea SilentlyContinue
         }
     }
 
     function Start-HyperVVM {
-        Write-Output "Starting VM $VmName..."
+        Write-Host "Starting VM $VmName..."
         Hyper-V\Start-VM -VMName $VmName
     }
 
     function Stop-HyperVVM {
         $vms = Hyper-V\Get-VM $VmName -ea SilentlyContinue
         if (!$vms) {
-            Write-Output "VM $VmName does not exist"
+            Write-Host "VM $VmName does not exist"
             return
         }
 
@@ -581,7 +581,7 @@ function Manage-HyperVVM {
         Param($vm)
 
         if ($vm.State -eq 'Off') {
-            Write-Output "VM $VmName is stopped"
+            Write-Host "VM $VmName is stopped"
             return
         }
 
@@ -592,24 +592,24 @@ function Manage-HyperVVM {
 
             $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
             if (!$vm) {
-                Write-Output "VM with Name $VmName does not exist"
+                Write-Host "VM with Name $VmName does not exist"
                 return
             }
 
             $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $VmName -Name Shutdown -ea SilentlyContinue
             if ($shutdownService -and $shutdownService.PrimaryOperationalStatus -eq 'Ok') {
-                Write-Output "Shutdown VM $VmName..."
+                Write-Host "Shutdown VM $VmName..."
                 Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -Force -ea SilentlyContinue
                 if ($vm.State -eq 'Off') {
                     return
                 }
             }
 
-            Write-Output "Turn Off VM $VmName..."
+            Write-Host "Turn Off VM $VmName..."
             Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -TurnOff -Force -ea SilentlyContinue
         }
 
-        Write-Output "Stopping VM $VmName..."
+        Write-Host "Stopping VM $VmName..."
         $null = New-Runspace -RunspaceName "StopVM$VmName" -ScriptBlock $code
         $Counter = 0
         while ($(Hyper-V\Get-VM -Name $VmName).State -ne "Off") {
@@ -620,7 +620,7 @@ function Manage-HyperVVM {
 
         $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
         if ($vm.State -eq 'Off') {
-            Write-Output "VM $VmName is stopped"
+            Write-Host "VM $VmName is stopped"
             return
         }
 
@@ -629,11 +629,11 @@ function Manage-HyperVVM {
         for ($count = 1; $count -le 10; $count++) {
             $ProcessID = (Get-WmiObject -Namespace root\virtualization\v2 -Class Msvm_ComputerSystem -Filter "Name = '$vmId'").ProcessID
             if (!$ProcessID) {
-                Write-Output "VM $VmName killed. Waiting for state to change"
+                Write-Host "VM $VmName killed. Waiting for state to change"
                 for ($count = 1; $count -le 20; $count++) {
                     $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
                     if ($vm.State -eq 'Off') {
-                        Write-Output "Killed VM $VmName is off"
+                        Write-Host "Killed VM $VmName is off"
                         #Remove-Switch
                         $oldKeepVolumeValue = $KeepVolume
                         $KeepVolume = $true
@@ -647,7 +647,7 @@ function Manage-HyperVVM {
             }
 
             if ($ProcessID) {
-                Write-Output "Kill VM $VmName process..."
+                Write-Host "Kill VM $VmName process..."
                 Stop-Process $ProcessID -Force -Confirm:$false -ea SilentlyContinue
             }
             Start-Sleep -Seconds 1
@@ -678,8 +678,8 @@ function Manage-HyperVVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUVaPC+s1zqPeHBUyy7lTgbrPi
-# ybegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU7hHUZzP51iBNTWrNlERjLPz5
+# 5Yygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -736,11 +736,11 @@ function Manage-HyperVVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKXjpv8YIhwbZzpo
-# lKpzxwANS4LKMA0GCSqGSIb3DQEBAQUABIIBALRPQudEHCQuihOOd4sGj47WpGR6
-# A3XJ6gMrGjRoEIxwQK6kJ1gJkDdJAQuvPSAnzwqTWIGc7nfkwSzlrsTvakE/UGzE
-# UrHiWc1QJTY0pUKe7GhoCOk+vtDTbn1Lcd8LkB0FC+HP9YQD1Fgaf0dzp+5oNlJr
-# DoZzTM9rJ1jF86bU4PO9NVZuV+vlple970XJwVz/CKwabclJk+dGPfWrIFpxFxH4
-# /xxcL+S3TWptixSlbbb1ugD5fC95pzbIYpgqbkxtO76gB5OI2o09+i0yHX+fJJMb
-# ibEUlbjNYKCJtuvhE/+BiEtpBre0nMReSOKQcZThip7wO8uYPSj2EAfE0cI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLLcsIlRm1FCURzn
+# STwdzRIlbyFJMA0GCSqGSIb3DQEBAQUABIIBAGo3KdAPUrwVbMVqe122qREbiNDf
+# 9utRmVJb1wd8MyOGGEIT+bmop1Hk6OGG6JkIWVVWtvZ5h2kVvFiXoK5c0TL2jgJ+
+# R4Xckf9Ck8LZ06wpSaitDTUd7StbZgElAz0hKvwZ3zaqtZt1neLxDCDK6YhS80ft
+# CO4W0//T3XIs4jmW4iQgYgGbf3r3u8976/rG5Mja2IYO3NHTl6xBYw+Pc4WAXxFy
+# MMSTWgDVQqXnk0x9yg7ChArMmU622gY8d/2PQPa90uIiJiY8wqVHUugzAlOzC/wA
+# 7BNNL3XpZNnphRAhXHkhQ0CCSYgPA5RVzJvTp7NQk+a8p2KSD+QQl2+Ybxo=
 # SIG # End signature block

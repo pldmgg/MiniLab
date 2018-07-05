@@ -24,6 +24,21 @@ function DoDockerInstall {
     if (![bool]$(Get-Module -ListAvailable ProgramManagement)) {Install-Module ProgramManagement}
     if (![bool]$(Get-Module ProgramManagement)) {Import-Module ProgramManagement}
 
+
+    try {
+        $DockerForWindowsUninstallResult = Uninstall-Program -ProgramName "docker-for-windows"
+    }
+    catch {
+        if ($_.Exception.Message -match "^Unable to find an installed program matching the name") {
+            Write-Verbose $($_.Exception.Message)
+        }
+        else {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
     # Do some basic Memory Checks before attempting to create/start the MobyLinux VM
     $OSInfo = Get-CimInstance Win32_OperatingSystem
     $TotalMemory = $OSInfo.TotalVisibleMemorySize
@@ -180,19 +195,15 @@ function DoDockerInstall {
 
     # Before configuring Docker CE, make sure there is NOT already an Internal vSwitch named DockerNAT or
     # a Network Adapter with IP 10.0.75.1
-    Write-Host "Here25"
     $vSwitchInfoByIP = GetvSwitchAllRelatedInfo -IPAddress 10.0.75.1 -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
     if ($vSwitchInfoByIP) {
-        Write-Host "Here26"
         Remove-VMSwitch -Name $vSwitchInfoByIP.BasicvSwitchInfo.Name -Confirm:$False -Force
     }
     if ([bool]$(Get-NetIPAddress -IPAddress 10.0.75.1 -ErrorAction SilentlyContinue)) {
-        Write-Host "Here27"
         Remove-NetIPAddress -InterfaceAlias $(Get-NetIPAddress -IPAddress 10.0.75.1).InterfaceAlias -Confirm:$False
     }
     $vSwitchInfoByName = GetvSwitchAllRelatedInfo -vSwitchName "LocalNAT" -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
     if ($vSwitchInfoByName) {
-        Write-Host "Here28"
         Remove-VMSwitch -Name $vSwitchInfoByName.BasicvSwitchInfo.Name -Confirm:$False -Force
     }
     try {
@@ -270,8 +281,8 @@ function DoDockerInstall {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUAjOd6N6N04qs7GHsdCyTX24h
-# V8ugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUHY0VlaBYQJPBP8qusVdj5fUO
+# Y4Sgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -328,11 +339,11 @@ function DoDockerInstall {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPG/a1+bJ59ujcYt
-# zwY7lAF7WmZ2MA0GCSqGSIb3DQEBAQUABIIBAJgH+xzZILyXfUC7BkQET9ZPL95L
-# QfcOLwxtdcXZqghajYUE5vGIs4DewORHztQ2tpM1MbMFX4EsTBGfKp5wmFv4vcdc
-# 34urS39YlgfwKL+mycgIrcb/QBpUnXS+yi/n2tho29Gwwf+EYbowszjrHreh2rEB
-# 8fIH04L5b+oZ39J8jxfA0LfWH3wDYxDWUq76h+8rHWoTFDam1CsxPrg0CHtxSVdX
-# Vtg5CThticRrdSfNnaWoHc6FzZhD2dvZlFr7V1UvOKhFD74gdDIVbxrT8q7j5+vd
-# Xj6v6CevgwWUgIM/pxmn3rE+8zYHWymV26Q6n3vIco+uoBVz9D0YB8Ic9/Y=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJRm0q8iGAXgseZp
+# 3/ApZo9abDIIMA0GCSqGSIb3DQEBAQUABIIBAE0zLXWyIOGMx53IEUbyxiIDpq8t
+# 72mztRU+LYMz+K8z0THwnNYRU0Bx38UBaevK/Q4XVdX+pqP6vRxOqvm8PgC9wTk3
+# E0aLzIUlx9/TvHKv7ZUvhr9TqLn7wWjrJNBJijfWAGunsR/4t3xxO3doyP8KfV8M
+# RO7FekAe5OMof/YlnkYNdfQxBWZcbYpNGsi2hLvoJEnsviqWwisoJMxngvqQ0h1u
+# vLCDQDVMwUgpWmJjOygsL7v6l4sb7eil5SYJqkpmxnHKVjwJFVSch4NUpNJmSkhm
+# ACfng2h8aA8vi51K9rZ/TO6pyDyARxd2fWOj6rT3t5GLd2OJ7Tl469V1SQQ=
 # SIG # End signature block

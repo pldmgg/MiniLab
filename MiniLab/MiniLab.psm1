@@ -294,6 +294,7 @@ function Create-Domain {
             if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
                 if (!$AllowRestarts) {
                     Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
                     Write-Output "RestartNeeded"
                     $global:FunctionResult = "1"
                     return
@@ -961,6 +962,7 @@ function Create-RootCA {
             if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
                 if (!$AllowRestarts) {
                     Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
                     Write-Output "RestartNeeded"
                     $global:FunctionResult = "1"
                     return
@@ -1635,6 +1637,7 @@ function Create-SubordinateCA {
             if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
                 if (!$AllowRestarts) {
                     Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
                     Write-Output "RestartNeeded"
                     $global:FunctionResult = "1"
                     return
@@ -2458,6 +2461,7 @@ function Create-TwoTierPKI {
             if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
                 if (!$AllowRestarts) {
                     Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
                     Write-Output "RestartNeeded"
                     $global:FunctionResult = "1"
                     return
@@ -3563,6 +3567,7 @@ function Deploy-HyperVVagrantBoxManually {
         if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
             if (!$AllowRestarts) {
                 Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
                 Write-Output "RestartNeeded"
                 $global:FunctionResult = "1"
                 return
@@ -7635,6 +7640,61 @@ function Generate-Certificate {
 }
 
 
+# Gets info about the Docker Server. This is mainly used to determine
+# if the Docker Server is running in Windows Container mode or Linux
+# Container mode.
+function Get-DockerInfo {
+    $DockerVersionInfo = docker version
+    [System.Collections.ArrayList]$DockerClientInfo = @()
+    [System.Collections.ArrayList]$DockerServerInfo = @()
+    foreach ($line in $DockerVersionInfo) {
+        if ($line -match "^Client") {
+            $ClientOrServer = "Client"
+        }
+        if ($line -match "^Server") {
+            $ClientOrServer = "Server"
+        }
+        if (![string]::IsNullOrEmpty($line)) {
+            if ($ClientOrServer -eq "Client" -and $line -notmatch "^Client") {
+                $null = $DockerClientInfo.Add($line.Trim())
+            }
+            if ($ClientOrServer -eq "Server" -and $line -notmatch "^Server") {
+                $null = $DockerServerInfo.Add($line.Trim())
+            }
+        }
+    }
+
+    [pscustomobject]$DockerClientPSObject = @{}
+    [pscustomobject]$DockerServerPSObject = @{}
+    foreach ($Property in $DockerClientInfo) {
+        $KeyValuePrep = $Property -split ":[\s]+"
+        $key = $KeyValuePrep[0].Trim()
+        $value = $KeyValuePrep[1].Trim()
+
+        $null = $DockerClientPSObject.Add($key,$value)
+    }
+    foreach ($Property in $DockerServerInfo) {
+        if ([bool]$($Property -match ":[\s]+")) {
+            $KeyValuePrep = $Property -split ":[\s]+"
+        }
+        elseif ([bool]$($Property -match ":")) {
+            $KeyValuePrep = $Property -split ":"
+        }
+        $key = $KeyValuePrep[0].Trim()
+        if ($KeyValuePrep[1] -ne $null) {
+            $value = $KeyValuePrep[1].Trim()
+        }
+
+        $null = $DockerServerPSObject.Add($key,$value)
+    }
+
+    [pscustomobject]@{
+        DockerServerInfo    = $DockerServerPSObject
+        DockerClientInfo    = $DockerClientPSObject
+    }
+}
+
+
 <#
     .SYNOPSIS
         This function creates a New Self-Signed Certificate meant to be used for DSC secret encryption and exports it to the
@@ -9205,7 +9265,6 @@ function Install-Docker {
 
         try {
             try {
-                Write-Host "HereB"
                 $HypervisorNetworkInfo = ResolveHost -HostNameOrIP $HyperVLocationToResolve -ErrorAction Stop
             }
             catch {
@@ -9615,7 +9674,6 @@ function Install-Docker {
     if ($InstallEnvironment -eq "BareMetal") {
         # Determine where this function is being run
         try {
-            Write-Host "HereC"
             $HostNameNetworkInfo = ResolveHost -HostNameOrIP $TargetHostNameOrIP
         }
         catch {
@@ -10033,7 +10091,7 @@ function Manage-HyperVVM {
         return
     }
 
-    Write-Output "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
+    Write-Host "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
 
     # Hard coded for now
     if (!$VhdSize) {
@@ -10069,21 +10127,21 @@ function Manage-HyperVVM {
         $vmSwitch = Get-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
         $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
         if ($vmSwitch -and $vmNetAdapter) {
-            Write-Output "Using existing Switch: $SwitchName"
+            Write-Host "Using existing Switch: $SwitchName"
         } else {
-            Write-Output "Creating Switch: $SwitchName..."
+            Write-Host "Creating Switch: $SwitchName..."
 
             Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
             $null = New-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
             $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName
 
-            Write-Output "Switch created."
+            Write-Host "Switch created."
         }
     
         # Make sure there are no lingering net adapter
         $netAdapters = Get-NetAdapter | Where-Object { $_.Name.StartsWith("vEthernet ($SwitchName)") }
         if (($netAdapters).Length -gt 1) {
-            Write-Output "Disable and rename invalid NetAdapters"
+            Write-Host "Disable and rename invalid NetAdapters"
     
             $now = (Get-Date -Format FileDateTimeUniversal)
             $index = 1
@@ -10101,7 +10159,7 @@ function Manage-HyperVVM {
         if ($networkAdapter.InterfaceAlias -eq $(Get-NetIPAddress -IPAddress $switchAddress -ea SilentlyContinue).InterfaceAlias) {
             Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
             Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
-            Write-Output "Using existing Switch IP address"
+            Write-Host "Using existing Switch IP address"
             return
         }
 
@@ -10111,11 +10169,11 @@ function Manage-HyperVVM {
         
         Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
         Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
-        Write-Output "Set IP address on switch"
+        Write-Host "Set IP address on switch"
     }
     
     function Remove-Switch {
-        Write-Output "Destroying Switch $SwitchName..."
+        Write-Host "Destroying Switch $SwitchName..."
     
         # Let's remove the IP otherwise a nasty bug makes it impossible
         # to recreate the vswitch
@@ -10150,7 +10208,7 @@ function Manage-HyperVVM {
                 $null = New-Item -ItemType Directory -Path $SnapShotDir -Force
             }
 
-            Write-Output "Creating VM $VmName..."
+            Write-Host "Creating VM $VmName..."
             $vm = Hyper-V\New-VM -Name $VmName -Generation $VMGen -NoVHD
 
             $SetVMSplatParams = @{
@@ -10170,11 +10228,11 @@ function Manage-HyperVVM {
         #>
 
         if ($vm.State -ne "Off") {
-            Write-Output "VM $VmName is $($vm.State). Cannot change its settings."
+            Write-Host "VM $VmName is $($vm.State). Cannot change its settings."
             return
         }
 
-        Write-Output "Setting CPUs to $CPUs and Memory to $Memory MB"
+        Write-Host "Setting CPUs to $CPUs and Memory to $Memory MB"
         $Memory = ([Math]::min($Memory, (Hyper-V\Get-VMMemory -VMName $VMName).MaximumPerNumaNode))
         Hyper-V\Set-VM -Name $VMName -MemoryStartupBytes ($Memory*1024*1024) -ProcessorCount $CPUs -StaticMemory
 
@@ -10183,7 +10241,7 @@ function Manage-HyperVVM {
             $vhd = Get-VHD -Path $VmVhdFile -ea SilentlyContinue
             
             if (!$vhd) {
-                Write-Output "Creating dynamic VHD: $VmVhdFile"
+                Write-Host "Creating dynamic VHD: $VmVhdFile"
                 $vhd = New-VHD -ComputerName localhost -Path $VmVhdFile -Dynamic -SizeBytes $VhdSize
             }
 
@@ -10297,33 +10355,33 @@ function Manage-HyperVVM {
 
             if ($vm.HardDrives.Path -ne $VmVhdFile) {
                 if ($vm.HardDrives) {
-                    Write-Output "Remove existing VHDs"
+                    Write-Host "Remove existing VHDs"
                     Hyper-V\Remove-VMHardDiskDrive $vm.HardDrives -ea SilentlyContinue
                 }
 
-                Write-Output "Attach VHD $VmVhdFile"
+                Write-Host "Attach VHD $VmVhdFile"
                 $null = Hyper-V\Add-VMHardDiskDrive -VMName $VMName -Path $VmVhdFile
             }
         }
 
         $vmNetAdapter = Hyper-V\Get-VMNetworkAdapter -VMName $VMName
         if (!$vmNetAdapter) {
-            Write-Output "Attach Net Adapter"
+            Write-Host "Attach Net Adapter"
             $vmNetAdapter = Hyper-V\Add-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName -Passthru
         }
 
-        Write-Output "Connect Switch $SwitchName"
+        Write-Host "Connect Switch $SwitchName"
         Hyper-V\Connect-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName
 
         if ($IsoFile) {
             if ($vm.DVDDrives.Path -ne $IsoFile) {
                 if ($vm.DVDDrives) {
-                    Write-Output "Remove existing DVDs"
+                    Write-Host "Remove existing DVDs"
                     $ExistingDvDDriveInfo = Get-VMDvdDrive -VMName $VMName
                     Hyper-V\Remove-VMDvdDrive -VMName $VMName -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
                 }
 
-                Write-Output "Attach DVD $IsoFile"
+                Write-Host "Attach DVD $IsoFile"
                 Hyper-V\Add-VMDvdDrive -VMName $VMName -Path $IsoFile
             }
         }
@@ -10359,40 +10417,40 @@ function Manage-HyperVVM {
         Hyper-V\Get-VMIntegrationService -VMName $VMName | foreach {
             if ($PreferredIntegrationServices -contains $_.Name) {
                 $null = Hyper-V\Enable-VMIntegrationService -VMName $VMName -Name $_.Name
-                Write-Output "Enabled $($_.Name)"
+                Write-Host "Enabled $($_.Name)"
             }
             else {
                 $null = Hyper-V\Disable-VMIntegrationService -VMName $VMName -Name $_.Name
-                Write-Output "Disabled $($_.Name)"
+                Write-Host "Disabled $($_.Name)"
             }
         }
         #$vm | Hyper-V\Disable-VMConsoleSupport
         Hyper-V\Enable-VMConsoleSupport -VMName $VMName
 
-        Write-Output "VM created."
+        Write-Host "VM created."
     }
 
     function Remove-HyperVVM {
-        Write-Output "Removing VM $VmName..."
+        Write-Host "Removing VM $VmName..."
 
         Hyper-V\Remove-VM $VmName -Force -ea SilentlyContinue
 
         if (!$KeepVolume) {
             $VmVhdFile = Get-Vhd-Root
-            Write-Output "Delete VHD $VmVhdFile"
+            Write-Host "Delete VHD $VmVhdFile"
             Remove-Item $VmVhdFile -ea SilentlyContinue
         }
     }
 
     function Start-HyperVVM {
-        Write-Output "Starting VM $VmName..."
+        Write-Host "Starting VM $VmName..."
         Hyper-V\Start-VM -VMName $VmName
     }
 
     function Stop-HyperVVM {
         $vms = Hyper-V\Get-VM $VmName -ea SilentlyContinue
         if (!$vms) {
-            Write-Output "VM $VmName does not exist"
+            Write-Host "VM $VmName does not exist"
             return
         }
 
@@ -10405,7 +10463,7 @@ function Manage-HyperVVM {
         Param($vm)
 
         if ($vm.State -eq 'Off') {
-            Write-Output "VM $VmName is stopped"
+            Write-Host "VM $VmName is stopped"
             return
         }
 
@@ -10416,24 +10474,24 @@ function Manage-HyperVVM {
 
             $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
             if (!$vm) {
-                Write-Output "VM with Name $VmName does not exist"
+                Write-Host "VM with Name $VmName does not exist"
                 return
             }
 
             $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $VmName -Name Shutdown -ea SilentlyContinue
             if ($shutdownService -and $shutdownService.PrimaryOperationalStatus -eq 'Ok') {
-                Write-Output "Shutdown VM $VmName..."
+                Write-Host "Shutdown VM $VmName..."
                 Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -Force -ea SilentlyContinue
                 if ($vm.State -eq 'Off') {
                     return
                 }
             }
 
-            Write-Output "Turn Off VM $VmName..."
+            Write-Host "Turn Off VM $VmName..."
             Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -TurnOff -Force -ea SilentlyContinue
         }
 
-        Write-Output "Stopping VM $VmName..."
+        Write-Host "Stopping VM $VmName..."
         $null = New-Runspace -RunspaceName "StopVM$VmName" -ScriptBlock $code
         $Counter = 0
         while ($(Hyper-V\Get-VM -Name $VmName).State -ne "Off") {
@@ -10444,7 +10502,7 @@ function Manage-HyperVVM {
 
         $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
         if ($vm.State -eq 'Off') {
-            Write-Output "VM $VmName is stopped"
+            Write-Host "VM $VmName is stopped"
             return
         }
 
@@ -10453,11 +10511,11 @@ function Manage-HyperVVM {
         for ($count = 1; $count -le 10; $count++) {
             $ProcessID = (Get-WmiObject -Namespace root\virtualization\v2 -Class Msvm_ComputerSystem -Filter "Name = '$vmId'").ProcessID
             if (!$ProcessID) {
-                Write-Output "VM $VmName killed. Waiting for state to change"
+                Write-Host "VM $VmName killed. Waiting for state to change"
                 for ($count = 1; $count -le 20; $count++) {
                     $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
                     if ($vm.State -eq 'Off') {
-                        Write-Output "Killed VM $VmName is off"
+                        Write-Host "Killed VM $VmName is off"
                         #Remove-Switch
                         $oldKeepVolumeValue = $KeepVolume
                         $KeepVolume = $true
@@ -10471,7 +10529,7 @@ function Manage-HyperVVM {
             }
 
             if ($ProcessID) {
-                Write-Output "Kill VM $VmName process..."
+                Write-Host "Kill VM $VmName process..."
                 Stop-Process $ProcessID -Force -Confirm:$false -ea SilentlyContinue
             }
             Start-Sleep -Seconds 1
@@ -10497,6 +10555,271 @@ function Manage-HyperVVM {
         throw
         return 1
     }
+}
+
+
+# Example: Move-DockerStorage -NewDockerDrive <DriveLetter>
+function Move-DockerStorage {
+    [CmdletBinding()]
+    Param(
+        [Parameter(Mandatory=$False)]
+        [ValidatePattern("[a-zA-Z]")]
+        [string]$NewDockerDrive,
+
+        [Parameter(Mandatory=$False)]
+        [string]$CustomWindowsImageStoragePath,
+
+        [Parameter(Mandatory=$False)]
+        [string]$CustomLinuxImageStoragePath,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$MoveWindowsImagesOnly,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$MoveLinuxImagesOnly,
+
+        [Parameter(Mandatory=$False)]
+        [switch]$Force
+    )
+
+    # Make sure one of the parameters is used
+    if (!$NewDockerDrive -and !$CustomWindowsImageStoragePath -and !$CustomLinuxImageStoragePath) {
+        Write-Error "The $($MyInvocation.MyCommand.Name) function requires either the -NewDockerDrive parameter or the -CustomDockerStoragePath parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    # Make sure docker is installed
+    if (![bool]$(Get-Command docker -ErrorAction SilentlyContinue)) {
+        Write-Error "The 'docker' command is not available! Is docker installed? Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $DockerInfo = Get-DockerInfo
+    $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+
+    if ($NewDockerDrive) {
+        while ($LocalDrives.Name -notcontains $NewDockerDrive) {
+            Write-Warning "$NewDockerDrive is not a valid Local Drive!"
+            $NewDockerDrive = Read-Host -Prompt "Please enter the drive letter (LETTER ONLY) that you would like to move Docker Storage to [$($LocalDrives.Name -join '|')]"
+        }
+    }
+
+    if ($CustomLinuxImageStoragePath) {
+        if ($NewDockerDrive) {
+            if ($CustomLinuxImageStoragePath[0] -ne $NewDockerDrive) {
+                Write-Error "The drive indicated by -CustomLinuxImageStoragePath (i.e. $($CustomLinuxImageStoragePath[0])) is not the same as the drive indicated by -NewDockerDrive (i.e. $NewDockerDrive)! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        $FinalLinuxImageStoragePath = $CustomLinuxImageStoragePath
+    }
+    else {
+        $FinalLinuxImageStoragePath = "$NewDockerDrive`:\DockerStorage\LinuxContainers"
+    }
+    if (!$(Test-Path $FinalLinuxImageStoragePath)) {
+        $null = New-Item -ItemType Directory -Path $FinalLinuxImageStoragePath -Force
+    }
+
+    if ($CustomWindowsImageStoragePath) {
+        if ($NewDockerDrive) {
+            if ($CustomWindowsImageStoragePath[0] -ne $NewDockerDrive) {
+                Write-Error "The drive indicated by -CustomWindowsImageStoragePath (i.e. $($CustomWindowsImageStoragePath[0])) is not the same as the drive indicated by -NewDockerDrive (i.e. $NewDockerDrive)! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        $FinalWindowsImageStoragePath = $CustomWindowsImageStoragePath
+    }
+    else {
+        $FinalWindowsImageStoragePath = "$NewDockerDrive`:\DockerStorage\WindowsContainers"
+    }
+    if (!$(Test-Path $FinalWindowsImageStoragePath)) {
+        $null = New-Item -ItemType Directory -Path $FinalWindowsImageStoragePath -Force
+    }
+
+    if (!$MoveLinuxImagesOnly) {
+        # Unfortunately, it does not seem possible to move Docker Storage along with existing Windows docker images and containers.
+        # So, the docker images and containers will need to be recreated after "C:\ProgramData\Docker\config\daemon.json"
+        # has been updated with the new storage location
+        if (!$Force) {
+            Write-Warning "Moving Windows Docker Storage to a new location will remove all existing Windows docker images and containers!"
+            $MoveWinDockerStorageChoice = Read-Host -Prompt "Are you sure you want to move Windows Docker Storage? [Yes\No]"
+            while ($MoveWinDockerStorageChoice -match "Yes|yes|Y|y|No|no|N|n") {
+                Write-Host "'$MoveWinDockerStorageChoice' is *not* a valid choice. Please enter either 'Yes' or 'No'."
+                $MoveWinDockerStorageChoice = Read-Host -Prompt "Are you sure you want to move Windows Docker Storage? [Yes\No]"
+            }
+
+            if ($MoveWinDockerStorageChoice -notmatch "Yes|yes|Y|y") {
+                Write-Warning "Windows Docker Storage will NOT be moved."
+            }
+        }
+
+        if ($Force -or $MoveWinDockerStorageChoice -match "Yes|yes|Y|y") {
+            # If "C:\ProgramData\Docker\config" doesn't exist, that means that Docker has NEVER been switched to Windows Containers
+            # on this machine, so we need to do so.
+            if (!$(Test-Path "C:\ProgramData\Docker\config")) {
+                $null = Switch-DockerContainerType -ContainerType Windows
+                #Write-Host "Sleeping for 30 seconds to give docker time to setup for Windows Containers..."
+                #Start-Sleep -Seconds 30
+                
+                $UpdatedDockerInfo = Get-DockerInfo
+                if ($UpdatedDockerInfo.DockerServerInfo.'OS/Arch' -notmatch "windows") {
+                    Write-Error "Docker did NOT successfully switch to Windows Containers within the alotted time! Halting!"
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+
+            # Update the Docker Config File with the New Storage Location
+            # Solution from:
+            # https://social.technet.microsoft.com/Forums/Lync/en-US/4ac564e2-ad6d-4d32-8cb4-7fea481738a4/how-to-change-docker-images-and-containers-location-with-windows-containers?forum=ws2016
+            
+            $DockerConfigJsonAsPSObject = Get-Content "C:\ProgramData\Docker\config\daemon.json" | ConvertFrom-Json
+            $DockerConfigJsonAsPSObject | Add-Member -Type NoteProperty -Name data-root -Value $FinalWindowsImageStoragePath -Force
+            $DockerConfigJsonAsPSObject | ConvertTo-Json -Compress | Out-File "C:\ProgramData\Docker\config\daemon.json"
+        }
+    }
+
+    if (!$MoveWindowsImagesOnly) {
+        # We need to move the MobyLinuxVM #
+
+        # Make sure that com.docker.service is Stopped and 'Docker For Windows.exe' and 'dockerd.exe' are not running
+        try {
+            $DockerService = Get-Service com.docker.service -ErrorAction Stop
+
+            if ($DockerService.Status -ne "Stopped") {
+                $DockerService | Stop-Service -Force
+            }
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+
+        try {
+            $DockerForWindowsProcess = Get-Process "Docker For Windows" -ErrorAction SilentlyContinue
+            if ($DockerForWindowsProcess) {
+                $DockerForWindowsProcess | Stop-Process -Force
+            }
+
+            $DockerDProcess = Get-Process "dockerd" -ErrorAction SilentlyContinue
+            if ($DockerDProcess) {
+                $DockerDProcess | Stop-Process -Force
+            }
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+
+        # Make sure the MobyLinuxVM is Off
+        $MobyLinuxVMInfo = Get-VM -Name MobyLinuxVM
+
+        if ($MobyLinuxVMInfo.State -ne "Off") {
+            try {
+                Stop-VM -VMName MobyLinuxVM -TurnOff -Confirm:$False -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+
+        $DockerSettings = Get-Content "$env:APPDATA\Docker\settings.json" | ConvertFrom-Json
+        $DockerSettings.MobyVhdPathOverride = "$CustomLinuxImageStoragePath\MobyLinuxVM.vhdx"
+        $DockerSettings | ConvertTo-Json | Out-File "$env:APPDATA\Docker\settings.json"
+
+        # Alternate method using symlink/junction
+        <#
+        try {
+            # Get the current location of the VHD - It's almost definitely under
+            # C:\Users\Public\Documents\Hyper-V\Virtual Hard Disks\MobyLinuxVM.vhdx, but check to make sure
+            $MLVhdLocation = $(Get-VMHardDiskDrive -VMName MobyLinuxVM).Path
+            $MLVhdLocationParentDir = $MLVhdLocation | Split-Path -Parent
+
+            # Determine if there are other files in $MLVhdLocationParentDir. If there are, halt because
+            # we can't safely create the symlink, so just leave everything where it is...
+            $MLVhdLocationContentCheck = Get-ChildItem -Path $MLVhdLocationParentDir -File -Recurse
+            if ($MLVhdLocationContentCheck.Count -gt 1 -and
+            [bool]$($MLVhdLocationContentCheck.FullName -notmatch "MobyLinuxVM.*?vhdx$")
+            ) {
+                Write-Warning "There are files under '$MLVhdLocationParentDir' besides VHDs related to MobyLinuxVM! MobyLinuxVM storage will NOT be moved!"
+            }
+            else {
+                Move-VMStorage -VMName MobyLinuxVM -DestinationStoragePath $FinalLinuxImageStoragePath
+
+                Write-Host "Removing empty directory '$MLVhdLocationParentDir' in preparation for symlink ..."
+                Remove-Item $MLVhdLocationParentDir -ErrorAction Stop
+                
+                Write-Host "Creating junction for MobyLinuxVM storage directory from original location '$MLVhdLocationParentDir' to new location '$FinalLinuxImageStoragePath\Virtual Hard Disks' ..."
+                $null = cmd /c mklink /j $MLVhdLocationParentDir "$FinalLinuxImageStoragePath\Virtual Hard Disks"
+            }
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+        #>
+
+        # Turn On Docker Again
+        try {
+            $DockerService = Get-Service com.docker.service -ErrorAction Stop
+
+            if ($DockerService.Status -eq "Stopped") {
+                $DockerService | Start-Service
+                Write-Host "Sleeping for 30 seconds to give the com.docker.service service time to become ready..."
+                Start-Sleep -Seconds 30
+            }
+
+            $MobyLinuxVMInfo = Get-VM -Name MobyLinuxVM
+            if ($MobyLinuxVMInfo.State -ne "Running") {
+                Write-Host "Manually starting MobyLinuxVM..."
+                Start-VM -Name MobyLinuxVM
+            }
+
+            & "C:\Program Files\Docker\Docker\Docker For Windows.exe"
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    
+    # Create Output
+    if ($FinalLinuxImageStoragePath) {
+        $LinuxStorage = $FinalLinuxImageStoragePath
+    }
+    if ($FinalWindowsImageStoragePath) {
+        $WindowsStorage = $FinalWindowsImageStoragePath
+    }
+    if ($CustomLinuxImageStoragePath) {
+        $LinuxStorage = $CustomLinuxImageStoragePath
+    }
+    if ($CustomWindowsImageStoragePath) {
+        $WindowsStorage = $CustomWindowsImageStoragePath
+    }
+
+    $Output = @{}
+
+    if ($LinuxStorage) {
+        $Output.Add("LinuxStorage",$LinuxStorage)
+    }
+    if ($WindowsStorage) {
+        $Output.Add("WindowsStorage",$WindowsStorage)
+    }
+
+    [pscustomobject]$Output
 }
 
 
@@ -14422,6 +14745,47 @@ function Recreate-MobyLinuxVM {
 }
 
 
+# Switch DockerCE from Windows Container mode to Linux Container mode
+# or visa versa.
+function Switch-DockerContainerType {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$True)]
+        [ValidateSet("Windows","Linux")]
+        [string]$ContainerType
+    )
+
+    try {
+        # Find DockerCli
+        $DockerCliExePath = $(Get-ChildItem -Path "$env:ProgramFiles\Docker" -Recurse -File -Filter "*DockerCli.exe").FullName
+
+        if (!$DockerCliExePath) {
+            throw "Unable to find DockerCli.exe! Halting!"
+        }
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $DockerInfo = Get-DockerInfo
+
+    if ($($DockerInfo.DockerServerInfo.'OS/Arch' -match "windows" -and $ContainerType -eq "Linux") -or
+    $($DockerInfo.DockerServerInfo.'OS/Arch' -match "linux" -and $ContainerType -eq "Windows")) {
+        & $DockerCliExePath -SwitchDaemon
+
+        [pscustomobject]@{
+            OriginalDockerServerArch    = $DockerInfo.DockerServerInfo.'OS/Arch'
+            NewDockerServerArch         = $($($(docker version) -match "OS/Arch")[1] -split ":[\s]+")[1].Trim()
+        }
+    }
+    else {
+        Write-Warning "The Docker Daemon is already set to manage $ContainerType containers! No action taken."
+    }
+}
+
+
 [System.Collections.ArrayList]$FunctionsForSBUse = @(
     ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
     ${Function:GetDomainController}.Ast.Extent.Text
@@ -14461,8 +14825,8 @@ function Recreate-MobyLinuxVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUEIT8y9PlHGPb4DxA0u8wapx9
-# TAKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgJovLKbMhog2BTpGv065h6+y
+# F7ygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -14519,11 +14883,11 @@ function Recreate-MobyLinuxVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEHTLNl3DICCaF1P
-# zFKgsf1HpLGAMA0GCSqGSIb3DQEBAQUABIIBAA+HY3GYi7qyNfeskbYWUIgLhC5J
-# 7Nm7IOA37wyXVgULp4SFjyLcZuhRXGHWK4EhnYfBm2dJ+PS2ZFHnSDKxHiul3ahc
-# kHov632BEbDunqlXdewPji6gRG/gGbAiJUYljLvllwLmLFU5JnUQmXek7IFc6Z8z
-# PmDmbqw0t6WrIyRJaATqwpCaSQHOE6EWs/1l1mtx5v7q1hKwGU5PGjFX49tHTo2C
-# FbPt4x1DILhbfkTRzeDREGxe2hVYWE12BtxgMooHjRXWEp1KAINphMWh4YNTPxtG
-# kQcqCY3gtnGgYwFJim2Yw3i179iB5Q2VvVgxdUjUme/9dWfghWiHLKMbwLE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCvIWIY0Z/0mvldM
+# j3H83SOFB6zkMA0GCSqGSIb3DQEBAQUABIIBAIAoZVVx7x1ZMJBuilYZ0A0PLvjX
+# cs8o3EeBEmnUo+stFXy3sQ0VcFxFP+X62a4RNwPLYKHj0NEy//FnH05tlnrC+35U
+# fsOJwGZeMqVVpxBclwYboTI6OUlFK0KyUom3YiUm5jQzRQSrOVylNuF+j6raKeJ2
+# mfGLGBK1E512PLaY2gpHSOFvIwt3hn9akGPP93+tPPpoQP9BUsqlndWRO7k3ZX50
+# JPhH7XlVk9bGPFUC3FEsWk8RRRtVvtD5880CQOTYBJI9ihi8NtMv/9H6mCBJvyeQ
+# TDZStCjHECX5ISdr/VrEt0oYUac794CQ2hFjXRMT+yZTgbtPjpMjaUpH7yw=
 # SIG # End signature block

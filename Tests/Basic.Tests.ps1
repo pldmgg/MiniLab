@@ -91,16 +91,19 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'Create-TwoTierPKICFSSL' | Should Be $True
         $Commands -contains 'Deploy-HyperVVagrantBoxManually' | Should Be $True
         $Commands -contains 'Generate-Certificate' | Should Be $True
+        $Commands -contains 'Get-DockerInfo' | Should Be $True
         $Commands -contains 'Get-DSCEncryptionCert' | Should Be $True
         $Commands -contains 'Get-VagrantBoxManualDownload' | Should Be $True
         $Commands -contains 'Install-Docker' | Should Be $True
         $Commands -contains 'Manage-HyperVVM' | Should Be $True
+        $Commands -contains 'Move-DockerStorage' | Should Be $True
         $Commands -contains 'New-DomainController' | Should Be $True
         $Commands -contains 'New-RootCA' | Should Be $True
         $Commands -contains 'New-Runspace' | Should Be $True
         $Commands -contains 'New-SelfSignedCertificateEx' | Should Be $True
         $Commands -contains 'New-SubordinateCA' | Should Be $True
         $Commands -contains 'Recreate-MobyLinuxVM' | Should Be $True
+        $Commands -contains 'Switch-DockerContainerType' | Should Be $True
     }
 
     It "Module '$env:BHProjectName' Private Functions Are Available in Internal Scope" {
@@ -140,8 +143,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUqzoPsFb/spteR8pVDS6oiPyQ
-# dQqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUd5Ktg5dCdUCeODS3SAhAYXat
+# RwOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -198,11 +201,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOpFz5WU0RINPv17
-# f1PTrP7SVgLfMA0GCSqGSIb3DQEBAQUABIIBAJqlMEI3Ib8WIxLDVvsKSMfUI1Bp
-# GkB5TqXr1wUxMcoTM8ZhUUUkuJpxmcB85JabxLX0YD8I7gLKKwby0azZqVwtCXTa
-# CTirDOpkyBzkcYTdF+/vCi3CAK+0mP3TpuQd5FAp6PJoZQ7A81R8IZPQ8UpGvpst
-# EVT1Ug5ysslKaGbdgzJhP8z7vkXGNwYXFZIXMz1VBOuDZrDH2XnI/8hYoAjSCwyz
-# nbfrUxKJ/c5yj9gDbKgMp7Q69Y0hQEWc8UgKfWa29EdTl4VybsU3PBGyBVzpPoL2
-# RPWn8SDJqW76BNFpsINlri5kYzSaO/GSpHB1ER7charHeS5CJYUEcyIrj+w=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIu0YvrEpV09qN0e
+# 5xJurXf6NMCfMA0GCSqGSIb3DQEBAQUABIIBAEaGjJUhp3ZlM4bFk03lmYrOPJS1
+# m8opFJexr793PRcrwHB+oUCLHNvLrBGZFFBCdiLhiku+Gv0giOcJA12jrlpNUyXu
+# Rar420/Hfof9LLUxcB9fMGS9nAdQQoTmVSWnoyoDyitXebnaVBQUa+WPQFfITrYg
+# CJuRrIvWSGyCu0ZSC5klw1cSjM6I8d6NpqyJPsSn3YT7k+WiMjySjHSNeHwr8sEK
+# //Bk03INsbOypaPgm6tYFu+u43Arlnog++c+F5fKjgkESy7MQ60YssD9QESFk5IV
+# 4IVQenH7g7Sv8rnyeiWHThcD00OFxZfCw4BdLE0ZM40lyXtrVNZT7YDJBfw=
 # SIG # End signature block

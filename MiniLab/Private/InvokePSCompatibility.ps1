@@ -51,11 +51,13 @@ function InvokePSCompatibility {
     # Determine all current Locally Available Modules
     $AllLocallyAvailableModules = foreach ($ModPath in $AllWindowsPSModulePaths) {
         if (Test-Path $ModPath) {
-            $ModuleBase = $(Get-ChildItem -Path $ModPath -Directory).FullName
+            $ModuleBases = $(Get-ChildItem -Path $ModPath -Directory).FullName
 
-            [pscustomobject]@{
-                ModuleName          = $($ModuleBase | Split-Path -Leaf)
-                ManifestFileItem    = $(Get-ChildItem -Path $ModuleBase -Recurse -File -Filter "*.psd1")
+            foreach ($ModuleBase in $ModuleBases) {
+                [pscustomobject]@{
+                    ModuleName          = $($ModuleBase | Split-Path -Leaf)
+                    ManifestFileItem    = $(Get-ChildItem -Path $ModuleBase -Recurse -File -Filter "*.psd1")
+                }
             }
         }
     }
@@ -93,7 +95,7 @@ function InvokePSCompatibility {
         $GetModDepsSplatParams = @{}
 
         if (![string]::IsNullOrWhitespace($InvocationMethod)) {
-            if ($PathToFile) {
+            if ($PathToFile -or [bool]$($InvocationMethod -match "\.ps")) {
                 if (Test-Path $InvocationMethod) {
                     $GetModDepsSplatParams.Add("PathToScriptFile",$InvocationMethod)
                 }
@@ -587,11 +589,13 @@ function InvokePSCompatibility {
     # Uninstall the versions of Modules that don't work
     $AllLocallyAvailableModules = foreach ($ModPath in $AllWindowsPSModulePaths) {
         if (Test-Path $ModPath) {
-            $ModuleBase = $(Get-ChildItem -Path $ModPath -Directory).FullName
+            $ModuleBases = $(Get-ChildItem -Path $ModPath -Directory).FullName
 
-            [pscustomobject]@{
-                ModuleName          = $($ModuleBase | Split-Path -Leaf)
-                ManifestFileItem    = $(Get-ChildItem -Path $ModuleBase -Recurse -File -Filter "*.psd1")
+            foreach ($ModuleBase in $ModuleBases) {
+                [pscustomobject]@{
+                    ModuleName          = $($ModuleBase | Split-Path -Leaf)
+                    ManifestFileItem    = $(Get-ChildItem -Path $ModuleBase -Recurse -File -Filter "*.psd1")
+                }
             }
         }
     }
@@ -626,8 +630,8 @@ function InvokePSCompatibility {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQB4mfgYaQKkZPfIzKYVeT36X
-# aOigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUVJgMzUWcqIP9jQHunSkoQ3at
+# yL6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -684,11 +688,11 @@ function InvokePSCompatibility {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNuCzPAkC1smf6cF
-# uGlnZ9yWuGbYMA0GCSqGSIb3DQEBAQUABIIBAAk0amFBtrFae4nfJoMyQL0wK66m
-# fsiwAWtDHwaPLaZcoHeQsCoL9uFcwLh3efAIZr9ysymwct/ngH+S7LplkxusXpKM
-# RC/HfasCDd6uVxeoaic2EA8JQspesZU+i0xqwkUCkPl/RiVYXvMXE0UFQOTFTi9M
-# 7ZyygK2lkx70Se8z60vv2s0MIGLqL/k8wtKx63kuG8A351JLWeJoW48fiDQK5X1+
-# Xtz7YrE71gqUKR8VMOgNaP0OHDQOoWkEtxQIHgdzzLrdIyhM5Ly9WzWUd5gWgT/6
-# CtLq0mFNR/E+hFhI+Y4hmOXQakE4yB/HWR8GHyQbSw8aJtgFSY2LzzQU+E4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDyNibdLwzrF5884
+# kNIcsLN+Gx5AMA0GCSqGSIb3DQEBAQUABIIBADS+XKtKQvRyuVb6GBhStP9x3wIA
+# /BUATXc3CE1128XXL/gPnusX+ZMK8fSLnT3xbXlCfJLXWWJeFM1pq+PH6HXHMOdY
+# Pe26qWz+qqfxM7dfytRE5ykD/lgi3UKwo4C+khdORN3RsiueLcEATUt9IRqtyIyn
+# WYN+CwbtQQh6M6PB6M3KrdokBG4WZeyd3EcEbUGC+gms/27uhurXL15oc4LReBe3
+# bKZOV0V0KHPyym2blJamgF0Pr/T9MPbR4GRyQ/s3W28ramywTAhLGSayRtEWtiIp
+# TU8J6ePEp7HaM3Eibx/fJFBYTsA2EhIiRwnDX2RxZhW779T+I9dhMtvShcE=
 # SIG # End signature block

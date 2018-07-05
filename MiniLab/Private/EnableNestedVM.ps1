@@ -415,7 +415,6 @@ function EnableNestedVM {
     ##### BEGIN Main Body #####
 
     if (!$TryWithoutHypervisorInfo) {
-        Write-Host "here18"
         #Write-Host "`nThis function will set the following for $VMName in order to enable nesting:"
         Write-Host ""
 
@@ -550,11 +549,9 @@ function EnableNestedVM {
         }
 
         if ($char -match "Yes|yes|Y|y") {
-            Write-Host "here16"
             [System.Collections.ArrayList]$VMSettingsThatWereChanged = @()
 
             if ($NoMacAddressSpoofing) {
-                Write-Host "here15"
                 if ($Locale -eq "GuestVM") {
                     if (!$SkipHyperVInstallCheck) {
                         # Install Hyper-V Features if they haven't aready
@@ -675,7 +672,6 @@ function EnableNestedVM {
                     }
                 }
                 elseif ($Locale -match "Hypervisor|Elsewhere") {
-                    Write-Host "here13"
                     $FunctionsForRemoteUse = @(
                         ${Function:InstallFeatureDism}.Ast.Extent.Text
                         ${Function:InstallHyperVFeatures}.Ast.Extent.Text
@@ -948,8 +944,6 @@ function EnableNestedVM {
             $($VMInfo.MacAddressSpoofing -eq 'Off' -and !$NoMacAddressSpoofing) -or
             $VMInfo.MemorySize -ne $FinalMem)
             ) {
-                Write-Host "Here23"
-
                 $HypervisorGuestVMChangesSB = {
                     [System.Collections.ArrayList]$VMSettingsThatWereChangedInSB = @()
                     
@@ -1011,7 +1005,6 @@ function EnableNestedVM {
                         $null = $VMSettingsThatWereChangedInSB.Add("AdjustStartupMemory")
                     }
                     if ($using:VMInfo.ProcessorCount -lt 2) {
-                        Write-Host "Here68"
                         Set-VMProcessor -VMname $using:VMName -Count 2
                         #Add-Member -InputObject $VMSettingsThatWereChanged NoteProperty -Name "UpProcessorCount" -Value 2
                         $null = $VMSettingsThatWereChangedInSB.Add("UpProcessorCount")
@@ -1046,7 +1039,6 @@ function EnableNestedVM {
                 }
         
                 try {
-                    Write-Host "here24"
                     #$GuestVMAndHVInfo | Export-Clixml $HOME\Downloads\GuestVMAndHVInfo.xml
                     #$InvCmdSplatParams | Export-Clixml $HOME\Downloads\InvCmdSplatParams.xml
                     $VMSettingsThatWereChangedPrep = Invoke-Command @InvCmdSplatParams
@@ -1059,7 +1051,6 @@ function EnableNestedVM {
                     }
                 }
                 catch {
-                    Write-Host "here25"
                     Write-Error $_
                     Write-Error "The EnableNestedVM function was unable to report on `$VMSettingsThatWereChanged by remoting into the Hyper-V Host! Halting!"
                     $global:FunctionResult = "1"
@@ -1073,8 +1064,6 @@ function EnableNestedVM {
             $global:FunctionResult = "0"
             return
         }
-
-        Write-Host "here22"
     }
     if ($TryWithoutHypervisorInfo) {
         if ($TryWithoutHypervisorInfo -and !$NoMacAddressSpoofing) {
@@ -1488,8 +1477,8 @@ function EnableNestedVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUHF5DG6DWgBn1iXH71apYVzk/
-# 6sCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUw9sG6mouTd3tw5eHbmoQxaLT
+# 6sigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1546,11 +1535,11 @@ function EnableNestedVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCOH6yZ/kYfK6W97
-# gbIg/mHesbJHMA0GCSqGSIb3DQEBAQUABIIBAAqvpVYS/e1sSreOnm7UJXSHJhxO
-# 8EznhTWYjRwFHN/e31ww+dxSEt2aE9sGW/Td+gFdfgCS4LKutnuFDfpUR6JMuTKb
-# 2UF5Eqk6OFZlyMqoVUIMZaJmNCqhuSFX6jB1Ui1sRFC5kE6oDdlTOM7g2naJ21qn
-# LRv1bFWiaq8q+CThLXFnZoFeIDkoPFiZ/G2SJeMy0KsF2LVKlgvBHgARXTFgEnEq
-# uRblpizhr/h6KXigcjWu6Tu3KTKQWS6KoHQlngjGG3+FAWipknG4pU5iKZf3F5mL
-# S9D9HsdyIabFgc6tXRqwu43R0hH40vghI2aA8P9pHeEKC8Kg1NOqEXtDh1c=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFK/WIVJBbUHaXimD
+# kxnY2aUEf6DNMA0GCSqGSIb3DQEBAQUABIIBABJZEX8YQxuzkZo+zv4yr/bfEmwf
+# M98csi5tAEeSXvknS99kYUWCVOqWoluLJYO9zshPZ9wktIqqwIt7dZMTIabhKHjR
+# R+xJ0LEAhVaIBLvYrQGLgIk/00K8/kW1ec+h+VFb2Nzo+5TscnwFCaRfNFEDupc1
+# DfRw4yevP0EGLK5vTEix2/5Xim/pz14/BKirYVJ5j7xAd97a2b6OICXLrlfO9B4Y
+# iJJGhl00Fqsc2oCfrQNIAZSLnSdn4FQgAXf7k1LkdWUhgG8Ty9vGSiMvHYoxsTwE
+# oBov2at1os8EzGQIlK/Ym1zQujQbbIUYtROzaJmHBdBxzUWdY1zWZgSOfsE=
 # SIG # End signature block

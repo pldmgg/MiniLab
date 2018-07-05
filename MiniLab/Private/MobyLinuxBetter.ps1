@@ -17,7 +17,7 @@ function MobyLinuxBetter {
         [Parameter(ParameterSetName='Stop',Mandatory=$false)][switch] $Stop
     )
 
-    Write-Output "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
+    Write-Host "Script started at $(Get-Date -Format "HH:mm:ss.fff")"
 
     # Make sure we stop at Errors unless otherwise explicitly specified
     $ErrorActionPreference = "Stop"
@@ -80,21 +80,21 @@ function MobyLinuxBetter {
         $vmSwitch = Get-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
         $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName -ea SilentlyContinue
         if ($vmSwitch -and $vmNetAdapter) {
-            Write-Output "Using existing Switch: $SwitchName"
+            Write-Host "Using existing Switch: $SwitchName"
         } else {
-            Write-Output "Creating Switch: $SwitchName..."
+            Write-Host "Creating Switch: $SwitchName..."
 
             Remove-VMSwitch $SwitchName -Force -ea SilentlyContinue
             $null = New-VMSwitch $SwitchName -SwitchType Internal -ea SilentlyContinue
             $vmNetAdapter = Get-VMNetworkAdapter -ManagementOS -SwitchName $SwitchName
 
-            Write-Output "Switch created."
+            Write-Host "Switch created."
         }
 
         # Make sure there are no lingering net adapter
         $netAdapters = Get-NetAdapter | Where-Object { $_.Name.StartsWith("vEthernet ($SwitchName)") }
         if (($netAdapters).Length -gt 1) {
-            Write-Output "Disable and rename invalid NetAdapters"
+            Write-Host "Disable and rename invalid NetAdapters"
 
             $now = (Get-Date -Format FileDateTimeUniversal)
             $index = 1
@@ -112,7 +112,7 @@ function MobyLinuxBetter {
         if ($networkAdapter.InterfaceAlias -eq $(Get-NetIPAddress -IPAddress $switchAddress -ea SilentlyContinue).InterfaceAlias) {
             Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
             Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
-            Write-Output "Using existing Switch IP address"
+            Write-Host "Using existing Switch IP address"
             return
         }
 
@@ -122,11 +122,11 @@ function MobyLinuxBetter {
         
         Disable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
         Enable-NetAdapterBinding -Name $networkAdapter.Name -ComponentID ms_server -ea SilentlyContinue
-        Write-Output "Set IP address on switch"
+        Write-Host "Set IP address on switch"
     }
 
     function Remove-Switch {
-        Write-Output "Destroying Switch $SwitchName..."
+        Write-Host "Destroying Switch $SwitchName..."
 
         # Let's remove the IP otherwise a nasty bug makes it impossible
         # to recreate the vswitch
@@ -152,7 +152,7 @@ function MobyLinuxBetter {
                 Fatal "Multiple VMs exist with the name $VmName. Delete invalid ones or reset Docker to factory defaults."
             }
         } else {
-            Write-Output "Creating VM $VmName..."
+            Write-Host "Creating VM $VmName..."
 
             # Create the Snapshot Directory if it doesn't already exist
             $SnapShotDir = $($VhdPathOverride -split "Virtual Hard Disks")[0] + "Snapshots"
@@ -160,7 +160,6 @@ function MobyLinuxBetter {
                 $null = New-Item -ItemType Directory -Path $SnapShotDir -Force
             }
 
-            Write-Output "Creating VM $VmName..."
             $vm = Hyper-V\New-VM -Name $VmName -Generation 2 -NoVHD
 
             $SetVMSplatParams = @{
@@ -178,11 +177,11 @@ function MobyLinuxBetter {
         }
 
         if ($vm.State -ne "Off") {
-            Write-Output "VM $VmName is $($vm.State). Cannot change its settings."
+            Write-Host "VM $VmName is $($vm.State). Cannot change its settings."
             return
         }
 
-        Write-Output "Setting CPUs to $CPUs and Memory to $Memory MB"
+        Write-Host "Setting CPUs to $CPUs and Memory to $Memory MB"
         $Memory = ([Math]::min($Memory, (Hyper-V\Get-VMMemory -VMName $VMName).MaximumPerNumaNode))
         Hyper-V\Set-VM -Name $VMName -MemoryStartupBytes ($Memory*1024*1024) -ProcessorCount $CPUs -StaticMemory
 
@@ -224,38 +223,38 @@ function MobyLinuxBetter {
         }
 
         if (!$vhd) {
-            Write-Output "Creating dynamic VHD: $VmVhdFile"
+            Write-Host "Creating dynamic VHD: $VmVhdFile"
             $vhd = New-VHD -ComputerName localhost -Path $VmVhdFile -Dynamic -SizeBytes $VhdSize
         }
 
         if ($vm.HardDrives.Path -ne $VmVhdFile) {
             if ($vm.HardDrives) {
-                Write-Output "Remove existing VHDs"
+                Write-Host "Remove existing VHDs"
                 Hyper-V\Remove-VMHardDiskDrive $vm.HardDrives -ea SilentlyContinue
             }
 
-            Write-Output "Attach VHD $VmVhdFile"
+            Write-Host "Attach VHD $VmVhdFile"
             Add-VMHardDiskDrive -VMName $vm.Name -Path $VmVhdFile
         }
 
         $vmNetAdapter = Get-VMNetworkAdapter -VMName $vm.Name
         if (!$vmNetAdapter) {
-            Write-Output "Attach Net Adapter"
+            Write-Host "Attach Net Adapter"
             $vmNetAdapter = Hyper-V\Add-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName -Passthru
         }
 
-        Write-Output "Connect Internal Switch $SwitchName"
+        Write-Host "Connect Internal Switch $SwitchName"
         Hyper-V\Connect-VMNetworkAdapter -VMName $VMName -SwitchName $SwitchName
         #Connect-VMNetworkAdapter -VMName $vm.Name -Name $vmNetAdapter.Name -SwitchName $SwitchName
         #$vmNetAdapter | Hyper-V\Connect-VMNetworkAdapter -VMSwitch $(Hyper-V\Get-VMSwitch -ComputerName localhost $SwitchName -SwitchType Internal)
 
         if ($vm.DVDDrives) {
-            Write-Output "Remove existing DVDs"
+            Write-Host "Remove existing DVDs"
             $ExistingDvDDriveInfo = Get-VMDvdDrive -VMName $VMName
             Hyper-V\Remove-VMDvdDrive -VMName $VMName -ControllerNumber $ExistingDvDDriveInfo.ControllerNumber -ControllerLocation $ExistingDvDDriveInfo.ControllerLocation
         }
 
-        Write-Output "Attach DVD $IsoFile"
+        Write-Host "Attach DVD $IsoFile"
         Add-VMDvdDrive -VMName $vm.Name -Path $IsoFile
 
         if ($PSVersionTable.PSEdition -eq "Core") {
@@ -290,46 +289,46 @@ function MobyLinuxBetter {
         foreach ($IntegrationService in $CurrentIntegrationServices) {
             if ($DesiredIntegrationServices -contains $IntegrationService.Name -and !$IntegrationService.Enabled) {
                 $null = Enable-VMIntegrationService -VMName $vm.Name -Name $IntegrationService.Name
-                Write-Output "Enabled $($_.Name)"
+                Write-Host "Enabled $($IntegrationService.Name)"
             } else {
                 $null = Disable-VMIntegrationService -VMName $vm.Name -Name $IntegrationService.Name
-                Write-Output "Disabled $($_.Name)"
+                Write-Host "Disabled $($IntegrationService.Name)"
             }
         }
         #$vm | Hyper-V\Disable-VMConsoleSupport
         Hyper-V\Enable-VMConsoleSupport -VMName $VMName
 
-        Write-Output "VM created."
+        Write-Host "VM created."
     }
 
     function Remove-MobyLinuxVM {
-        Write-Output "Removing VM $VmName..."
+        Write-Host "Removing VM $VmName..."
 
         Remove-VM $VmName -Force -ea SilentlyContinue
 
         if (!$KeepVolume) {
             $VmVhdFile = Get-Vhd-Root
-            Write-Output "Delete VHD $VmVhdFile"
+            Write-Host "Delete VHD $VmVhdFile"
             Remove-Item $VmVhdFile -ea SilentlyContinue
         }
     }
 
     function Start-MobyLinuxVM {
-        Write-Output "Starting VM $VmName..."
+        Write-Host "Starting VM $VmName..."
 
         $vm = Get-VM $VmName -ea SilentlyContinue
 
         if ($vm.DVDDrives) {
-            Write-Output "Remove existing DVDs"
+            Write-Host "Remove existing DVDs"
             Remove-VMDvdDrive $vm.DVDDrives -ea SilentlyContinue
         }
 
-        Write-Output "Attach DVD $IsoFile"
+        Write-Host "Attach DVD $IsoFile"
         Add-VMDvdDrive -VMName $vm.Name -ControllerNumber 0 -ControllerLocation 1 -Path $IsoFile
 
         if (Test-Path $confIsoFile) {
             if ((Get-Item $confIsoFile).length -gt 0) {
-                Write-Output "Attach Config ISO $confIsoFile"
+                Write-Host "Attach Config ISO $confIsoFile"
                 if ((Get-VMScsiController -VMName $vm.Name).length -le 1) {
                     Add-VMScsiController -VMName $vm.Name
                 }
@@ -354,7 +353,7 @@ function MobyLinuxBetter {
     function Stop-MobyLinuxVM {
         $vms = Get-VM $VmName -ea SilentlyContinue
         if (!$vms) {
-            Write-Output "VM $VmName does not exist"
+            Write-Host "VM $VmName does not exist"
             return
         }
 
@@ -367,7 +366,7 @@ function MobyLinuxBetter {
         Param($vm)
 
         if ($vm.State -eq 'Off') {
-            Write-Output "VM $VmName is stopped"
+            Write-Host "VM $VmName is stopped"
             return
         }
 
@@ -378,24 +377,24 @@ function MobyLinuxBetter {
 
             $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
             if (!$vm) {
-                Write-Output "VM with Name $VmName does not exist"
+                Write-Host "VM with Name $VmName does not exist"
                 return
             }
 
             $shutdownService = Hyper-V\Get-VMIntegrationService -VMName $VmName -Name Shutdown -ea SilentlyContinue
             if ($shutdownService -and $shutdownService.PrimaryOperationalStatus -eq 'Ok') {
-                Write-Output "Shutdown VM $VmName..."
+                Write-Host "Shutdown VM $VmName..."
                 Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -Force -ea SilentlyContinue
                 if ($vm.State -eq 'Off') {
                     return
                 }
             }
 
-            Write-Output "Turn Off VM $VmName..."
+            Write-Host "Turn Off VM $VmName..."
             Hyper-V\Stop-VM -VMName $vm.Name -Confirm:$false -TurnOff -Force -ea SilentlyContinue
         }
 
-        Write-Output "Stopping VM $VmName..."
+        Write-Host "Stopping VM $VmName..."
         $null = New-Runspace -RunspaceName "StopVM$VmName" -ScriptBlock $code
         $Counter = 0
         while ($(Hyper-V\Get-VM -Name $VmName).State -ne "Off") {
@@ -406,7 +405,7 @@ function MobyLinuxBetter {
 
         $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
         if ($vm.State -eq 'Off') {
-            Write-Output "VM $VmName is stopped"
+            Write-Host "VM $VmName is stopped"
             return
         }
 
@@ -415,11 +414,11 @@ function MobyLinuxBetter {
         for ($count = 1; $count -le 10; $count++) {
             $ProcessID = (Get-WmiObject -Namespace root\virtualization\v2 -Class Msvm_ComputerSystem -Filter "Name = '$vmId'").ProcessID
             if (!$ProcessID) {
-                Write-Output "VM $VmName killed. Waiting for state to change"
+                Write-Host "VM $VmName killed. Waiting for state to change"
                 for ($count = 1; $count -le 20; $count++) {
                     $vm = Hyper-V\Get-VM -Name $VmName -ea SilentlyContinue
                     if ($vm.State -eq 'Off') {
-                        Write-Output "Killed VM $VmName is off"
+                        Write-Host "Killed VM $VmName is off"
                         #Remove-Switch
                         $oldKeepVolumeValue = $KeepVolume
                         $KeepVolume = $true
@@ -433,7 +432,7 @@ function MobyLinuxBetter {
             }
 
             if ($ProcessID) {
-                Write-Output "Kill VM $VmName process..."
+                Write-Host "Kill VM $VmName process..."
                 Stop-Process $ProcessID -Force -Confirm:$false -ea SilentlyContinue
             }
             Start-Sleep -Seconds 1
@@ -464,8 +463,8 @@ function MobyLinuxBetter {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU4Bj4d600ua/GCtETmgjubtAV
-# H5ugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUTT8lvwPhjXv4VLyjvbspKmbG
+# ui2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -522,11 +521,11 @@ function MobyLinuxBetter {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKZo3ypTJV436Equ
-# vFJ62atqxvXpMA0GCSqGSIb3DQEBAQUABIIBAKYroa+ZtRdRyIjbjELEPPqJ3jbz
-# eoxJ9OT97nFjcvNx2zfoiBSfCWjIe7+K7zR2s2vHvhKeJr8wc2p63JBn9bTSMLiA
-# AbnZibcqn+gPQbwyw2mqDGo3h48brfUlWi64lGG9fuWa6LOUTbL2G4NDxOF/bnkv
-# 8jG/O/KknJhMIG93LcNuA8HGxYLA60ubqwlsjWMuKZINJ1fcPJzhQ+y2g/pRKyR+
-# Nt4JqJz49kCog1tYg6IPrU0cLtDyyGpN76vHizdWtgwySj7smNd1oiqhNMB0nmtJ
-# bvas/96qwEfcVDRxCEprGeGJF0VtSR4xMIqvdyILmiuznyPU2shBZDnJhSo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHB+hhiDzv995QZP
+# HX4Ld7thv2h9MA0GCSqGSIb3DQEBAQUABIIBAJHFBRlLrsee/BQVcRwscyY4rcSt
+# syiSXrLcVzeTpYZSby/dinVyXcgLtjp5ZVeGuZ9iRb33iAB90a4yb629q366gzRc
+# iQRVoIiMI7ieLTOD56PYaAWav363Dv/PHo3aq6Aa2XRtEPBH8W4I7g88z010+SBt
+# xS8PkDF2rNqOzldlj4J9g8LbOnuQmP/Jlkx+Oi0NROVMUcBQ10Ryrql3q/jncqHW
+# xtcnEKPN7KZ3PnCP+yoPvYAPUygu1pvykJmlxzY0LIg1Qywt3txvEmHHKqJHd+XE
+# blKf+OtUSEh49ktAcZ3zC+Bx7tm0DsBOjD3/Dre2FQtddGQsci8Ha7ZvlOc=
 # SIG # End signature block

@@ -275,7 +275,6 @@ function Install-Docker {
 
         try {
             try {
-                Write-Host "HereB"
                 $HypervisorNetworkInfo = ResolveHost -HostNameOrIP $HyperVLocationToResolve -ErrorAction Stop
             }
             catch {
@@ -685,7 +684,6 @@ function Install-Docker {
     if ($InstallEnvironment -eq "BareMetal") {
         # Determine where this function is being run
         try {
-            Write-Host "HereC"
             $HostNameNetworkInfo = ResolveHost -HostNameOrIP $TargetHostNameOrIP
         }
         catch {
@@ -894,8 +892,8 @@ function Install-Docker {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUP8dyhKDMI/sFAp87JIRrnYqB
-# Syagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUeEITex0I1dVXffWNaef2sncW
+# Q2ugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -952,11 +950,11 @@ function Install-Docker {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBzZTlbDUEemrFch
-# 8DF2m8SwiqQbMA0GCSqGSIb3DQEBAQUABIIBAIgIm7gXaBtNvxVLIZWmUQPkG6ip
-# p/pjTXI3nL4eMF/MzToNLMMTYNEz/KvKFZAVB5I6Q68DKrGL0lPmCRimwbOI2uO9
-# 1+ITm1h6aAst+hBxCuKr/PRuQE/o21KUdC3S97NwOCi+PVArQqfgIpXzbTbmKsRi
-# yD+WrXv4aRbeviGUjZpNaBliIuwNVaCDLFjevnKKBw2A1D+8xl4Ngo5SoWkKYugV
-# MAwpbtNBzknCJZ000K6ZJ7v0F3dDPMg6Nl3ejRTpduRAlgfwuLK3ITv8YpKaUHlw
-# otOjMKW6ropbOr61+C87hD3XTEHxAUy6vXK1Hgktp4NYbvFumCWlPzE1dpw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDYjITjxVINZI04n
+# 4OyQU8a8Kdq7MA0GCSqGSIb3DQEBAQUABIIBAAKemNzObPWfrczQNpAZOvnkgZNf
+# KD5FSr1SLRxVd7zpVLfYBSuY1ZY4Q6jk1sT13QkB3UehsSPyzwREEIkzjUxKIBHc
+# eOo/Cgabo6O1VxWwrza0CqCwIEHCtdPpFVuaIJduNXduECAK8mryloOVkZiJ77R0
+# XkMNLsbLQAIHXQoz777dzz55iXJgmxrHjJOwwhdFJZSBYvUhyfzh6SUH4+Ul19KE
+# R93h40nOyk5TzUvAnOKIAq7+JroS2img8ut7LlAtdnuEXjzIt35SROQQCiOeUal6
+# ZQssCfmPWaISLkhaEUnT3mJlhU8GH9AfRo7aiMu5btd7RQkwSFXpzZOBO58=
 # SIG # End signature block

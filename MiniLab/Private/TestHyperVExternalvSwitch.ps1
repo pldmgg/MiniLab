@@ -43,6 +43,7 @@ function TestHyperVExternalvSwitch {
         if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0) {
             if (!$AllowRestarts) {
                 Write-Warning "You must restart $env:ComputerName before the TestHyperVExternalvSwitch function can proceed! Halting!"
+                # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
                 Write-Output "RestartNeeded"
                 $global:FunctionResult = "1"
                 Pop-Location
@@ -340,6 +341,7 @@ NE5OgEXk2wVfZczCZpigBKbKZHNYcelXtTt/nP3rsCuGcM4h53s=
     if (!$VMDeployed -and $DeployVMResult -eq "RestartNeeded") {
         if (!$AllowRestarts) {
             Write-Warning "You must restart $env:ComputerName before the TestHyperVExternalvSwitch can proceed! Halting!"
+            # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
             Write-Output "RestartNeeded"
             $global:FunctionResult = "1"
             Pop-Location
@@ -479,8 +481,8 @@ NE5OgEXk2wVfZczCZpigBKbKZHNYcelXtTt/nP3rsCuGcM4h53s=
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUOIzvd7ughWMYCGe6hUO2Q0Ry
-# Ju6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUu884UZ5r8KxJRcEIedc3oYGk
+# lRugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -537,11 +539,11 @@ NE5OgEXk2wVfZczCZpigBKbKZHNYcelXtTt/nP3rsCuGcM4h53s=
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDTDyIc4Rek6CoSt
-# OylDnj6FRp/CMA0GCSqGSIb3DQEBAQUABIIBAGrbjdzELniNurjXy53IZDqKzPr0
-# fPtOeku+ykZk78tspUUaBfF2vO4xjuEGRXe5evQv7QDlFOoHyyLYZs+9EO4/k4IH
-# VZTXSThFdL/twKwHAFycGaUlRj3ooZeAeo+Iaq5ZEBymlIEzRsoox6BKpBw+TBXp
-# 4z8M7oah+lFbMfdm7OV8Es1rSKLiccrjB5gUvwHkRS43aQczCJthNkgBG//tFWgC
-# eAhvVPrStfTlOrWjdckK7ilJJfl45qIkOCcGB/5yHNOxUAwheUpdbwv945t8eS32
-# fMfmfWa2smhxXHTy+t38j/GxnmWbvx3l5dnUwWR6sg0jV+PKFAaz4K6DKq4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHRrz+cu9cVpcF6I
+# 3e+f0uqf8lfLMA0GCSqGSIb3DQEBAQUABIIBADfczVZ+FscAbZEag3VdCru0T+ky
+# zF3JEP7DE7VEummcc9AA9qILUsab1oRbEPxz+nSKLw2v5V5sQBB6byaq4kItcFkH
+# zkzQ/uVsImvCsu0lWlA5dCcqBF6EI4dtFFsBye+vaQ5AI4WOZl3WXRNC1Y0c4d1r
+# b070hx6+9IAwURUSqqkhmlUcwpbJzFPlvktQ1HqEJcaUUD0N/6AJxyuP15PzHPGH
+# 4pA1+ZR9qZcFo/mxm4RsvZDknlaAhMcsGTJuYx4OrRagcjino3QjOzmuJh61ZM4W
+# v1WqmcexEqJYylWGIAGLIuNu6AIDpqCQhMYZLuxnYgzFxHJC0H2wxhKAqTU=
 # SIG # End signature block

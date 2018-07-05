@@ -243,6 +243,7 @@ function Create-RootCA {
             if ($HyperVFeaturesInstallResults.InstallResults.Count -gt 0 -or $InstallContainersFeatureDismResult.RestartNeeded) {
                 if (!$AllowRestarts) {
                     Write-Warning "You must restart $env:ComputerName before proceeding! Halting!"
+                    # IMPORTANT NOTE: The below Write-Output "RestartNeeded" is necessary
                     Write-Output "RestartNeeded"
                     $global:FunctionResult = "1"
                     return
@@ -656,8 +657,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQURLKrXCKZN12039dB12aDhbaj
-# 3eWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUcubBLDxA2WNArM/yhiS0bo/s
+# yKugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -714,11 +715,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFtv39hiMHzWlSa1
-# JOEJ3F+yeVOyMA0GCSqGSIb3DQEBAQUABIIBAJPeTWY9AMH6gfJgLJAfbr8ATLwF
-# 63hQR7OPH/xfmlG7xENfCAGI5EgIxCJkzwkYAfEtRB+mY1lNrutbaIBrxvK0sHSj
-# 8p2xOyIOekxARP7IEuxkFh/QUd4YaPwnDU+ZbVdh9pIwKKI9X0vJhdsnAXeQg2Gg
-# LHs6vOVBX9kOA47Wdmcx4hBUr48OYO/xx4oFBpdjJIHoyCMzhU0f2uta58rZO/ff
-# dbRuDFkxzgVA6WMCOjODEAQL775Z5bzNO3Ko+lHiaaVMg7vTlFUOp6ULCQft+iPi
-# XOBicRWlg5ee6elkHSSO+XaDwD1sdK3HlDkzmjfShvCSfLQdvyz8fGXXR2w=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKRufj8dRYxN/nkX
+# t68SkQkx3+6oMA0GCSqGSIb3DQEBAQUABIIBALyIVGTvnP/jzHAdnuzF2a3qB94Q
+# 5zI+JSw+3PVaKSPLu+UZVNfgXSKF0TJtRAkKVe9lE0jpDiI5WJIYtdj6mQqfjiZ1
+# WgssmTji4TQAfrea294bcEnWdM8SIo10bSrP4ugiVoBPlTvtPWwhDcjrcBHAJDyx
+# +xsxkO3j4ncvGf4JBhbdw432uEdJdUqfzn+50oj9K6efRFhm2BT+9Nq9afdNEL+b
+# /IN/8kKkzcO0C5cRj0xobChMeV87nOiivSsoqiqZQp59kv3tW7syxdr3N3a47cyi
+# 6t59fP3HXw89ePdAyceflz87Uw/WNwrLOFC1UVP64CvcH5I9ZcDv/yWT2yw=
 # SIG # End signature block
