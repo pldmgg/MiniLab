@@ -4,6 +4,8 @@
 # MiniLab
 Setup a very basic Windows Lab Environment from scratch, or add specific infrastructure components to your existing Domain. Leverages Vagrant Boxes to make deployment faster/easier.
 
+Compatible with Windows PowerShell 5.1 and PowerShell Core 6.X (on Windows)
+
 ## Getting Started
 
 ```powershell

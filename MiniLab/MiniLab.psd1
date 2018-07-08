@@ -18,7 +18,7 @@ ModuleVersion = '0.9.3'
 # CompatiblePSEditions = @()
 
 # ID used to uniquely identify this module
-GUID = 'e5e84be6-c8ec-4f1b-8136-d916d50d3d15'
+GUID = '0b8c2170-567a-4535-909a-5185e3715264'
 
 # Author of this module
 Author = 'pldmgg'
@@ -69,13 +69,13 @@ PowerShellVersion = '5.1'
 # NestedModules = @()
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-FunctionsToExport = 'Create-Domain','Create-RootCA','Create-SubordinateCA','Create-TwoTierPKI',
-                    'Create-TwoTierPKICFSSL','Deploy-HyperVVagrantBoxManually',
+FunctionsToExport = 'Add-WinRMTrustedHost','Create-Domain','Create-RootCA','Create-SubordinateCA',
+                    'Create-TwoTierPKI','Create-TwoTierPKICFSSL','Deploy-HyperVVagrantBoxManually',
                     'Generate-Certificate','Get-DockerInfo','Get-DSCEncryptionCert',
-                    'Get-VagrantBoxManualDownload','Install-Docker','New-Runspace',
-                    'Manage-HyperVVM','Move-DockerStorage','New-DomainController','New-RootCA',
-                    'New-SelfSignedCertificateEx','New-SubordinateCA','Recreate-MobyLinuxVM',
-                    'Switch-DockerContainerType'
+                    'Get-EncryptionCert','Get-VagrantBoxManualDownload','Install-Docker',
+                    'Join-LinuxToAD','New-Runspace','Manage-HyperVVM','Move-DockerStorage',
+                    'New-DomainController','New-RootCA','New-SelfSignedCertificateEx',
+                    'New-SubordinateCA','Recreate-MobyLinuxVM','Switch-DockerContainerType'
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 CmdletsToExport = '*'

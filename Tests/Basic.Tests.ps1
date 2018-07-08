@@ -84,6 +84,7 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'TestIsValidIPAddress' | Should Be $False
         $Commands -contains 'UnzipFile' | Should Be $False
         
+        $Commands -contains 'Add-WinRMTrustedHost' | Should Be $True
         $Commands -contains 'Create-Domain' | Should Be $True
         $Commands -contains 'Create-RootCA' | Should Be $True
         $Commands -contains 'Create-SubordinateCA' | Should Be $True
@@ -93,8 +94,10 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'Generate-Certificate' | Should Be $True
         $Commands -contains 'Get-DockerInfo' | Should Be $True
         $Commands -contains 'Get-DSCEncryptionCert' | Should Be $True
+        $Commands -contains 'Get-EncryptionCert' | Should Be $True
         $Commands -contains 'Get-VagrantBoxManualDownload' | Should Be $True
         $Commands -contains 'Install-Docker' | Should Be $True
+        $Commands -contains 'Join-LinuxToAD' | Should Be $True
         $Commands -contains 'Manage-HyperVVM' | Should Be $True
         $Commands -contains 'Move-DockerStorage' | Should Be $True
         $Commands -contains 'New-DomainController' | Should Be $True
@@ -143,8 +146,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUd5Ktg5dCdUCeODS3SAhAYXat
-# RwOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUnugjtfreSYiojvpBR3RcziO1
+# xFygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -201,11 +204,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIu0YvrEpV09qN0e
-# 5xJurXf6NMCfMA0GCSqGSIb3DQEBAQUABIIBAEaGjJUhp3ZlM4bFk03lmYrOPJS1
-# m8opFJexr793PRcrwHB+oUCLHNvLrBGZFFBCdiLhiku+Gv0giOcJA12jrlpNUyXu
-# Rar420/Hfof9LLUxcB9fMGS9nAdQQoTmVSWnoyoDyitXebnaVBQUa+WPQFfITrYg
-# CJuRrIvWSGyCu0ZSC5klw1cSjM6I8d6NpqyJPsSn3YT7k+WiMjySjHSNeHwr8sEK
-# //Bk03INsbOypaPgm6tYFu+u43Arlnog++c+F5fKjgkESy7MQ60YssD9QESFk5IV
-# 4IVQenH7g7Sv8rnyeiWHThcD00OFxZfCw4BdLE0ZM40lyXtrVNZT7YDJBfw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFf+tZjoSGzoemwH
+# 8R1Z9C05YC20MA0GCSqGSIb3DQEBAQUABIIBAGh+fxQcFWb4M/wgWwonp6lwyZyz
+# LRxPqs6GT30Zg/g1UbuFPSDYwrnmBp6EeoiZKvSEy8K0r/B/h/ta84D140GJdkoq
+# LvR6wq7TQQ3ZVXUaH+6H0XxG6V9qKnV1P58856sA7lsq9jCDxL+vU7KmDLv930MI
+# pbGxZj7EObxIGVMq9VSF//3fvboN2Q48CJS2PRqN7TZ9571CmT8a5J22HlOsUnfN
+# qFTXrkqAxHxQC/Hcbuq+Ni5LHVwmSi2spGOm3U6e2fShX7gEcFrZ4LrAjFWzYocU
+# dLqbSHwCOln/11JBuKAYZYcrQnwbApo7uE7vqw088lqZn9mGdHSLg0IpzrM=
 # SIG # End signature block

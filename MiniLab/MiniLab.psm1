@@ -21,28 +21,73 @@ if (Test-Path "$PSScriptRoot\module.requirements.psd1") {
     $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"} | foreach {$null = $ModulesToinstallAndImport.Add($_)}
 }
 
-# NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
-# add it the the -RequiredModules string array just to be certain
-$InvModDepSplatParams = @{
-    RequiredModules                     = $ModulesToInstallAndImport
-    InstallModulesNotAvailableLocally   = $True
-    ErrorAction                         = "SilentlyContinue"
-    WarningAction                       = "SilentlyContinue"
-}
-$ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
-
-if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
-    Write-Warning "The following Modules were not able to be loaded:`n$($LoadModuleDependenciesResult.UnacceptableUnloadedModules.ModuleName -join "`n")"
-
-    if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
-
-        Write-Warning "'MiniLab' will probably not work with PowerShell Core..."
-
+if ($ModulesToInstallAndImport.Count -gt 0) {
+    # NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
+    # add it the the -RequiredModules string array just to be certain
+    $InvModDepSplatParams = @{
+        RequiredModules                     = $ModulesToInstallAndImport
+        InstallModulesNotAvailableLocally   = $True
+        ErrorAction                         = "SilentlyContinue"
+        WarningAction                       = "SilentlyContinue"
     }
+    $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
 }
 
 # Public Functions
 
+
+function Add-WinRMTrustedHost {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$True)]
+        [string]$NewRemoteHost
+    )
+
+    # Make sure WinRM in Enabled and Running on $env:ComputerName
+    try {
+        $null = Enable-PSRemoting -Force -ErrorAction Stop
+    }
+    catch {
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
+
+        try {
+            $null = Enable-PSRemoting -Force
+        }
+        catch {
+            Write-Error $_
+            Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
+    if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
+        $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+    }
+
+    # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
+    $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+    [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
+
+    $HostsToAddToWSMANTrustedHosts = @($NewRemoteHost)
+    foreach ($HostItem in $HostsToAddToWSMANTrustedHosts) {
+        if ($CurrentTrustedHostsAsArray -notcontains $HostItem) {
+            $null = $CurrentTrustedHostsAsArray.Add($HostItem)
+        }
+        else {
+            Write-Warning "Current WinRM Trusted Hosts Config already includes $HostItem"
+            return
+        }
+    }
+    $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
+    Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+}
 
 
 <#
@@ -7779,6 +7824,88 @@ function Get-DSCEncryptionCert {
 }
 
 
+<#
+    .SYNOPSIS
+        This function creates a New Self-Signed Certificate meant to be used for DSC secret encryption and exports it to the
+        specified directory.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER MachineName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the Subject Alternative Name (SAN) on the Self-Signed Certificate.
+
+    .PARAMETER ExportDirectory
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the full path to a directory that will contain the new Self-Signed Certificate.
+
+    .EXAMPLE
+        # Import the MiniLab Module and -
+
+        PS C:\Users\zeroadmin> Get-EncryptionCert -CommonName "EncryptionCert" -ExportDirectory "$HOME\EncryptionCerts"
+
+#>
+function Get-EncryptionCert {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$True)]
+        [string]$CommonName,
+
+        [Parameter(Mandatory=$True)]
+        [string]$ExportDirectory
+    )
+
+    if (!$(Test-Path $ExportDirectory)) {
+        Write-Error "The path '$ExportDirectory' was not found! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    $CertificateFriendlyName = $CommonName
+    $Cert = Get-ChildItem -Path "Cert:\LocalMachine\My" | Where-Object {
+        $_.FriendlyName -eq $CertificateFriendlyName
+    } | Select-Object -First 1
+
+    if (!$Cert) {
+        $NewSelfSignedCertExSplatParams = @{
+            Subject             = "CN=$CommonName"
+            EKU                 = @('1.3.6.1.4.1.311.80.1','1.3.6.1.5.5.7.3.1','1.3.6.1.5.5.7.3.2')
+            KeyUsage            = 'DigitalSignature, KeyEncipherment, DataEncipherment'
+            SAN                 = $CommonName
+            FriendlyName        = $CertificateFriendlyName
+            Exportable          = $True
+            StoreLocation       = 'LocalMachine'
+            StoreName           = 'My'
+            KeyLength           = 2048
+            ProviderName        = 'Microsoft Enhanced Cryptographic Provider v1.0'
+            AlgorithmName       = "RSA"
+            SignatureAlgorithm  = "SHA256"
+        }
+
+        New-SelfsignedCertificateEx @NewSelfSignedCertExSplatParams
+
+        # There is a slight delay before new cert shows up in Cert:
+        # So wait for it to show.
+        while (!$Cert) {
+            $Cert = Get-ChildItem -Path "Cert:\LocalMachine\My" | Where-Object {$_.FriendlyName -eq $CertificateFriendlyName}
+        }
+    }
+
+    #$null = Export-Certificate -Type CERT -Cert $Cert -FilePath "$ExportDirectory\$CommonName.cer"
+    [System.IO.File]::WriteAllBytes("$ExportDirectory\$CommonName.cer", $Cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+
+    [pscustomobject]@{
+        CertFile        = Get-Item "$ExportDirectory\$CommonName.cer"
+        CertInfo        = $Cert
+    }
+}
+
+
 function Get-GuestVMAndHypervisorInfo {
     [CmdletBinding(DefaultParameterSetName='Default')]
     Param(
@@ -9877,6 +10004,79 @@ function Install-Docker {
     }
     
     ##### END Main Body #####
+}
+
+
+# From: https://winsysblog.com/2018/01/join-linux-active-directory-powershell-core.html
+function Join-LinuxToAD {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$True)]
+        [string]$DomainName,
+
+        [Parameter(Mandatory=$True)]
+        [pscredential]$DomainCreds
+    )
+
+    if (!$IsLinux) {
+        Write-Error "This host is not Linux. Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    if (![bool]$($PSVersionTable.OS -match 'RedHat|CentOS|\.el[0-9]\.')) {
+        Write-Error "Currently, the $(MyInvocation.MyCommand.Name) function only works on RedHat/CentOS Linux Distros! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+
+    # Ensure you can lookup AD DNS
+    $null = nslookup $DomainName
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error 'Could not find domain in DNS. Checking settings'
+        $global:FunctionResult = "1"
+        return
+    }
+
+    #Ensure Samba and dependencies installed
+    $DependenciesToInstall = @(
+        "sssd"
+        "realmd"
+        "oddjob"
+        "oddjob-mkhomedir"
+        "adcli"
+        "samba-common"
+        "samba-common-tools"
+        "krb5-workstation"
+        "openldap-clients"
+        "policycoreutils-python"
+    )
+
+    foreach ($Dependency in $DependenciesToInstall) {
+        $null = yum install $Dependency -y
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Problem installing '$Dependency'! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        else {
+            Write-Host "Successfully installed '$Dependecy'..." -ForegroundColor Green
+        }
+    }
+
+    # Join domain with realm
+    $DomainUserName = $DomainCreds.UserName
+    $PTPasswd = $DomainCreds.GetNetworkCredential().Password
+    echo $PTPasswd | realm join $DomainName --user=$DomainUserName
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error -Message "Could not join domain $DomainName. See error output"
+        exit
+    }
+    if ($LASTEXITCODE -eq 0) {
+        Write-Output 'Success'
+    }
 }
 
 
@@ -14825,8 +15025,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgJovLKbMhog2BTpGv065h6+y
-# F7ygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUxhIY4K+dXDfBo3rFWdn5hBmr
+# yUKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -14883,11 +15083,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCvIWIY0Z/0mvldM
-# j3H83SOFB6zkMA0GCSqGSIb3DQEBAQUABIIBAIAoZVVx7x1ZMJBuilYZ0A0PLvjX
-# cs8o3EeBEmnUo+stFXy3sQ0VcFxFP+X62a4RNwPLYKHj0NEy//FnH05tlnrC+35U
-# fsOJwGZeMqVVpxBclwYboTI6OUlFK0KyUom3YiUm5jQzRQSrOVylNuF+j6raKeJ2
-# mfGLGBK1E512PLaY2gpHSOFvIwt3hn9akGPP93+tPPpoQP9BUsqlndWRO7k3ZX50
-# JPhH7XlVk9bGPFUC3FEsWk8RRRtVvtD5880CQOTYBJI9ihi8NtMv/9H6mCBJvyeQ
-# TDZStCjHECX5ISdr/VrEt0oYUac794CQ2hFjXRMT+yZTgbtPjpMjaUpH7yw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLo101q/HaNTpSME
+# gqaNzv+icw0fMA0GCSqGSIb3DQEBAQUABIIBAIOpo+aXXV6YSdfLUy2U8QYrKOm9
+# Pum6f+xULyBT+SerzvkomVV0ygHIFCiZrds5A8hxyjytyJhh81hw6mbcCc76Rf1I
+# Ph9fS+Iotjj6flJdAtWnCc2JQwQY6yAkT0ka3kWJ+PcnMMQZbwX/KRKBFJmHaNE3
+# Vun98Vq4QmVTDL9EmxjG1D+C60OCPEmZxBVnO8461XBhRHPXN1fGf16kcelrtY6m
+# 7EaWOEGxkzKhB0XaGPhNGQ43tsBjsnWb3mi45FQzfOHrG/hyhVPZ/0oZxDrsbY5G
+# 1R1eWCdh73r2n2pVdjGkUled9J4+eQWbxL16mifwTdfxopPXYh5llGkBYAs=
 # SIG # End signature block

@@ -87,32 +87,19 @@ if (Test-Path "$PSScriptRoot\module.requirements.psd1") {
     $ModuleManifestData.Keys | Where-Object {$_ -ne "PSDependOptions"} | foreach {$null = $ModulesToinstallAndImport.Add($_)}
 }
 
-# NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
-# add it the the -RequiredModules string array just to be certain
-$InvModDepSplatParams = @{
-    RequiredModules                     = $ModulesToInstallAndImport
-    InstallModulesNotAvailableLocally   = $True
-    ErrorAction                         = "SilentlyContinue"
-    WarningAction                       = "SilentlyContinue"
-}
-$ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
-
-if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
-    Write-Warning "The following Modules were not able to be loaded:`n$($LoadModuleDependenciesResult.UnacceptableUnloadedModules.ModuleName -join "`n")"
-
-    if ($PSVersionTable.PSEdition -eq "Core" -and $PSVersionTable.Platform -eq "Win32NT") {
-
-'@ + @"
-
-        Write-Warning "'$env:BHProjectName' will probably not work with PowerShell Core..."
-
-"@ + @'
-
+if ($ModulesToInstallAndImport.Count -gt 0) {
+    # NOTE: If you're not sure if the Required Module is Locally Available or Externally Available,
+    # add it the the -RequiredModules string array just to be certain
+    $InvModDepSplatParams = @{
+        RequiredModules                     = $ModulesToInstallAndImport
+        InstallModulesNotAvailableLocally   = $True
+        ErrorAction                         = "SilentlyContinue"
+        WarningAction                       = "SilentlyContinue"
     }
+    $ModuleDependenciesMap = InvokeModuleDependencies @InvModDepSplatParams
 }
 
 # Public Functions
-
 '@
 
     ###### BEGIN Unique Additions to this Module ######
@@ -143,46 +130,10 @@ if ($LoadModuleDependenciesResult.UnacceptableUnloadedModules.Count -gt 0) {
 
     Add-Content -Value $FunctionTextToAdd -Path "$env:BHModulePath\$env:BHProjectName.psm1"
 
-    # Finally, add array $FunctionsForSBuse in case we want to use this Module Remotely
-    $FunctionsForSBUseString = @'
-[System.Collections.ArrayList]$FunctionsForSBUse = @(
-    ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-    ${Function:GetDomainController}.Ast.Extent.Text
-    ${Function:GetElevation}.Ast.Extent.Text
-    ${Function:GetFileLockProcess}.Ast.Extent.Text
-    ${Function:GetModMapObject}.Ast.Extent.Text
-    ${Function:GetModuleDependencies}.Ast.Extent.Text
-    ${Function:GetNativePath}.Ast.Extent.Text
-    ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-    ${Function:GetWinPSInCore}.Ast.Extent.Text
-    ${Function:InstallFeatureDism}.Ast.Extent.Text
-    ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-    ${Function:InvokeModuleDependencies}.Ast.Extent.Text
-    ${Function:InvokePSCompatibility}.Ast.Extent.Text
-    ${Function:NewUniqueString}.Ast.Extent.Text
-    ${Function:PauseForWarning}.Ast.Extent.Text
-    ${Function:ResolveHost}.Ast.Extent.Text
-    ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-    ${Function:UnzipFile}.Ast.Extent.Text
-    ${Function:Create-Domain}.Ast.Extent.Text
-    ${Function:Create-RootCA}.Ast.Extent.Text
-    ${Function:Create-SubordinateCA}.Ast.Extent.Text
-    ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-    ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
-    ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-    ${Function:Generate-Certificate}.Ast.Extent.Text
-    ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-    ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-    ${Function:Manage-HyperVVM}.Ast.Extent.Text
-    ${Function:New-DomainController}.Ast.Extent.Text
-    ${Function:New-RootCA}.Ast.Extent.Text
-    ${Function:New-Runspace}.Ast.Extent.Text
-    ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-    ${Function:New-SubordinateCA}.Ast.Extent.Text
-)
-'@
-
-    Add-Content -Value $FunctionsForSBUseString -Path "$env:BHModulePath\$env:BHProjectName.psm1"
+    # Finally, add array the variables contained in VariableLibrary.ps1 if it exists in case we want to use this Module Remotely
+    if (Test-Path "$env:BHModulePath\VariableLibrary.ps1") {
+        Get-Content "$env:BHModulePath\VariableLibrary.ps1" | Add-Content "$env:BHModulePath\$env:BHProjectName.psm1"
+    }
 
     if ($Cert) {
         # At this point the .psm1 is finalized, so let's sign it
@@ -274,8 +225,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUe83yaw/wUxywFV6FJuWe0/xc
-# WFugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUh69A0jphENvvIM10g4gR/1ZE
+# +2Ggggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -332,11 +283,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKlLtyuPFsC3IXmg
-# FrMf0S3uLqZsMA0GCSqGSIb3DQEBAQUABIIBAE8cbqW1ZEM9tp9vcaPe6ZB8nnyu
-# nmdAnwpfCqVadYdwRG90484385CYZ8gGA83sm7I1GWT3KROfCpCGoy2VlbEQtZ14
-# WxUojFSUmVaa2tHuzmXC8D3R5iCtwzG3fDxFqMP43wD2rsiDsPJkcoL1UBd7/rgD
-# hujWkU60nR6Thg/hkNwkmSq/0ULDDiI/lMsjndCp8LSgCph0LsHxfQ/biIvdxYdy
-# dkLox8j566B6iWCQL6c7NxJ6P1MSxIt292o76y3x7N1jF2NSXYDSdCaXYzcejC53
-# KS3w2Pcs3cuwT2TaJLxkYDARdMnmSkJrtPViUqmbqoy+7MQSZiXzgJWXxTU=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC0fMTUOL0sXn3WN
+# HdQrTxAt3YeeMA0GCSqGSIb3DQEBAQUABIIBAHCLt3EPj0rmFIwlaxzlJrvEyGtI
+# cmBYBlLlDrsoPLMognodzocQ+j4XDcifJEWtAii3+ey8DcshzOK5vgG5Sk0REl5j
+# VbKU9az+ebGt9k+h5wj9dttNnT3UxJrOpggwXoIDLXG8K05acmSEWu96ijr1fOpj
+# 9GlL2go9i0TEyD5W/I977NgsWz69XV4qE/Ocow16GDSB3f2G7H4vvoptsMbB5gIz
+# xjZXiMh6GA+Sr8l2G+Cxla6meIZmmVSAbeblA8CO0jRQdN1eHZir1GB7EKtTYAI0
+# vAHQfwiXJf/4NFQm+scVKjznWYwznWcUlKf7MRSxegDxLnA4B/n1vAeudu0=
 # SIG # End signature block
