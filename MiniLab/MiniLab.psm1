@@ -36,6 +36,28 @@ if ($ModulesToInstallAndImport.Count -gt 0) {
 # Public Functions
 
 
+<#
+    .SYNOPSIS
+        This function adds an IP or hostname/fqdn to "WSMan:\localhost\Client\TrustedHosts". It also ensures
+        that the WSMan Client is configured to allow for remoting.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER NewRemoteHost
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the IP Address, HostName, or FQDN of the Remote Host
+        that you would like to PSRemote to.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Add-WinRMTrustedHost -NewRemoteHost 192.168.2.49
+        
+#>
 function Add-WinRMTrustedHost {
     [CmdletBinding()]
     Param (
@@ -7685,9 +7707,20 @@ function Generate-Certificate {
 }
 
 
-# Gets info about the Docker Server. This is mainly used to determine
-# if the Docker Server is running in Windows Container mode or Linux
-# Container mode.
+<#
+    .SYNOPSIS
+     Gets info about the Docker-For-Windows Docker Server and Client on a Windows host. This is mainly
+     used to determine if the Docker Server is running in Windows Container mode or Linux Container mode.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Get-DockerInfo
+        
+#>
 function Get-DockerInfo {
     $DockerVersionInfo = docker version
     [System.Collections.ArrayList]$DockerClientInfo = @()
@@ -7834,10 +7867,10 @@ function Get-DSCEncryptionCert {
 
     .NOTES
 
-    .PARAMETER MachineName
+    .PARAMETER CommonName
         This parameter is MANDATORY.
 
-        This parameter takes a string that represents the Subject Alternative Name (SAN) on the Self-Signed Certificate.
+        This parameter takes a string that represents the Common Name (CN) on the Self-Signed Certificate.
 
     .PARAMETER ExportDirectory
         This parameter is MANDATORY.
@@ -7906,6 +7939,110 @@ function Get-EncryptionCert {
 }
 
 
+<#
+    .SYNOPSIS
+        This function is meant to be used in situations where Docker-For-Windows (Docker CE) is being installed
+        on a Windows Guest VM (as opposed to Bare Metal). It gathers a lot of information about the Windows
+        Guest VM, as well as its Hyper-V hypervisor (if appropriate credentials are provided). The function can
+        be run from anywhere as long as it's pointed at a Guest VM (via the -TargetHostNameOrIP or -TargetVM parameters).
+
+        If you do not have access to the Guest VM's hypervisor or if the hypervisor is not Hyper-V, make sure to
+        use the -TryWithoutHypervisorInfo switch.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER TargetHostNameOrIP
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the IP Address, DNS-Resolvable HostName, or FQDN
+        of the Guest VM that you would like to gather info from. If it is NOT used (and if
+        the -TargetVMName parameter is not used), the function will assume that the localhost
+        is the Guest VM that you would like to gather information about.
+
+    .PARAMETER TargetVMName
+        This parameter is MANDATORY (for its parameter set).
+
+        This parameter takes a string that represents the name of the Hyper-V VM that you would like
+        to gather info from. Using this parameter requires that you use the -HypervisorFQDNOrIP
+        and -HypervisorCreds parameters, unless the localhost IS the Hyper-V hypervisor.
+
+    .PARAMETER HypervisorFQDNOrIP
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the IP, DNS-Resolvable HostName, or FQDN of the
+        Hyper-V hypervisor that is managing the Guest VM that you would like to gather info from. If
+        the localhost is NOT the Hyper-V hypervisor and if you are NOT using the -TryWithoutHypervisorInfo
+        switch, then this parameter becomes MANDATORY.
+        
+    .PARAMETER TargetHostNameCreds
+        This parameter is OPTIONAL.
+
+        This parameter takes a pscredential object that contains credentials with permission to access
+        the Guest VM that you would like to gather info from. If the localhost is the Guest VM target, or
+        if you are logged in as a user that already has access to the Guest VM, then you do NOT need to use
+        this parameter.
+
+    .PARAMETER HypervisorCreds
+        This parameter is OPTIONAL.
+
+        This parameter takes a pscredential object that contains credentials with permission to access
+        the Hyper-V hypervisor that is managing the Guest VM that you would like to gather info from. If
+        the localhost IS the Hyper-V hypervisor, or if you are logged in as a user that already has access
+        to the Hyper-V hypervisor, then you do NOT need to use this parameter.
+
+    .PARAMETER TryWithoutHypervisorInfo
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not attempt to gather any information about
+        the hypervisor managing the target Guest VM. Be sure to use this switch if you do not have access
+        to the hypervisor or if the hypervisor is not Hyper-V.
+
+    .PARAMETER AllowRestarts
+        This parameter is OPTIONAL.
+
+        This parameter is a switch.
+
+        By default, this function installs Hyper-V on the target Guest VM is it isn't already. This is part
+        of a test that is used to determine if an External vSwitch attached to a Nested VM on the Guest VM
+        can actually reach an outside network.
+
+        If Hyper-V has not already been installed on the target Guest VM, then a restart will be required.
+        You can use this switch to allow the Guest VM to restart. The function will remain in a holding
+        pattern until the Guest VM comes back online, so you will NOT need to run this function twice.
+
+    .PARAMETER NoMacAddressSpoofing
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will NOT conduct the test to determine if
+        an External vSwitch attached to a Nested VM on the Guest VM can reach an outside network. In other
+        words, the assumption will be that all Nested VMs will be on a Hyper-V Internal network on
+        the Guest VM.
+
+        HOWEVER, since it is still possible to configure networking such that Nested VMs on an Internal
+        Hyper-V network can reach an outside network, a test will still be conducted to determine if
+        an Internal vSwitch attached to a Nested VM can reach an outside network via NAT.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will assume that Hyper-V is already installed
+        on the target Guest VM and not attempt any verification or installation.
+
+    .PARAMETER SkipExternalvSwitchCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will NOT conduct the test to determine if
+        an External vSwitch attached to a Nested VM on the Guest VM can reach an outside network. In other
+        words, the assumption will be that all Nested VMs will be on a Hyper-V Internal network on
+        the Guest VM.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Get-GuestVMAndHypervisorInfo
+        
+#>
 function Get-GuestVMAndHypervisorInfo {
     [CmdletBinding(DefaultParameterSetName='Default')]
     Param(
@@ -7930,12 +8067,6 @@ function Get-GuestVMAndHypervisorInfo {
         [Parameter(Mandatory=$False)]
         $HypervisorCreds,
 
-        # -TryWithoutHypervisorInfo MIGHT result in creating a Local NAT
-        # with an Internal vSwitch on the Target Machine (assuming it's a Guest VM). It depends if
-        # Get-NestedVirtCapabilities detemines whether the Target Machine can use an External vSwitch or not.
-        # If it can, then a Local NAT will NOT be created.
-        # If a NAT already exists on the Target Machine, that NAT will be changed to
-        # 10.0.75.0/24 with IP 10.0.75.1 if it isn't already
         [Parameter(Mandatory=$False)]
         [switch]$TryWithoutHypervisorInfo,
 
@@ -9115,6 +9246,199 @@ function Get-VagrantBoxManualDownload {
 }
 
 
+<#
+    .SYNOPSIS
+        This function adds an IP or hostname/fqdn to "WSMan:\localhost\Client\TrustedHosts". It also ensures
+        that the WSMan Client is configured to allow for remoting.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER InstallEnvironment
+        This parameter is OPTIONAL (but highly recommended).
+
+        This parameter takes a string with either the value "BareMetal" or "GuestVM". Use 'BareMetal' if
+        you are installing Docker on a baremetal machine. Use "GuestVM" if you are installing Docker on
+        a Guest VM.
+
+        If you do not use this parameter, the function will attempt to determine if the target machine
+        is baremetal or if it is a Guest VM, however, the logic it uses to make this determination is not
+        bulletproof, which is why this parameter should be used if at all possible.
+
+    .PARAMETER TargetHostNameOrIP
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the IP Address, DNS-Resolvable HostName, or FQDN
+        of the Guest VM that you would like to install Docker-For-Windows (Docker CE) on. If it is NOT
+        used (and if the -TargetVMName parameter is not used), the function will assume that you would
+        like to install Docker on the localhost.
+
+    .PARAMETER TargetVMName
+        This parameter is MANDATORY (for its parameter set).
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter takes a string that represents the name of the Hyper-V VM that you would like
+        to install Docker on. Using this parameter requires that you use the -HypervisorFQDNOrIP
+        and -HypervisorCreds parameters, unless the localhost IS the Hyper-V hypervisor.
+
+    .PARAMETER HypervisorFQDNOrIP
+        This parameter is OPTIONAL.
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter takes a string that represents the IP, DNS-Resolvable HostName, or FQDN of the
+        Hyper-V hypervisor that is managing the Guest VM that you would like to install Docker on. If
+        you are installing Docker on a Guest VM and if the localhost is NOT the Hyper-V hypervisor and
+        if you are NOT using the -TryWithoutHypervisorInfo switch, then this parameter becomes MANDATORY.
+
+    .PARAMETER TargetHostNameCreds
+        This parameter is OPTIONAL.
+
+        This parameter takes a pscredential object that contains credentials with permission to access
+        the Remote Host that you would like to install Docker on. If you are installing Docker on the
+        localhost, or if you are logged in as a user that already has access to the target machine
+        then you should NOT use this parameter.
+
+    .PARAMETER HypervisorCreds
+        This parameter is OPTIONAL.
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter takes a pscredential object that contains credentials with permission to access
+        the Hyper-V hypervisor that is managing the Guest VM that you would like to install Docker on. If
+        the localhost IS the Hyper-V hypervisor, or if you are logged in as a user that already has access
+        to the Hyper-V hypervisor, then you do NOT need to use this parameter.
+
+    .PARAMETER GuestVMandHVInfo
+        This parameter is OPTIONAL.
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter takes a pscustomobject that represents that output of the Get-GuestVMandHypervisorInfo
+        function.
+
+        If you intend to install Docker on a Guest VM, you can use this parameter to forego using the following
+        parameters:
+            -InstallEnvironment
+            -TargetHostNameIP
+            -TargetVMName
+            -HypervisorFQDNOrIP
+            -TargetHostNameCreds
+            -HypervisorCreds
+
+    .PARAMETER GuestVMMemoryInGB
+        This parameter is OPTIONAL.
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter takes an integer that represents the amount of memory (in GB) that you
+        would like the Guest VM (that you are installing Docker on) to have.
+
+        Using this parameter assumes you can access to the Hyper-V hypervisor that is managing the
+        target Guest VM (whether it is via the -HypervisorCreds parameter on because you are logged
+        into the localhost as a user that has access to the hypervisor).
+
+    .PARAMETER AllowRestarts
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, if the target machine needs to be restarted as a result
+        of the Docker install (most likely because Hyper-V was installed for the first time), then
+        it will be restarted.
+
+    .PARAMETER MobyLinuxVMMemoryInGB
+        This parameter is OPTIONAL, however, it has a default value of 2.
+
+        This parameter takes an integer (even numbers only) that represents the amount of Memory
+        in GB that you would like to allocate to the MobyLinux VM that is created to run Linux
+        Containers on Docker-For-Windows (Docker CE).
+
+    .PARAMETER TryWithoutHypervisorInfo
+        This parameter is OPTIONAL.
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter is a switch. If used, then this function will attempt to install
+        Docker on the target Guest VM without gathering any information about the Hyper-V
+        hypervisor that is managing the Guest VM. Use this parameter if you do not have
+        access to the hypervisor managing the target Guest VM.
+
+    .PARAMETER NoMacAddressSpoofing
+        This parameter is OPTIONAL.
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter is a switch. If used, this function will NOT conduct the test to determine if
+        an External vSwitch attached to a Nested VM on the Guest VM can reach an outside network. In other
+        words, the assumption will be that all Nested VMs will be on a Hyper-V Internal network on
+        the Guest VM.
+
+        HOWEVER, since it is still possible to configure networking such that Nested VMs on an Internal
+        Hyper-V network can reach an outside network, a test will still be conducted to determine if
+        an Internal vSwitch attached to a Nested VM can reach an outside network via NAT.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will assume that Hyper-V is already installed
+        on the target machine and not attempt any verification or installation prior to installing Docker.
+
+    .PARAMETER SkipEnableNestedVM
+        This parameter is OPTIONAL.
+
+        This parameter should only be used if Docker is being installed on a Guest VM.
+
+        This parameter is a switch. If used, this function will NOT attempt to make any configuration changes
+        to the Hyper-V hypervisor or target Guest VM in order to make Nested Virtualization possible.
+
+    .PARAMETER RecreateMobyLinuxVM
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If Docker was installed at one point but has since been uninstalled, and
+        the MobyLinux VM from the previous installation still exists, use this parameter to recreate it
+        for use with this new Docker installation.
+
+    .PARAMETER NATIP
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the IPv4 addess that you would like the DocketNAT
+        vSwitch to use. It defaults to 10.0.75.1.
+
+    .PARAMETER NATNetworkMask
+        This parameter is OPTIONAL.
+
+        This parameter takes an integer from 24 to 31 inclusive that represents the CIDR notation of the
+        network mask that you would like to use for the DockerNAT. This parameter must be used in
+        conjunction with the -NATIP parameter.
+
+    .PARAMETER NATName
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the name of the Hyper-V vSwitch that will be used
+        for DockerNAT. This parameter must be used in conjunction with the -NATIP and -NATNetworkMask
+        parameters.
+
+    .PARAMETER PreRelease
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, Docker-For-Windows (Docker CE) will be installed from the
+        Edge (as opposed to Stable) branch.
+
+    .PARAMETER AllowLogout
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, and if Docker is being installed on the localhost in an
+        interactive PowerShell session, then the logged in user will be logged out at the end of
+        installation (which is required as a normal part of installing Docker-For-Windows/Docker CE).
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Install-Docker
+        
+#>
 function Install-Docker {
     [CmdletBinding(DefaultParameterSetName='Default')]
     Param(
@@ -9147,10 +9471,7 @@ function Install-Docker {
             Mandatory=$True,
             ParameterSetName = 'InfoAlreadyCollected'
         )]
-        $GuestVMAndHVInfo, # Uses output of Get-GuestVMAndHypervisorInfo function
-
-        [Parameter(Mandatory=$False)]
-        [switch]$SkipPrompt,
+        $GuestVMAndHVInfo,
 
         [Parameter(Mandatory=$False)]
         [ValidateScript({
@@ -9166,9 +9487,6 @@ function Install-Docker {
             $(($_ % 2) -eq 0) -and $($_ -ge 2)
         })]
         [int]$MobyLinuxVMMemoryInGB = 2,
-
-        [Parameter(Mandatory=$False)]
-        [switch]$UsePackageManagement,
 
         [Parameter(Mandatory=$False)]
         [switch]$TryWithoutHypervisorInfo,
@@ -9192,6 +9510,7 @@ function Install-Docker {
         [string]$NATIP,
 
         [Parameter(Mandatory=$False)]
+        [ValidateRange(24,31)]
         [string]$NATNetworkMask,
 
         [Parameter(Mandatory=$False)]
@@ -10007,7 +10326,38 @@ function Install-Docker {
 }
 
 
-# From: https://winsysblog.com/2018/01/join-linux-active-directory-powershell-core.html
+<#
+    .SYNOPSIS
+        This function joins a Linux machine to a Windows Active Directory Domain.
+
+        Currently, this function only supports RedHat/CentOS.
+
+        Most of this function is from:
+
+        https://winsysblog.com/2018/01/join-linux-active-directory-powershell-core.html
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER DomainName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents Active Directory Domain that you would like to join.
+
+    .PARAMETER DomainCreds
+        This parameter is MANDATORY.
+
+        This parameter takes a pscredential object that represents a UserName and Password that can join
+        a host to teh Active Directory Domain.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Core (pwsh) session on a Linux, import the module, and -
+
+        [CentOS7Host] # sudo pwsh
+
+        PS /home/testadmin> $DomainCreds = [pscredential]::new("zero\zeroadmin",$(Read-Host "Enter Password" -AsSecureString))
+        PS /home/testadmin> Join-LinuxToAD -DomainName "zero.lab" -DomainCreds $DomainCreds
+#>
 function Join-LinuxToAD {
     [CmdletBinding()]
     param (
@@ -10017,6 +10367,12 @@ function Join-LinuxToAD {
         [Parameter(Mandatory=$True)]
         [pscredential]$DomainCreds
     )
+
+    if (!$(GetElevation)) {
+        Write-Error "You must run the $($MyInvocation.MyCommand.Name) function with elevated permissions! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
 
     if (!$IsLinux) {
         Write-Error "This host is not Linux. Halting!"
@@ -10028,6 +10384,12 @@ function Join-LinuxToAD {
         Write-Error "Currently, the $(MyInvocation.MyCommand.Name) function only works on RedHat/CentOS Linux Distros! Halting!"
         $global:FunctionResult = "1"
         return
+    }
+
+    # Make sure nslookup is installed
+    which nslookup *>/dev/null
+    if ($LASTEXITCODE -ne 0) {
+        $null = yum install bind-utils -y
     }
 
     # Ensure you can lookup AD DNS
@@ -10052,23 +10414,30 @@ function Join-LinuxToAD {
         "policycoreutils-python"
     )
 
+    [System.Collections.ArrayList]$SuccessfullyInstalledDependencies = @()
+    [System.Collections.ArrayList]$FailedInstalledDependencies = @()
     foreach ($Dependency in $DependenciesToInstall) {
         $null = yum install $Dependency -y
 
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Problem installing '$Dependency'! Halting!"
-            $global:FunctionResult = "1"
-            return
+            $null = $FailedInstalledDependencies.Add($Dependency)
         }
         else {
-            Write-Host "Successfully installed '$Dependecy'..." -ForegroundColor Green
+            $null = $SuccessfullyInstalledDependencies.Add($Dependency)
         }
+    }
+
+    if ($FailedInstalledDependencies.Count -gt 0) {
+        Write-Error "Failed to install the following dependencies:`n$($FailedInstalledDependencies -join "`n")`nHalting!"
+        $global:FunctionResult = "1"
+        return
     }
 
     # Join domain with realm
     $DomainUserName = $DomainCreds.UserName
+    if ($DomainUserName -match "\\") {$DomainUserName = $($DomainUserName -split "\\")[-1]}
     $PTPasswd = $DomainCreds.GetNetworkCredential().Password
-    echo $PTPasswd | realm join $DomainName --user=$DomainUserName
+    printf "$PTPasswd" | realm join $DomainName --user=$DomainUserName
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error -Message "Could not join domain $DomainName. See error output"
@@ -10106,6 +10475,9 @@ function Join-LinuxToAD {
 
     .PARAMETER VMGen
         Generation of the VM you would like to create. Can be either 1 or 2. Defaults to 2.
+
+    .PARAMETER VhdSize
+        Uint64 value representing size of new .vhd/.vhdx. Example: [uint64]30GB
 
     .PARAMETER PreferredIntegrationServices
         List of Hyper-V Integration Services you would like enabled for your new VM.
@@ -10758,7 +11130,64 @@ function Manage-HyperVVM {
 }
 
 
-# Example: Move-DockerStorage -NewDockerDrive <DriveLetter>
+<#
+    .SYNOPSIS
+        This function moves Docker-For-Windows (DockerCE) Windows and Linux Container storage
+        to the specified location(s).
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER NewDockerDrive
+        This parameter is OPTIONAL.
+
+        This parameter takes a letter (A-Z) that represents the drive that you would like to move
+        Windows and Linux Container storage to.
+
+        If you use this parameter, do not use the -CustomWindowsImageStoragePath or -CustomLinuxImageStoragePath
+        parameters.
+
+    .PARAMETER CustomWindowsImageStoragePath
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents a full path to a directory where you would like
+        Windows Container storage moved.
+
+        Do not use this parameter if you are using the -NewDockerDrive parameter.
+
+    .PARAMETER CustomLinuxImageStoragePath
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents a full path to a directory where you would like
+        Linux Container storage moved.
+
+        Do not use this parameter if you are using the -NewDockerDrive parameter.
+
+    .PARAMETER MoveWindowsImagesOnly
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, only Windows Container storage will be moved.
+
+    .PARAMETER MoveLinuxImagesOnly
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, only Linux Container storage will be moved.
+
+    .PARAMETER Force
+        This parameter is OPTIONAL.
+
+        This parameter is a switch.
+
+        Moving Windows Docker Storage to a new location causes existing Windows docker images and containers to be removed.
+        Default behavior for this function is prompt the user to confirm this action before proceeding. Use the -Force
+        switch to skip this prompt.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Move-DockerStorage -NewDockerDrive H -Force
+        
+#>
 function Move-DockerStorage {
     [CmdletBinding()]
     Param(
@@ -10785,6 +11214,16 @@ function Move-DockerStorage {
     # Make sure one of the parameters is used
     if (!$NewDockerDrive -and !$CustomWindowsImageStoragePath -and !$CustomLinuxImageStoragePath) {
         Write-Error "The $($MyInvocation.MyCommand.Name) function requires either the -NewDockerDrive parameter or the -CustomDockerStoragePath parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+    if ($CustomWindowsImageStoragePath -and $MoveLinuxImagesOnly) {
+        Write-Error "The switch -MoveLinuxImagesOnly was used in conjunction with the -CustomWindowsImageStoragePath parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+    if ($CustomLinuxImageStoragePath -and $MoveWindowsImagesOnly) {
+        Write-Error "The switch -MoveWindowsImagesOnly was used in conjunction with the -CustomLinuxImageStoragePath parameter! Halting!"
         $global:FunctionResult = "1"
         return
     }
@@ -14907,6 +15346,26 @@ function New-SubordinateCA {
 }
 
 
+<#
+    .SYNOPSIS
+        This function recreates the MobyLinuxVM used by Docker-For-Windows to manage Linux Containers.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER MobyLinuxVMMemoryInGB
+        This parameter is OPTIONAL, however, it has a default value of 2.
+
+        This parameter takes an integer (even numbers only) that represents the amount of Memory
+        in GB to allocate to the newly recreated MobyLinuxVM.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Recreate-MobyLinuxVM
+#>
 function Recreate-MobyLinuxVM {
     [CmdletBinding()]
     Param(
@@ -14945,8 +15404,26 @@ function Recreate-MobyLinuxVM {
 }
 
 
-# Switch DockerCE from Windows Container mode to Linux Container mode
-# or visa versa.
+<#
+    .SYNOPSIS
+        This function switches Docker-For-Windows (Docker CE) from Linux Container mode to Windows Container mode
+        or visa versa.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER ContainerType
+        This parameter is MANDATORY.
+
+        This parameter takes a string with a value of either "Windows" or "Linux" representing the contianer
+        mode that you would like to switch to.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Switch-DockerContainerType -ContainerType Windows
+        
+#>
 function Switch-DockerContainerType {
     [CmdletBinding()]
     Param (
@@ -14986,25 +15463,39 @@ function Switch-DockerContainerType {
 }
 
 
-[System.Collections.ArrayList]$FunctionsForSBUse = @(
+[System.Collections.ArrayList]$script:FunctionsForSBUse = @(
+    ${Function:ConfirmAWSVM}.Ast.Extent.Text
+    ${Function:ConfirmAzureVM}.Ast.Extent.Text
+    ${Function:ConfirmGoogleComputeVM}.Ast.Extent.Text
+    ${Function:ConvertSize}.Ast.Extent.Text
+    ${Function:DoDockerInstall}.Ast.Extent.Text
+    ${Function:EnableNestedVM}.Ast.Extent.Text
     ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+    ${Function:FixVagrantPrivateKeyPerms}.Ast.Extent.Text
     ${Function:GetDomainController}.Ast.Extent.Text
     ${Function:GetElevation}.Ast.Extent.Text
     ${Function:GetFileLockProcess}.Ast.Extent.Text
-    ${Function:GetModMapObject}.Ast.Extent.Text
+    ${Function:GetIPRange}.Ast.Extent.Text
     ${Function:GetModuleDependencies}.Ast.Extent.Text
     ${Function:GetNativePath}.Ast.Extent.Text
+    ${Function:GetNestedVirtCapabilities}.Ast.Extent.Text
+    ${Function:GetPendingReboot}.Ast.Extent.Text
     ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
     ${Function:GetWinPSInCore}.Ast.Extent.Text
+    ${Function:GetWorkingCredentials}.Ast.Extent.Text
     ${Function:InstallFeatureDism}.Ast.Extent.Text
     ${Function:InstallHyperVFeatures}.Ast.Extent.Text
     ${Function:InvokeModuleDependencies}.Ast.Extent.Text
     ${Function:InvokePSCompatibility}.Ast.Extent.Text
+    ${Function:ManualPSGalleryModuleInstall}.Ast.Extent.Text
+    ${Function:MobyLinuxBetter}.Ast.Extent.Text
     ${Function:NewUniqueString}.Ast.Extent.Text
     ${Function:PauseForWarning}.Ast.Extent.Text
     ${Function:ResolveHost}.Ast.Extent.Text
+    ${Function:TestHyperVExternalvSwitch}.Ast.Extent.Text
     ${Function:TestIsValidIPAddress}.Ast.Extent.Text
     ${Function:UnzipFile}.Ast.Extent.Text
+    ${Function:Add-WinRMTrustedHost}.Ast.Extent.Text
     ${Function:Create-Domain}.Ast.Extent.Text
     ${Function:Create-RootCA}.Ast.Extent.Text
     ${Function:Create-SubordinateCA}.Ast.Extent.Text
@@ -15012,21 +15503,29 @@ function Switch-DockerContainerType {
     ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
     ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
     ${Function:Generate-Certificate}.Ast.Extent.Text
+    ${Function:Get-DockerInfo}.Ast.Extent.Text
     ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+    ${Function:Get-EncryptionCert}.Ast.Extent.Text
+    ${Function:Get-GuestVMAndHypervisorInfo}.Ast.Extent.Text
     ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+    ${Function:Install-Docker}.Ast.Extent.Text
+    ${Function:Join-LinuxToAD}.Ast.Extent.Text
     ${Function:Manage-HyperVVM}.Ast.Extent.Text
+    ${Function:Move-DockerStorage}.Ast.Extent.Text
     ${Function:New-DomainController}.Ast.Extent.Text
     ${Function:New-RootCA}.Ast.Extent.Text
     ${Function:New-Runspace}.Ast.Extent.Text
     ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
     ${Function:New-SubordinateCA}.Ast.Extent.Text
+    ${Function:Recreate-MobyLinuxVM}.Ast.Extent.Text
+    ${Function:Switch-DockerContainerType}.Ast.Extent.Text
 )
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUxhIY4K+dXDfBo3rFWdn5hBmr
-# yUKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUORQdbpPvoLtgqWcDnYpHCpBy
+# y++gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15083,11 +15582,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLo101q/HaNTpSME
-# gqaNzv+icw0fMA0GCSqGSIb3DQEBAQUABIIBAIOpo+aXXV6YSdfLUy2U8QYrKOm9
-# Pum6f+xULyBT+SerzvkomVV0ygHIFCiZrds5A8hxyjytyJhh81hw6mbcCc76Rf1I
-# Ph9fS+Iotjj6flJdAtWnCc2JQwQY6yAkT0ka3kWJ+PcnMMQZbwX/KRKBFJmHaNE3
-# Vun98Vq4QmVTDL9EmxjG1D+C60OCPEmZxBVnO8461XBhRHPXN1fGf16kcelrtY6m
-# 7EaWOEGxkzKhB0XaGPhNGQ43tsBjsnWb3mi45FQzfOHrG/hyhVPZ/0oZxDrsbY5G
-# 1R1eWCdh73r2n2pVdjGkUled9J4+eQWbxL16mifwTdfxopPXYh5llGkBYAs=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCUEQqXJR6KSEMda
+# 53joyY0x5bt5MA0GCSqGSIb3DQEBAQUABIIBALdiGlBVipKrEYsVTUYrFhQ0DsWJ
+# 6sZU5zGbEKTybUR69ZqVG1PSPjdVvVW3dauHWJXCjOU24AwcnDCSalcDiiW7WtTL
+# JP3D8Uw+562NWSoe8Ina5hxDgDh1pvfzmnDgQpg8p/RbFSVXbDACBfMloZ9BB+sp
+# e6KY0tA+aakHji7/S+c53MlexlJDyUzKCbIItM/ui6EqYfMK35OIE53UDYcuyzHE
+# UhS00kiLCFCQteNbjQKlIgsGw5Ni1ckQETJujE7lEd7M6fmMy9G1423FPauHMxtT
+# Tk0/C3Juihhi0QfAY2oQG2379ylFQH2kpXATbI7gr+64M5iKGy6nRgyjIvI=
 # SIG # End signature block

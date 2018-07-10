@@ -1,4 +1,61 @@
-# Example: Move-DockerStorage -NewDockerDrive <DriveLetter>
+<#
+    .SYNOPSIS
+        This function moves Docker-For-Windows (DockerCE) Windows and Linux Container storage
+        to the specified location(s).
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER NewDockerDrive
+        This parameter is OPTIONAL.
+
+        This parameter takes a letter (A-Z) that represents the drive that you would like to move
+        Windows and Linux Container storage to.
+
+        If you use this parameter, do not use the -CustomWindowsImageStoragePath or -CustomLinuxImageStoragePath
+        parameters.
+
+    .PARAMETER CustomWindowsImageStoragePath
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents a full path to a directory where you would like
+        Windows Container storage moved.
+
+        Do not use this parameter if you are using the -NewDockerDrive parameter.
+
+    .PARAMETER CustomLinuxImageStoragePath
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents a full path to a directory where you would like
+        Linux Container storage moved.
+
+        Do not use this parameter if you are using the -NewDockerDrive parameter.
+
+    .PARAMETER MoveWindowsImagesOnly
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, only Windows Container storage will be moved.
+
+    .PARAMETER MoveLinuxImagesOnly
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, only Linux Container storage will be moved.
+
+    .PARAMETER Force
+        This parameter is OPTIONAL.
+
+        This parameter is a switch.
+
+        Moving Windows Docker Storage to a new location causes existing Windows docker images and containers to be removed.
+        Default behavior for this function is prompt the user to confirm this action before proceeding. Use the -Force
+        switch to skip this prompt.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Move-DockerStorage -NewDockerDrive H -Force
+        
+#>
 function Move-DockerStorage {
     [CmdletBinding()]
     Param(
@@ -25,6 +82,16 @@ function Move-DockerStorage {
     # Make sure one of the parameters is used
     if (!$NewDockerDrive -and !$CustomWindowsImageStoragePath -and !$CustomLinuxImageStoragePath) {
         Write-Error "The $($MyInvocation.MyCommand.Name) function requires either the -NewDockerDrive parameter or the -CustomDockerStoragePath parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+    if ($CustomWindowsImageStoragePath -and $MoveLinuxImagesOnly) {
+        Write-Error "The switch -MoveLinuxImagesOnly was used in conjunction with the -CustomWindowsImageStoragePath parameter! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+    if ($CustomLinuxImageStoragePath -and $MoveWindowsImagesOnly) {
+        Write-Error "The switch -MoveWindowsImagesOnly was used in conjunction with the -CustomLinuxImageStoragePath parameter! Halting!"
         $global:FunctionResult = "1"
         return
     }
@@ -265,8 +332,8 @@ function Move-DockerStorage {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjWEu170hrnokhcgqGi3dgFJV
-# 3HOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUFS8kuH7BDKfEg448E7uDO1N4
+# JMSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -323,11 +390,11 @@ function Move-DockerStorage {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHMlGYyCOusrbq+a
-# iXB+eBf/MGG7MA0GCSqGSIb3DQEBAQUABIIBACw3PW0Gvf57oYoo7PdIoDu1d5nQ
-# sUaqdslX4Oy8EzdjWTRX9BhG4VZwjRcL59cbE2TM0YDSe30Rb5oyhpv3vjbauALp
-# FrXpOA6dlaBvHdZsYVNUQ+tpUmrl4Oqd6GzxDwxFT/5uxo5V9XV7GS2eYGPgJClM
-# kyxOteqt6PQaOKi2c0e5NItwnh9wBaOk9PcVgkemM4BcVB1AZ+8HlhzeKOQNJ7Ox
-# 4D5JMMNuVKhOmB2tXWLuIVbD4jfXCwGEW7QidrKjW53Kw62V2fBDu6YujewJq031
-# sapiH4BQExS7uLSvioD5Ae1mDg4deXuOy7jvCjzn+bSFxh13Sdk+Od4s9u0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFERMhUQRNzw/jy4r
+# seQ02cjzvVW3MA0GCSqGSIb3DQEBAQUABIIBAGl/yyboAj4QjXu3XvLyCqC1D9nu
+# EbkDUjyt0VCMkxhZWNNibBUhfmeWcOxv9MW52nNWc3EJyorz20bZfOH3ui/jj4RB
+# 29kvgIygDidoTGRll7nuTfkJSjXrXvUBdxYAyYO4hQIrPLkZY6oNAZvhmIC7Bgi1
+# byVjLwAfU8C5kw7QFM3CL5N1zXfrlq4TDwhhbJI93W+9uTpOQT1q/1ORpn2r845E
+# xvDjWC3WaI/nmwIhkp8f6e37xdDLDX872J+cq2P2SFrPmWT3g7m2DUfVNrWSCZqK
+# gXyDLgXiyPL4x3wgaRcg9Dux2cp4rKUg+an9a+4WoW3J9u/48G2TcthYhZg=
 # SIG # End signature block

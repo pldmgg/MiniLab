@@ -1,22 +1,36 @@
-[System.Collections.ArrayList]$FunctionsForSBUse = @(
+[System.Collections.ArrayList]$script:FunctionsForSBUse = @(
+    ${Function:ConfirmAWSVM}.Ast.Extent.Text
+    ${Function:ConfirmAzureVM}.Ast.Extent.Text
+    ${Function:ConfirmGoogleComputeVM}.Ast.Extent.Text
+    ${Function:ConvertSize}.Ast.Extent.Text
+    ${Function:DoDockerInstall}.Ast.Extent.Text
+    ${Function:EnableNestedVM}.Ast.Extent.Text
     ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
+    ${Function:FixVagrantPrivateKeyPerms}.Ast.Extent.Text
     ${Function:GetDomainController}.Ast.Extent.Text
     ${Function:GetElevation}.Ast.Extent.Text
     ${Function:GetFileLockProcess}.Ast.Extent.Text
-    ${Function:GetModMapObject}.Ast.Extent.Text
+    ${Function:GetIPRange}.Ast.Extent.Text
     ${Function:GetModuleDependencies}.Ast.Extent.Text
     ${Function:GetNativePath}.Ast.Extent.Text
+    ${Function:GetNestedVirtCapabilities}.Ast.Extent.Text
+    ${Function:GetPendingReboot}.Ast.Extent.Text
     ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
     ${Function:GetWinPSInCore}.Ast.Extent.Text
+    ${Function:GetWorkingCredentials}.Ast.Extent.Text
     ${Function:InstallFeatureDism}.Ast.Extent.Text
     ${Function:InstallHyperVFeatures}.Ast.Extent.Text
     ${Function:InvokeModuleDependencies}.Ast.Extent.Text
     ${Function:InvokePSCompatibility}.Ast.Extent.Text
+    ${Function:ManualPSGalleryModuleInstall}.Ast.Extent.Text
+    ${Function:MobyLinuxBetter}.Ast.Extent.Text
     ${Function:NewUniqueString}.Ast.Extent.Text
     ${Function:PauseForWarning}.Ast.Extent.Text
     ${Function:ResolveHost}.Ast.Extent.Text
+    ${Function:TestHyperVExternalvSwitch}.Ast.Extent.Text
     ${Function:TestIsValidIPAddress}.Ast.Extent.Text
     ${Function:UnzipFile}.Ast.Extent.Text
+    ${Function:Add-WinRMTrustedHost}.Ast.Extent.Text
     ${Function:Create-Domain}.Ast.Extent.Text
     ${Function:Create-RootCA}.Ast.Extent.Text
     ${Function:Create-SubordinateCA}.Ast.Extent.Text
@@ -24,21 +38,29 @@
     ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
     ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
     ${Function:Generate-Certificate}.Ast.Extent.Text
+    ${Function:Get-DockerInfo}.Ast.Extent.Text
     ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
+    ${Function:Get-EncryptionCert}.Ast.Extent.Text
+    ${Function:Get-GuestVMAndHypervisorInfo}.Ast.Extent.Text
     ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+    ${Function:Install-Docker}.Ast.Extent.Text
+    ${Function:Join-LinuxToAD}.Ast.Extent.Text
     ${Function:Manage-HyperVVM}.Ast.Extent.Text
+    ${Function:Move-DockerStorage}.Ast.Extent.Text
     ${Function:New-DomainController}.Ast.Extent.Text
     ${Function:New-RootCA}.Ast.Extent.Text
     ${Function:New-Runspace}.Ast.Extent.Text
     ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
     ${Function:New-SubordinateCA}.Ast.Extent.Text
+    ${Function:Recreate-MobyLinuxVM}.Ast.Extent.Text
+    ${Function:Switch-DockerContainerType}.Ast.Extent.Text
 )
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUEHDIGwwtj1QDGI0JXBgA52M1
-# Nwegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSjeftGGYEXrY27EGQsG6PZgb
+# +imgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -95,11 +117,11 @@
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJ8aBmRNEE+xQl+Z
-# wFVj2cJ5Qf3MMA0GCSqGSIb3DQEBAQUABIIBAEh/Y4g2fdrP9wFbkU0/rzGyyyga
-# DEVd3ag2MAM4saLQERuJlLGzE9+ziTLiVSIIUgr0Tj8eGNqb7bhIYFBpaB927VvA
-# /SeoKxnpYsP2kT9yxz+SmfSlS+1M/JXbaU9pOF5gdAt4yLciPEKy6Ay81HTAfNAi
-# QzMMZRwYE8vUaYuq1a+r9yufAZH9aiap1wZQ5LOL/2WAZu9K9ReOtKuzb4fUpFo3
-# t3qqPiqJ0+IW40JgNTkbGFi0jrFnv9qpfqNmAf/J1IJrDOR2wcSCi5tNCUS/9Jr3
-# puqKO9S6DKVFI3TVMfOPVDUB7TTtYOkwRdnZCMWa58HLyqqYyuAHI85MXeg=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDFqRE59+hvYk5mm
+# rwtDYWpcAONIMA0GCSqGSIb3DQEBAQUABIIBABIxpVvTUjpdRCeaIxcCmUwFvRk/
+# b+P6BG5BQXvns+w3IBcOswDa05bC6mKD0483YZWAw9rkwkYJVeZ8MZwprprzBeH0
+# GXHnKRrFB8BU+T76pwCztajbeV2FXkISi/9I0c1YMafJoWgCV/st7kgWn6HqilIX
+# GE+rsDu8+7Qo82t6qjABqlm8+VN93+x5VaZv7vAdVSR/8Sj2XCHlmc0dSDfC4dLU
+# BfEiR4KVi7OqlwIYQX8L43jPQOkRXB0VgBeugl1QM2ofRu41NauaT3xuGpM0N3Kl
+# dUQjpRi1yXeoO45dxQRzIyEFzxLL7hIIVnID2CCL7xjvA1lran4ZGBSlQ40=
 # SIG # End signature block

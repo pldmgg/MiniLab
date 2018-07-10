@@ -1,6 +1,17 @@
-# Gets info about the Docker Server. This is mainly used to determine
-# if the Docker Server is running in Windows Container mode or Linux
-# Container mode.
+<#
+    .SYNOPSIS
+     Gets info about the Docker-For-Windows Docker Server and Client on a Windows host. This is mainly
+     used to determine if the Docker Server is running in Windows Container mode or Linux Container mode.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Get-DockerInfo
+        
+#>
 function Get-DockerInfo {
     $DockerVersionInfo = docker version
     [System.Collections.ArrayList]$DockerClientInfo = @()
@@ -55,8 +66,8 @@ function Get-DockerInfo {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUeQOkbbPv66J8VPrFLzpL0VNG
-# dKOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU2nsL8htP4NtuvEDxIH/Mh5tC
+# KL6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -113,11 +124,11 @@ function Get-DockerInfo {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJszJK/2+3sX0vNK
-# uHgwOGY5QlBxMA0GCSqGSIb3DQEBAQUABIIBAEs4g5y9WmJC/wfFJBjU56Y3Q24E
-# 6IBh4ide29EoLRl7Db0hLkfEYA3KSIWjPacEyWNKb5R8hnwB749Vy0qD8znU7JaP
-# UOAdHBfW8j1DSmSksPjbzydK/g7pi9yqBqHlkOPEYtUWoa25ZmnMZeSom/tLDOo4
-# Z82okjTpmRakeb8+TKNBlAtwYGb0jEWQmRZJjSG56bqBvkkR/2ELfCx6U/pf6oDZ
-# X8sj38WdaL9gHpKDdnI1GQ1/v1uEKZmbPUH/1CIMoJ8SfTPhFFPujbAku4vKBzMC
-# R3QU3Zd5IA0gss7KclR8VqYPh7Hd+N1rzw0K9N47fph0qT3Bdq2plu4Q4+Y=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAXCcQcElIZxau1j
+# xtMqG69GUIIBMA0GCSqGSIb3DQEBAQUABIIBALPzYXnvc+D3T2fdEN2zIBhW0xKh
+# Ullrkq/wVMf3kqb1q9SR7kIBEaw3GGQnyzf6gAVlKtbMLB3ukL4yjaEsJYwhdvWR
+# 5Nr4sRNUctZClilmoiZOO1Rd0nW2JOUdoMNVC68kejvFjo5iDKhaRz6xNa5zBWKh
+# xBx84MCCojb10vRC8Su/mvgpL48tOkcQc25mq1jPHAKrlbXTPT/VdqJ9yTPUsSsJ
+# req7a4IAUl2T7sWCaT/zLE9ENKtLDUfYDormTDO4iqxtoC9inRU4UPNF8/rGOMzM
+# 8PJymLkitLIkGfyySyAuwULTRFUBGEl7CHxzvy0R+3WOItxTz2U3sEPNIX0=
 # SIG # End signature block

@@ -1,4 +1,35 @@
-# From: https://winsysblog.com/2018/01/join-linux-active-directory-powershell-core.html
+<#
+    .SYNOPSIS
+        This function joins a Linux machine to a Windows Active Directory Domain.
+
+        Currently, this function only supports RedHat/CentOS.
+
+        Most of this function is from:
+
+        https://winsysblog.com/2018/01/join-linux-active-directory-powershell-core.html
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER DomainName
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents Active Directory Domain that you would like to join.
+
+    .PARAMETER DomainCreds
+        This parameter is MANDATORY.
+
+        This parameter takes a pscredential object that represents a UserName and Password that can join
+        a host to teh Active Directory Domain.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Core (pwsh) session on a Linux, import the module, and -
+
+        [CentOS7Host] # sudo pwsh
+
+        PS /home/testadmin> $DomainCreds = [pscredential]::new("zero\zeroadmin",$(Read-Host "Enter Password" -AsSecureString))
+        PS /home/testadmin> Join-LinuxToAD -DomainName "zero.lab" -DomainCreds $DomainCreds
+#>
 function Join-LinuxToAD {
     [CmdletBinding()]
     param (
@@ -8,6 +39,12 @@ function Join-LinuxToAD {
         [Parameter(Mandatory=$True)]
         [pscredential]$DomainCreds
     )
+
+    if (!$(GetElevation)) {
+        Write-Error "You must run the $($MyInvocation.MyCommand.Name) function with elevated permissions! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
 
     if (!$IsLinux) {
         Write-Error "This host is not Linux. Halting!"
@@ -19,6 +56,12 @@ function Join-LinuxToAD {
         Write-Error "Currently, the $(MyInvocation.MyCommand.Name) function only works on RedHat/CentOS Linux Distros! Halting!"
         $global:FunctionResult = "1"
         return
+    }
+
+    # Make sure nslookup is installed
+    which nslookup *>/dev/null
+    if ($LASTEXITCODE -ne 0) {
+        $null = yum install bind-utils -y
     }
 
     # Ensure you can lookup AD DNS
@@ -43,23 +86,30 @@ function Join-LinuxToAD {
         "policycoreutils-python"
     )
 
+    [System.Collections.ArrayList]$SuccessfullyInstalledDependencies = @()
+    [System.Collections.ArrayList]$FailedInstalledDependencies = @()
     foreach ($Dependency in $DependenciesToInstall) {
         $null = yum install $Dependency -y
 
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Problem installing '$Dependency'! Halting!"
-            $global:FunctionResult = "1"
-            return
+            $null = $FailedInstalledDependencies.Add($Dependency)
         }
         else {
-            Write-Host "Successfully installed '$Dependecy'..." -ForegroundColor Green
+            $null = $SuccessfullyInstalledDependencies.Add($Dependency)
         }
+    }
+
+    if ($FailedInstalledDependencies.Count -gt 0) {
+        Write-Error "Failed to install the following dependencies:`n$($FailedInstalledDependencies -join "`n")`nHalting!"
+        $global:FunctionResult = "1"
+        return
     }
 
     # Join domain with realm
     $DomainUserName = $DomainCreds.UserName
+    if ($DomainUserName -match "\\") {$DomainUserName = $($DomainUserName -split "\\")[-1]}
     $PTPasswd = $DomainCreds.GetNetworkCredential().Password
-    echo $PTPasswd | realm join $DomainName --user=$DomainUserName
+    printf "$PTPasswd" | realm join $DomainName --user=$DomainUserName
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error -Message "Could not join domain $DomainName. See error output"
@@ -73,8 +123,8 @@ function Join-LinuxToAD {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUnbcLxz8Fgr0wa1EtRqJk+y0d
-# Fcmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUSNypzR2SeG2dXKXQU9RDtlQu
+# Jvegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -131,11 +181,11 @@ function Join-LinuxToAD {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLPytA2Voe5bop3Q
-# YYZApOlXZ5chMA0GCSqGSIb3DQEBAQUABIIBAJwjXNozOvn/NKt/eTldY9QP9NHj
-# JHZIpouuBvD30TVjUO3qdkwIolwjWiFwaxlX40FU/kLxSBCM306mkhKtjcERXdYS
-# kxbE6B/ILY9xhGxYQ8ogwNqBL4RA3p4PuvjaQCpi7hKgCFJ3kZsEAH1AaglsaPwF
-# 9vLs9HnFp7BwU1N5X3kwkBUsiHD4aAWGNBscPSs7BMpAyUH+gcUjpOgWmd7ZxjKN
-# HucpgG5OVg40mCcaqCJU8JckGNHw4UqQCFQ5vclAfqaLgfS3LQyW6T0MM2ZGDlWg
-# tVZBIwLkNjLWNvsexS8ts96GdX8qm+OkWpn38SkXNLpdsjbbkHtOZIww7Rc=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPmWzpV/1vVIIXJB
+# J/xD1lkPEQmIMA0GCSqGSIb3DQEBAQUABIIBALoi/94aQ+NI+ZMWAyiRsIWsGLsF
+# n4YopnFowNFsw5yoWMXjAEYR4YrtO2Z7gwf6k6umyPgSNYwLg5Mr16h4Rwgv0GnZ
+# icdkfqS1cJuriyevGW8WGd7o6jvgwapU8HpZIrtVfTGZSns4hrq8u+uT5Pwe6t0d
+# 6PHCFIofN445TmvTohvA8Nhq83c5NMU0NIAzhCsBsXeoJEnVauhb1ZVIqWXdTI/3
+# +OyPtp+Jsseb7ZGSaJ9UYvudNyweMmQvIki9xxQFBad2SNJY/ieOxUFoSuOmyIgg
+# efENUYUR2T12j8RT+YGGdsz9qHAF7MeB8sRuZqAmpmtbSheV36a32usPemk=
 # SIG # End signature block

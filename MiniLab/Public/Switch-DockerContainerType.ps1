@@ -1,5 +1,23 @@
-# Switch DockerCE from Windows Container mode to Linux Container mode
-# or visa versa.
+<#
+    .SYNOPSIS
+        This function switches Docker-For-Windows (Docker CE) from Linux Container mode to Windows Container mode
+        or visa versa.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER ContainerType
+        This parameter is MANDATORY.
+
+        This parameter takes a string with a value of either "Windows" or "Linux" representing the contianer
+        mode that you would like to switch to.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Switch-DockerContainerType -ContainerType Windows
+        
+#>
 function Switch-DockerContainerType {
     [CmdletBinding()]
     Param (
@@ -41,8 +59,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU55Ent7dq9vTvCWOpb2sQDHX3
-# ix6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUZysVkrJhUKCxix+6LRRKQ+tZ
+# wpygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -99,11 +117,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIPXxY66ve+PUD8l
-# LLK69dedRmHyMA0GCSqGSIb3DQEBAQUABIIBAEi7lq0NzJYagCN1S5fu9pzqOiSQ
-# r9cU4voy+XySqblAVvUzIRrWJyWTSmgU+UwkAj1hjVCV2s0uQCNuUqhRTtdF7mym
-# O0fMDhRxZOX6LD4ScoGK3emuo4zh5UDNvmRHFY977c6VEjfI9w9VzjsCr1M6cWPz
-# XXjWw15pz5Ah83yaa5knh7gB37bMy2RG1lFFE9yP3u0sWQTWoMf59hm3IhCqmFvG
-# NG0S52zCmzFiY1WwSZSt0/OtUkHC03NvzCpUoQn1Tu/2HQG761cJL1WexDvb+FaU
-# zJ7N6N0yYQ663dhCp5Q6mXf2RxQAQR+fDAJ7mgm5xIzFKenWzOZndioVUTw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLdyX+nH7J/PvZ9W
+# BrILN7EoDHZfMA0GCSqGSIb3DQEBAQUABIIBAEizwsXjxuQbAm1p3J+pCunOLFdn
+# nTcdbMTXdspdAeVpwDePD474Gaxexrz9hLODzRGL9gMJ4OPwtWs0vv9U+ZxkBcSo
+# do0qLdp7jVPJ4Vuu1EK9TvI5/MbuoEQh+jvoUKUgMBtzn1dcXTGQ6D3AInSY8sEo
+# bfYng35VFlNGLwPqVnZmV2b5k1lN90FdHJmcTBialnmoo8KCrqKcNwPPjvWym8X0
+# TWWGxcEek1XfRqII3Lq5ndoIeXt4V0fz5cTKqgIVaGXqzfh7T718uZ7kn0jooP95
+# 4Lp1wR2ySKqQfevtyrGYkRsm+GGUIO3sAefcN2kCBsN29wdVFun44K1IqHw=
 # SIG # End signature block

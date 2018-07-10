@@ -1,3 +1,25 @@
+<#
+    .SYNOPSIS
+        This function adds an IP or hostname/fqdn to "WSMan:\localhost\Client\TrustedHosts". It also ensures
+        that the WSMan Client is configured to allow for remoting.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER NewRemoteHost
+        This parameter is MANDATORY.
+
+        This parameter takes a string that represents the IP Address, HostName, or FQDN of the Remote Host
+        that you would like to PSRemote to.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Add-WinRMTrustedHost -NewRemoteHost 192.168.2.49
+        
+#>
 function Add-WinRMTrustedHost {
     [CmdletBinding()]
     Param (
@@ -54,8 +76,8 @@ function Add-WinRMTrustedHost {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUwK3DgEqQkbKuGtabfZxgq6Ni
-# PJOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUrIfD6Tw3f1Y092PGmHgVc/tg
+# jsmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -112,11 +134,11 @@ function Add-WinRMTrustedHost {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC3D+mH12QWmlcx+
-# 2tO/hj5Onx0wMA0GCSqGSIb3DQEBAQUABIIBADNZLuWPUTpyVWP4Ms2TEg1f34sQ
-# OrT+w31/LvIAtru1kesZNvkiK59CDpCTCRTRaUcPPNynP20mWkMl3bi7FNM5of6e
-# ua/2MwZiJn+Lc85UltWcrfK86qtZ48Wt5W8wzxEFyaVvG46fF1JKG3d2OCA2HrZx
-# sSWe7VzU3JzmM3f9cJEOyhdmQ5LkXCePVcBg4Ns0OlgRzRVlKxqnjymrZYOQl32p
-# v+0VVKDsEQi40QbKNcLNbm7laIH9uJ5Gp3Mi1o4z6O9+0WNowNCHC3HR7Y7Mq4m6
-# 3m+GZKVhGtR5/Y1ejcVuVr4wLQgQB3NaO8sKo4Z05uKX71aWYBBZz+YJKhw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMv3zvYXHSzR9X6R
+# 8wqgMI58E+NEMA0GCSqGSIb3DQEBAQUABIIBAAefpU03JHVhjrdnJApzlHUQLi81
+# JaSbinrZvxhzn9Jb8TtQVocutSojLwN9avoSMmtJIdxJ9qJWab1HF87p1REvJJS7
+# e3LTqT61pX/ZL2aoMZa+eZL4nKBbw2raTXX4Oh/Nm9Gv8HUDflapWySPbX1VEIxR
+# UpTo3XkiKRp6XPc9vZFnQNHj5aYOU/UwRdvwfhG6NgnHNgYA+CouXJ8L+saT2jS3
+# dKFbbxxnsnRP1tKdSmFEy2jn/nkW30831AWRcisJQWpN/htoRT5aWOWI00STqN+G
+# WHRJHlcw59Tl/4lespnBnXJ6Qi8lenb/2k/CQN66x35Lmmdx9Qgl3OCKtXA=
 # SIG # End signature block

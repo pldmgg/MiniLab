@@ -61,14 +61,15 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'DoDockerinstall' | Should Be $False
         $Commands -contains 'EnableNestedVM' | Should Be $False
         $Commands -contains 'FixNTVirtualMachinesPerms' | Should Be $False
+        $Commands -contains 'FixVagrantPrivateKeyPerms' | Should Be $False
         $Commands -contains 'GetDomainController' | Should Be $False
         $Commands -contains 'GetElevation' | Should Be $False
         $Commands -contains 'GetFileLockProcess' | Should Be $False
         $Commands -contains 'GetIPRange' | Should Be $False
-        $Commands -contains 'GetModMapObject' | Should Be $False
         $Commands -contains 'GetModuleDependencies' | Should Be $False
         $Commands -contains 'GetNativePath' | Should Be $False
         $Commands -contains 'GetNestedVirtCapabilities' | Should Be $False
+        $Commands -contains 'GetPendingReboot' | Should Be $False
         $Commands -contains 'GetVSwitchAllRelatedInfo' | Should Be $False
         $Commands -contains 'GetWinPSInCore' | Should Be $False
         $Commands -contains 'GetWorkingCredentials' | Should Be $False
@@ -95,6 +96,7 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'Get-DockerInfo' | Should Be $True
         $Commands -contains 'Get-DSCEncryptionCert' | Should Be $True
         $Commands -contains 'Get-EncryptionCert' | Should Be $True
+        $Commands -contains 'Get-GuestVMAndHypervisorInfo' | Should Be $True
         $Commands -contains 'Get-VagrantBoxManualDownload' | Should Be $True
         $Commands -contains 'Install-Docker' | Should Be $True
         $Commands -contains 'Join-LinuxToAD' | Should Be $True
@@ -118,14 +120,15 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         [bool]$Module.Invoke({Get-Item function:DoDockerInstall}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:EnableNestedVM}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:FixNTVirtualMachinesPerms}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:FixVagrantPrivateKeyPerms}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetDomainController}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetElevation}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetFileLockProcess}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetIPRange}) | Should Be $True
-        [bool]$Module.Invoke({Get-Item function:GetModMapObject}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetModuleDependencies}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetNativePath}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetNestedVirtCapabilities}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:GetPendingReboot}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetVSwitchAllRelatedInfo}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetWinPSInCore}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:GetWorkingCredentials}) | Should Be $True
@@ -138,6 +141,7 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         [bool]$Module.Invoke({Get-Item function:NewUniqueString}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:PauseForWarning}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:ResolveHost}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:TestHyperVExternalvSwitch}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:TestIsValidIPAddress}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:UnzipFile}) | Should Be $True
     }
@@ -146,8 +150,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUnugjtfreSYiojvpBR3RcziO1
-# xFygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUATJpj3B3EKWtbdiJRHnqeN1f
+# IAmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -204,11 +208,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFf+tZjoSGzoemwH
-# 8R1Z9C05YC20MA0GCSqGSIb3DQEBAQUABIIBAGh+fxQcFWb4M/wgWwonp6lwyZyz
-# LRxPqs6GT30Zg/g1UbuFPSDYwrnmBp6EeoiZKvSEy8K0r/B/h/ta84D140GJdkoq
-# LvR6wq7TQQ3ZVXUaH+6H0XxG6V9qKnV1P58856sA7lsq9jCDxL+vU7KmDLv930MI
-# pbGxZj7EObxIGVMq9VSF//3fvboN2Q48CJS2PRqN7TZ9571CmT8a5J22HlOsUnfN
-# qFTXrkqAxHxQC/Hcbuq+Ni5LHVwmSi2spGOm3U6e2fShX7gEcFrZ4LrAjFWzYocU
-# dLqbSHwCOln/11JBuKAYZYcrQnwbApo7uE7vqw088lqZn9mGdHSLg0IpzrM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPiOn+KWGrqDIitC
+# wunI/KZoE96/MA0GCSqGSIb3DQEBAQUABIIBAEFXOG6m8lYL22j0cu0n4wACd52h
+# L8HFCPZ7DiXqawod64ohlorNUKcXwZUtCgWvzEphvxP/cFMXU2jmJqb+r5PnsQqb
+# AG3wNOTNysEhZyHJObmEYosL9lZu1honvdR8hHQjUyRF7z5d6rk416ZGgrF8TQVG
+# Tz0EQHw7uDE+KPwFFJcd8DY5hINCRCiBBJKMl/7AX1uPIypDeje4CzPDEkqju0Yl
+# KEJQdRudFEfQhlUsH9SQBB0LUggSpUR10WbE0wJ+4Mh/2tpI9lPiOfaSRb4TLPBK
+# jt6YW1ZFvZkReFIrBdKx/kzPit5eTG1ZqBE4oLAFm6zWLZcUsm9zh5xwYXc=
 # SIG # End signature block

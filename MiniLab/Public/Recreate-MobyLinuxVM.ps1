@@ -1,3 +1,23 @@
+<#
+    .SYNOPSIS
+        This function recreates the MobyLinuxVM used by Docker-For-Windows to manage Linux Containers.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .NOTES
+
+    .PARAMETER MobyLinuxVMMemoryInGB
+        This parameter is OPTIONAL, however, it has a default value of 2.
+
+        This parameter takes an integer (even numbers only) that represents the amount of Memory
+        in GB to allocate to the newly recreated MobyLinuxVM.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Recreate-MobyLinuxVM
+#>
 function Recreate-MobyLinuxVM {
     [CmdletBinding()]
     Param(
@@ -38,8 +58,8 @@ function Recreate-MobyLinuxVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUf4URch2U8KHtvND04J9uvqCe
-# pIKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5zvQ2sXvoZCOrG7LDRD73Yuc
+# U3+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -96,11 +116,11 @@ function Recreate-MobyLinuxVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFE/uFrtQQ27Xed+K
-# koV4Zpvgqf2kMA0GCSqGSIb3DQEBAQUABIIBALN82QMpKaNpqSohc8E704IdCFyN
-# Z8FeD51uteM8RX/9hW1DIs+oV3rFfNfj0hEQCqvPJEu6MH0EoDwKp58g1Icm4xD0
-# 8pxoVMh1o8n0uGPVzjWz879bZU4Y6AvD/qXOy1Axn0dtNkbmyI60YC2vt+6uU6ep
-# hN9FnZ/tiVKG3/IJvrWupoxmu56cIbwsH8H8/Jromjg5sJxxtl17Gokv0IKCtKbt
-# qXlF+eTqX0V8rhdZO5XtAQviTyK3i8gKPtwTV+yZ2VRg4EnQQ5/Yg9LkN1o+dj4+
-# 9HRk3WjLORD/a17E1vD8mQU3cZITCGvCp7iIWV81FiNiV/AzsuldSvgBOVs=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBKuNTzgO5mQjs2i
+# HVJoz9OaCbxlMA0GCSqGSIb3DQEBAQUABIIBACAWWGaH3ymymi87ZBwZOK1Du7G4
+# NdNt0ec7jmghXIUbJArVhoIeQQpQm1c4NIwk/kanFitWJo0eoc8K2AEed6ldTYVH
+# gl/feJsXsZtXvXsH0F18x2hzRHlWVoRgx5YULonc0R9kgPH3WDZMNUztMmH3iLTT
+# ZlL5y394gPiEqqy9BmE1k2XNJ7GWcdfCtRpfc32LUSNHTOVpJf2QapWXq8ryBIx0
+# 7cXfGR6WWI6+AU7AqHCxXuxgqmhT58T7c02m0e47uCCWUESlB0asOt4fwMxjCMPn
+# gSD2NHXpUFuU0EfShIMYlV7OOF6Ce+fQvaZr3nlmHhid8d9g89Hv8Ya8riQ=
 # SIG # End signature block

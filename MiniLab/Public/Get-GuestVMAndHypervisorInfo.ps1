@@ -1,3 +1,107 @@
+<#
+    .SYNOPSIS
+        This function is meant to be used in situations where Docker-For-Windows (Docker CE) is being installed
+        on a Windows Guest VM (as opposed to Bare Metal). It gathers a lot of information about the Windows
+        Guest VM, as well as its Hyper-V hypervisor (if appropriate credentials are provided). The function can
+        be run from anywhere as long as it's pointed at a Guest VM (via the -TargetHostNameOrIP or -TargetVM parameters).
+
+        If you do not have access to the Guest VM's hypervisor or if the hypervisor is not Hyper-V, make sure to
+        use the -TryWithoutHypervisorInfo switch.
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER TargetHostNameOrIP
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the IP Address, DNS-Resolvable HostName, or FQDN
+        of the Guest VM that you would like to gather info from. If it is NOT used (and if
+        the -TargetVMName parameter is not used), the function will assume that the localhost
+        is the Guest VM that you would like to gather information about.
+
+    .PARAMETER TargetVMName
+        This parameter is MANDATORY (for its parameter set).
+
+        This parameter takes a string that represents the name of the Hyper-V VM that you would like
+        to gather info from. Using this parameter requires that you use the -HypervisorFQDNOrIP
+        and -HypervisorCreds parameters, unless the localhost IS the Hyper-V hypervisor.
+
+    .PARAMETER HypervisorFQDNOrIP
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents the IP, DNS-Resolvable HostName, or FQDN of the
+        Hyper-V hypervisor that is managing the Guest VM that you would like to gather info from. If
+        the localhost is NOT the Hyper-V hypervisor and if you are NOT using the -TryWithoutHypervisorInfo
+        switch, then this parameter becomes MANDATORY.
+        
+    .PARAMETER TargetHostNameCreds
+        This parameter is OPTIONAL.
+
+        This parameter takes a pscredential object that contains credentials with permission to access
+        the Guest VM that you would like to gather info from. If the localhost is the Guest VM target, or
+        if you are logged in as a user that already has access to the Guest VM, then you do NOT need to use
+        this parameter.
+
+    .PARAMETER HypervisorCreds
+        This parameter is OPTIONAL.
+
+        This parameter takes a pscredential object that contains credentials with permission to access
+        the Hyper-V hypervisor that is managing the Guest VM that you would like to gather info from. If
+        the localhost IS the Hyper-V hypervisor, or if you are logged in as a user that already has access
+        to the Hyper-V hypervisor, then you do NOT need to use this parameter.
+
+    .PARAMETER TryWithoutHypervisorInfo
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will not attempt to gather any information about
+        the hypervisor managing the target Guest VM. Be sure to use this switch if you do not have access
+        to the hypervisor or if the hypervisor is not Hyper-V.
+
+    .PARAMETER AllowRestarts
+        This parameter is OPTIONAL.
+
+        This parameter is a switch.
+
+        By default, this function installs Hyper-V on the target Guest VM is it isn't already. This is part
+        of a test that is used to determine if an External vSwitch attached to a Nested VM on the Guest VM
+        can actually reach an outside network.
+
+        If Hyper-V has not already been installed on the target Guest VM, then a restart will be required.
+        You can use this switch to allow the Guest VM to restart. The function will remain in a holding
+        pattern until the Guest VM comes back online, so you will NOT need to run this function twice.
+
+    .PARAMETER NoMacAddressSpoofing
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will NOT conduct the test to determine if
+        an External vSwitch attached to a Nested VM on the Guest VM can reach an outside network. In other
+        words, the assumption will be that all Nested VMs will be on a Hyper-V Internal network on
+        the Guest VM.
+
+        HOWEVER, since it is still possible to configure networking such that Nested VMs on an Internal
+        Hyper-V network can reach an outside network, a test will still be conducted to determine if
+        an Internal vSwitch attached to a Nested VM can reach an outside network via NAT.
+
+    .PARAMETER SkipHyperVInstallCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will assume that Hyper-V is already installed
+        on the target Guest VM and not attempt any verification or installation.
+
+    .PARAMETER SkipExternalvSwitchCheck
+        This parameter is OPTIONAL.
+
+        This parameter is a switch. If used, this function will NOT conduct the test to determine if
+        an External vSwitch attached to a Nested VM on the Guest VM can reach an outside network. In other
+        words, the assumption will be that all Nested VMs will be on a Hyper-V Internal network on
+        the Guest VM.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Get-GuestVMAndHypervisorInfo
+        
+#>
 function Get-GuestVMAndHypervisorInfo {
     [CmdletBinding(DefaultParameterSetName='Default')]
     Param(
@@ -22,12 +126,6 @@ function Get-GuestVMAndHypervisorInfo {
         [Parameter(Mandatory=$False)]
         $HypervisorCreds,
 
-        # -TryWithoutHypervisorInfo MIGHT result in creating a Local NAT
-        # with an Internal vSwitch on the Target Machine (assuming it's a Guest VM). It depends if
-        # Get-NestedVirtCapabilities detemines whether the Target Machine can use an External vSwitch or not.
-        # If it can, then a Local NAT will NOT be created.
-        # If a NAT already exists on the Target Machine, that NAT will be changed to
-        # 10.0.75.0/24 with IP 10.0.75.1 if it isn't already
         [Parameter(Mandatory=$False)]
         [switch]$TryWithoutHypervisorInfo,
 
@@ -951,8 +1049,8 @@ function Get-GuestVMAndHypervisorInfo {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU8PSx2ByxSiqdJfVaRix7OCkO
-# DQWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5sw8VLqaTLnL4firfUg0GAhR
+# Qgygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1009,11 +1107,11 @@ function Get-GuestVMAndHypervisorInfo {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDH9k7ecK27OUZBg
-# fKRd8BR0bfGXMA0GCSqGSIb3DQEBAQUABIIBAEkkRiKlZAbQZvlm8hkuhPdxQjuM
-# xtpH1ciwhwYSEP+o35xP9H2O1Ls6xZDCnkFmwRwiv36WGuV3HhEwON291pWBUP15
-# ex3wmxssmKryVO1nZAi8OWE0jcLMkHmOKu1J6pAly/C4A3kDH+wrfPiNkySn5wKt
-# lT3VmG2rQswPCD4CRRMqOfonNqLGlc6A8wgnhlVYW/lQa3aqHclXIhltC8UdNltG
-# K3yYthOEwkYh24tFCVFx/5n9gHoOJw+Mcf8Jz7sVCyuZbZvn1nRYjs/MV6lj7MbB
-# YayMmp5rAIZ42keVy+2+fHuc4NPe2ZeL1vJox60n3kvgUEVy5O7ZF3k/7YM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCqa3x0Dw8nJ7SoD
+# fzvPkerg8VFgMA0GCSqGSIb3DQEBAQUABIIBAD1Qi7UI55R3gUOcoYRIisiPcueO
+# ygU9I9Yu2tk6DoShvvDQs0+lvt6uHh0oVyO8fMvBgGehHGEAU/qxqbMXFtWcXRzj
+# qz9ONfAfnS/KR3JJ4iPpb2Uz1+jYpX1Cbq9tXZQE1dH+dItme5CwT2P/s9thbYBx
+# dm34HABH2ptIi58o2cdbwkLYLVh3zVfPY3x/dM/cMtot04ePmu52+3YvIphLbq4v
+# 2W9nUZsT8CjMVc9GI5x5coD9ne6tmc1zKOJc69o15q43XOKVke+dPZNaeIPkfgtG
+# 10nOLgOxvywHEcvye4+rMPRwnIlyhKvzH6JBmKzu+1oCggQzaj9U5m25sVc=
 # SIG # End signature block
