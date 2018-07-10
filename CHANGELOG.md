@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.4 (July 10, 2018)
+
+- Added Docker functions and associated comment-based help
+
 ## 0.9.3 (July 1, 2018)
 
 - Fixed permissions issues with 'NT VIRTUAL MACHINE\Virtual Machines'

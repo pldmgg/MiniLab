@@ -216,31 +216,31 @@ namespace Microsoft.WindowsAzure.Internal
         [void][System.Reflection.Assembly]::LoadWithPartialName('System.Serviceprocess')
     }
 
-	$vmbus = [System.ServiceProcess.ServiceController]::GetDevices() | where {$_.Name -eq 'vmbus'}
+ $vmbus = [System.ServiceProcess.ServiceController]::GetDevices() | where {$_.Name -eq 'vmbus'}
 
-	If($vmbus.Status -eq 'Running')
-	{
-		$client = New-Object Microsoft.WindowsAzure.Internal.DhcpClient
-		try {
-			[Microsoft.WindowsAzure.Internal.DhcpClient]::GetDhcpInterfaces() | % { 
-				$val = $client.DhcpRequestParams($_.Id, 245)
-				if($val -And $val.Length -eq 4) {
-					$detected = $True
+ If($vmbus.Status -eq 'Running')
+ {
+  $client = New-Object Microsoft.WindowsAzure.Internal.DhcpClient
+  try {
+   [Microsoft.WindowsAzure.Internal.DhcpClient]::GetDhcpInterfaces() | % { 
+    $val = $client.DhcpRequestParams($_.Id, 245)
+    if($val -And $val.Length -eq 4) {
+     $detected = $True
                 }
-			}
-		} finally {
-			$client.Dispose()
-		}	
+   }
+  } finally {
+   $client.Dispose()
+  } 
     }
     
-	$detected
+ $detected
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUP0fVnCxnZ5VmGM147EcHemQE
-# 1Iqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUvZLS8iYy9I8paCDGQD7iMWq8
+# vN2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -297,11 +297,11 @@ namespace Microsoft.WindowsAzure.Internal
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAMj7d+O3P00L7R4
-# gD2fCjzFx06VMA0GCSqGSIb3DQEBAQUABIIBAL513qsRVcob6r3kNXbMgXT5OJru
-# 4kEOfAR4gzYxhmrM2SgLYGvdJfOW1iYi9eZKggNSJ1X3PTqYmrm4W8FXmUdPQ0oG
-# qr9ylWBkSlMb8954ZRZoWKvJz/O12lmLk08NfFNuCPleyN12p9wj/d7e+WWpHYGk
-# gcpI4Cafe3z3Wm6CLSwgktL+/dKPg3m4PUBVbB5W8eKi3FeBzcPCLvrcPo88KWks
-# rTAk7xGyi8ixIUGgR8wdP69x4a9EDSqQzzRixMQrUwWeCjPe6hW3RRTGgGwa3o6X
-# QVZeUz3igloh9ED6XFfHyWh6NH1kFax+Asb9AVdSG+0i8+3BBWoM00TuxY4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLuYITsSgFZUGsR9
+# X4vienSLOKjsMA0GCSqGSIb3DQEBAQUABIIBAFGhZfCh+I9KCn6AuYEzxwjRhcc4
+# DESg6mcC5Ds6kMBRjJqp8BznN67jxxsM3cjNRugDcDNnmoegsB0PgFQXrDMJ1r0/
+# a6ocGGclbibTA9OVZ96ojhObbduF1ZGntpOWwzS8hQ9S3DvpqXvMDKI5uA+Dy0Pp
+# o/6a/EKU2D7z1/pniuEQ8hPYx8Fiz77N+XLTal5h7P78PSuV0dexWhqTwIlzTObf
+# pSJUeROzAN4gWjZD1o7ntbv7NSCRYV89fIMbX1/FbE2NytcBZh9cwBZS31So+R3f
+# qry1upsVVFEYwbLHCiZzVmJF8orlUpNNZY4TPW6nojmhcGi4Y9rwMWpvqQw=
 # SIG # End signature block
