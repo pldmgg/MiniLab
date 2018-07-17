@@ -98,6 +98,7 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'Get-EncryptionCert' | Should Be $True
         $Commands -contains 'Get-GuestVMAndHypervisorInfo' | Should Be $True
         $Commands -contains 'Get-VagrantBoxManualDownload' | Should Be $True
+        $Commands -contains 'Get-WinOpenSSL' | Should Be $True
         $Commands -contains 'Install-Docker' | Should Be $True
         $Commands -contains 'Join-LinuxToAD' | Should Be $True
         $Commands -contains 'Manage-HyperVVM' | Should Be $True
@@ -150,8 +151,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUATJpj3B3EKWtbdiJRHnqeN1f
-# IAmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUkbVX8o2ZlZ/e+D6g/26cqOHh
+# VE6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -208,11 +209,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPiOn+KWGrqDIitC
-# wunI/KZoE96/MA0GCSqGSIb3DQEBAQUABIIBAEFXOG6m8lYL22j0cu0n4wACd52h
-# L8HFCPZ7DiXqawod64ohlorNUKcXwZUtCgWvzEphvxP/cFMXU2jmJqb+r5PnsQqb
-# AG3wNOTNysEhZyHJObmEYosL9lZu1honvdR8hHQjUyRF7z5d6rk416ZGgrF8TQVG
-# Tz0EQHw7uDE+KPwFFJcd8DY5hINCRCiBBJKMl/7AX1uPIypDeje4CzPDEkqju0Yl
-# KEJQdRudFEfQhlUsH9SQBB0LUggSpUR10WbE0wJ+4Mh/2tpI9lPiOfaSRb4TLPBK
-# jt6YW1ZFvZkReFIrBdKx/kzPit5eTG1ZqBE4oLAFm6zWLZcUsm9zh5xwYXc=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAu63ObxF2QIs/5B
+# WnRvYgBacmEYMA0GCSqGSIb3DQEBAQUABIIBAE4xWBBkV9hRv6BOBxMx3759AxrH
+# PFbMqP2ufPUjLyu+Ouqd/8qYp75RyJ3uScCvz66QaeZ/2oTKI2ClZF1mz5bJozEY
+# 7Tz1pGMtlsl5kCb1MYLqhnxZMVAKO7rWWMHAFOMKzo9o9Tpi2fvGW0OIHCxcXEno
+# 5a7UzeuOHbimeb6dKlvgP28A0a7gCmynzNYPFrUgIqIGwPp1gfQK20NyBu2IwQnL
+# KCRz1SPkqxo4zXJU41JPMTwRg2+9vEOYSWyMAMkxklumCtpLI/ydBWuGorrOg9mh
+# MwEUliAWIGC+5jZvbDrSMrbSCX8KAwnu/Zn9lLRbp1DVSlW0cZ6U1pM6Qeo=
 # SIG # End signature block

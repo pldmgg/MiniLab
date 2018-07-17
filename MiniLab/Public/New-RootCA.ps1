@@ -435,7 +435,7 @@ function New-RootCA {
         while (!$WebServTempl -or !$ComputerTempl) {
             # NOTE: ADSI type accelerator does not exist in PSCore
             if ($PSVersionTable.PSEdition -ne "Core") {
-                $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
+                $ConfigContext = $([System.DirectoryServices.DirectoryEntry]"LDAP://RootDSE").ConfigurationNamingContext
             }
             else {
                 $DomainSplit = $(Get-CimInstance win32_computersystem).Domain -split "\."
@@ -869,8 +869,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUIAFG8nO6lZuhdK8H2NJtJC3o
-# fFygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWyqUGe5YAHpBXL3J1Wa5C0eJ
+# nTugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -927,11 +927,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEipqHODkCjAno28
-# jNkMazvzJeV6MA0GCSqGSIb3DQEBAQUABIIBAGcgKJjPND9QstOqUth+JinmFYk0
-# rZL7dJnaNSonNBtcToU86FzC/CQegdnCZSWHsswam/auuplSGBcMgG+iq3zJzyj0
-# NoR4AEPsTzuFvqNPhRQzrLfRKq4K86t80ePqFVqpmWMioUZZsdxX/9dy14Io9m57
-# jKPalHqfPKp/Hq2Fx85xOTbDfs5SVFyqgJTcqY/zfPwnCkoHoNnnpax0GWcG7Ynw
-# 5C0nq1HWzX5p+pjWqD9z2wCSeYkh7JdLu4jR93H34YpXgIa5wzntstMtHT+fOOk+
-# fd1Mcb7jGVY/ZcdpIHEAr2Cuki8MKzpfElnso39nRllFafXa45aDaAauUQk=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNJ0wwaLtOw04KYO
+# ts0cZH2jxbS0MA0GCSqGSIb3DQEBAQUABIIBACkmQNlBGSFo2hmpQZMVU+WPPHll
+# ID0wlLNiDdIBlTRECqaiRLWKoslSin28624r08pi5INCFoTtttaA6jIwFgOKnCcV
+# e66MK+c4j/hVSq8qw/JwrOQZ2E31RR346SEOvrHjSuBAaUYJB6Rni7rtyubn3H6c
+# RtQIl3EeUfu9A6zE6zyFSj5KXot474d7Pyxz9xfKObz7TMer4cFokf18gl+BvvPr
+# PTVN/8iIfKsMP3FbiGRlI/DRCW5U/e5eeKmnjYwmuRpxb0n6128PXM6bYignfSIQ
+# lepmhKPS4/aJQwJrlo2hdeWM9SDJGjrsis6Tmd/TNLE8hXcwFpeqN5ct/eg=
 # SIG # End signature block

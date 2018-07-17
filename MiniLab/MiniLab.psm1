@@ -6672,8 +6672,8 @@ function Generate-Certificate {
                 }
             }
             if ($OSInfo.ProductName -like "*Server*") {
-                Import-Module ServerManager
-                if (!$(Get-WindowsFeature RSAT).Installed) {
+                #Import-Module ServerManager
+                if (!$(Get-WindowsFeature RSAT-AD-Tools).Installed) {
                     Write-Host "Beginning installation..."
                     if ($AllowRestart) {
                         Install-WindowsFeature -Name RSAT -IncludeAllSubFeature -IncludeManagementTools -Restart
@@ -6793,9 +6793,10 @@ function Generate-Certificate {
         }
     }
 
-    $DomainPrefix = ((gwmi Win32_ComputerSystem).Domain).Split(".") | Select-Object -Index 0
-    $DomainSuffix = ((gwmi Win32_ComputerSystem).Domain).Split(".") | Select-Object -Index 1
-    $Hostname = (gwmi Win32_ComputerSystem).Name
+    $Win32CompSys = Get-CimInstance Win32_ComputerSystem
+    $DomainPrefix = $($Win32CompSys.Domain).Split(".") | Select-Object -Index 0
+    $DomainSuffix = $($Win32CompSys.Domain).Split(".") | Select-Object -Index 1
+    $Hostname = $Win32CompSys.Name
     $HostFQDN = $Hostname+'.'+$DomainPrefix+'.'+$DomainSuffix
 
     # If using Win32 OpenSSL, check to make sure the path to binary is valid...
@@ -6819,36 +6820,27 @@ function Generate-Certificate {
         if ($OpenSSLExeVersion.Major -lt 1 -or $($OpenSSLExeVersion.Major -eq 1 -and $OpenSSLExeVersion.Minor -lt 1) -or
         ![bool]$(Get-Command openssl -ErrorAction SilentlyContinue)
         ) {
-            [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
-            $OpenSSLWinBinariesUrl = "http://wiki.overbyte.eu/wiki/index.php/ICS_Download"
+            if ($PSVersionTable.PSEdition -eq "Desktop") {[Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"}
+            $OpenSSLWinBinariesUrl = 'https://indy.fulgan.com/SSL/'
+            #$OpenSSLWinBinariesUrl = "http://wiki.overbyte.eu/wiki/index.php/ICS_Download"
             $IWRResult = Invoke-WebRequest -Uri $OpenSSLWinBinariesUrl -UseBasicParsing
-            $LatestOpenSSLWinBinaryUrl = $($IWRResult.Links | Where-Object {$_.OuterHTML -match "win64\.zip"})[0].href
+            if ($OpenSSLWinBinariesUrl -match "fulgan") {
+                $LatestOpenSSLWinBinaryUrl = $OpenSSLWinBinariesUrl + $($IWRResult.Links | Where-Object {$_.OuterHTML -match "win64\.zip"})[-1].href
+            }
+            if ($OpenSSLWinBinariesUrl -match "overbyte") {
+                $LatestOpenSSLWinBinaryUrl = $($IWRResult.Links | Where-Object {$_.OuterHTML -match "win64\.zip"})[0].href
+            }
             $OutputFileName = $($LatestOpenSSLWinBinaryUrl -split '/')[-1]
             $OutputFilePath = "$HOME\Downloads\$OutputFileName"
             Invoke-WebRequest -Uri $LatestOpenSSLWinBinaryUrl -OutFile $OutputFilePath
-
-            if (!$(Test-Path "$HOME\Downloads\$OutputFileName")) {
-                Write-Error "Problem downloading the latest OpenSSL Windows Binary from $LatestOpenSSLWinBinaryUrl ! Halting!"
-                $global:FunctionResult = "1"
-                return
-            }
-
-            $OutputFileItem = Get-Item $OutputFilePath
-            $ExpansionDirectory = $OutputFileItem.Directory.FullName + "\" + $OutputFileItem.BaseName
-            if (!$(Test-Path $ExpansionDirectory)) {
-                $null = New-Item -ItemType Directory -Path $ExpansionDirectory -Force
-            }
-            else {
-                Remove-Item "$ExpansionDirectory\*" -Recurse -Force
-            }
-
-            $null = Expand-Archive -Path "$HOME\Downloads\$OutputFileName" -DestinationPath $ExpansionDirectory -Force
-
-            # Add $ExpansionDirectory to $env:Path
-            $CurrentEnvPathArray = $env:Path -split ";"
-            if ($CurrentEnvPathArray -notcontains $ExpansionDirectory) {
-                # Place $ExpansionDirectory at start so latest openssl.exe get priority
-                $env:Path = "$ExpansionDirectory;$env:Path"
+            $ExpansionDirectory = $OutputFilePath -replace '\.zip$',''
+            if (Test-Path $ExpansionDirectory) {Remove-Item "$ExpansionDirectory\*" -Recurse -Force}
+            $WinOpenSSLFiles = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force -PassThru
+            $WinOpenSSLParentDir = $WinOpenSSLFiles[0].Directory.FullName
+            [System.Collections.Arraylist][array]$CurrentEnvPathArray = $env:Path -split ';' | Where-Object {![System.String]::IsNullOrWhiteSpace($_)}
+            if ($CurrentEnvPathArray -notcontains $WinOpenSSLParentDir) {
+                $CurrentEnvPathArray.Insert(0,$WinOpenSSLParentDir)
+                $env:Path = $CurrentEnvPathArray -join ';'
             }
         }
 
@@ -6929,7 +6921,10 @@ function Generate-Certificate {
             try {
                 $InstallRSATResult = Install-RSAT -ErrorAction Stop
                 if ($InstallRSATResult -eq "RestartNeeded") {
-                    throw "$env:ComputerName must be restarted post RSAT install! Please restart at your earliest convenience and try the Generate-Certificate funciton again."
+                    $WrnMsg = "$env:ComputerName must be restarted post RSAT install in order to use the " +
+                    "ActiveDirectory Module. The Generate-Certificate function can continue but it cannot " +
+                    "verify that '$BasisTemplate' is appropriate for the requested certificate."
+                    Write-Warning $WrnMsg
                 }
             }
             catch {
@@ -6939,13 +6934,13 @@ function Generate-Certificate {
             }
         }
         if (!$(Get-Module -ListAvailable -Name ActiveDirectory)) {
-            Write-Error "Problem installing the ActiveDirectory PowerShell Module (via RSAT installation). Halting!"
-            $global:FunctionResult = "1"
-            return
-        }
-        if ($(Get-Module).Name -notcontains "ActiveDirectory") {
             try {
-                Import-Module ActiveDirectory -ErrorAction Stop
+                if ($PSVersionTable.PSEdition -eq "Core") {
+                    Import-WinModule ActiveDirectory -ErrorAction Stop
+                }
+                else {
+                    Import-Module ActiveDirectory -ErrorAction Stop
+                }
             }
             catch {
                 Write-Error $_
@@ -6965,10 +6960,10 @@ function Generate-Certificate {
         $IssuingCertAuthHostname = $IssuingCertAuth.Split("\") | Select-Object -Index 1
         $null = certutil -config $IssuingCertAuth -ping
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Successfully contacted the Issuing Certificate Authority: $IssuingCertAuth"
+            Write-Verbose "Successfully contacted the Issuing Certificate Authority: $IssuingCertAuth"
         }
         else {
-            Write-Host "Cannot contact the Issuing Certificate Authority: $IssuingCertAuth. Halting!"
+            Write-Verbose "Cannot contact the Issuing Certificate Authority: $IssuingCertAuth. Halting!"
             $global:FunctionResult = "1"
             return
         }
@@ -7014,15 +7009,39 @@ function Generate-Certificate {
             # Set displayName and CN Values for user-provided $BasisTemplate
             if ($ValidCertificateTemplatesByCN -contains $BasisTemplate) {
                 $cnForBasisTemplate = $BasisTemplate
-                $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate}
-                $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate} -Properties *
-                $displayNameForBasisTemplate = $AllCertificateTemplateProperties.DisplayName
+                if ($InstallRSATResult -eq "RestartNeeded") {
+                    Write-Verbose "Unable to use 'Get-ADObject' from ActiveDirectory Module without restart..."
+                }
+                else {
+                    if ([bool]$(Get-Command Get-ADObject -ErrorAction SilentlyContinue)) {
+                        try {
+                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate}
+                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate} -Properties *
+                            $displayNameForBasisTemplate = $AllCertificateTemplateProperties.DisplayName
+                        }
+                        catch {
+                            Write-Waring $($_ | Out-String)
+                        }
+                    }
+                }
             }
             if ($ValidCertificateTemplatesByDisplayName -contains $BasisTemplate) {
                 $displayNameForBasisTemplate = $BasisTemplate
-                $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate}
-                $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate} -Properties *
-                $cnForBasisTemplate = $AllCertificateTemplateProperties.CN
+                if ($InstallRSATResult -eq "RestartNeeded") {
+                    Write-Verbose "Unable to use 'Get-ADObject' from ActiveDirectory Module without restart..."
+                }
+                else {
+                    if ([bool]$(Get-Command Get-ADObject -ErrorAction SilentlyContinue)) {
+                        try {
+                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate}
+                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate} -Properties *
+                            $cnForBasisTemplate = $AllCertificateTemplateProperties.CN
+                        }
+                        catch {
+                            Write-Warning $($_ | Out-String)
+                        }
+                    }
+                }
             }
 
             # Validate $ProviderNameValue
@@ -7037,22 +7056,24 @@ function Generate-Certificate {
             }
             # Available Cryptographic Providers (CSPs) based on user choice in Certificate Template (i.e. $BasisTemplate)
             # Does the Basis Certificate Template LDAP Object have an attribute called pKIDefaultCSPs that is set?
-            $CertificateTemplateLDAPObjectSetAttributes = $AllCertificateTemplateProperties.PropertyNames
-            if ($CertificateTemplateLDAPObjectSetAttributes -notcontains "pKIDefaultCSPs") {
-                $PKIMsg = "The Basis Template $BasisTemplate does NOT have the attribute pKIDefaultCSPs set. " +
-                "This means that Cryptographic Providers are NOT Limited, and (almost) any ProviderNameValue is valid"
-                Write-Host $PKIMsg
-            }
-            else {
-                $AvailableCSPsBasedOnCertificateTemplate = $AllCertificateTemplateProperties.pkiDefaultCSPs -replace '[0-9],',''
-                if ($AvailableCSPsBasedOnCertificateTemplate -notcontains $ProviderNameValue) {
-                    Write-Warning "$ProviderNameValue is not one of the available Provider Names on Certificate Template $BasisTemplate!"
-                    Write-Host "Valid Provider Names based on your choice in Basis Certificate Template are as follows:`n$($AvailableCSPsBasedOnCertificateTemplate -join "`n")"
-                    $ProviderNameValue = Read-Host -Prompt "Please enter the name of the Cryptographic Provider (CSP) you would like to use"
-                    while ($AvailableCSPsBasedOnCertificateTemplate -notcontains $ProviderNameValue) {
+            if ($AllCertificateTemplateProperties) {
+                $CertificateTemplateLDAPObjectSetAttributes = $AllCertificateTemplateProperties.PropertyNames
+                if ($CertificateTemplateLDAPObjectSetAttributes -notcontains "pKIDefaultCSPs") {
+                    $PKIMsg = "The Basis Template $BasisTemplate does NOT have the attribute pKIDefaultCSPs set. " +
+                    "This means that Cryptographic Providers are NOT Limited, and (almost) any ProviderNameValue is valid"
+                    Write-Host $PKIMsg
+                }
+                else {
+                    $AvailableCSPsBasedOnCertificateTemplate = $AllCertificateTemplateProperties.pkiDefaultCSPs -replace '[0-9],',''
+                    if ($AvailableCSPsBasedOnCertificateTemplate -notcontains $ProviderNameValue) {
                         Write-Warning "$ProviderNameValue is not one of the available Provider Names on Certificate Template $BasisTemplate!"
                         Write-Host "Valid Provider Names based on your choice in Basis Certificate Template are as follows:`n$($AvailableCSPsBasedOnCertificateTemplate -join "`n")"
                         $ProviderNameValue = Read-Host -Prompt "Please enter the name of the Cryptographic Provider (CSP) you would like to use"
+                        while ($AvailableCSPsBasedOnCertificateTemplate -notcontains $ProviderNameValue) {
+                            Write-Warning "$ProviderNameValue is not one of the available Provider Names on Certificate Template $BasisTemplate!"
+                            Write-Host "Valid Provider Names based on your choice in Basis Certificate Template are as follows:`n$($AvailableCSPsBasedOnCertificateTemplate -join "`n")"
+                            $ProviderNameValue = Read-Host -Prompt "Please enter the name of the Cryptographic Provider (CSP) you would like to use"
+                        }
                     }
                 }
             }
@@ -7598,23 +7619,23 @@ function Generate-Certificate {
 
     # Create Global HashTable of Outputs for use in scripts that source this script
     $GenerateCertificateFileOutputHash = @{}
-    $GenerateCertificateFileOutputHash.Add("CertificateRequestConfigFile", "$CertificateRequestConfigFile")
-    $GenerateCertificateFileOutputHash.Add("CertificateRequestFile", "$CertificateRequestFile")
-    $GenerateCertificateFileOutputHash.Add("CertFileOut", "$CertFileOut")
+    $GenerateCertificateFileOutputHash.Add("CertificateRequestConfigFile", "$CertGenWorking\$CertificateRequestConfigFile")
+    $GenerateCertificateFileOutputHash.Add("CertificateRequestFile", "$CertGenWorking\$CertificateRequestFile")
+    $GenerateCertificateFileOutputHash.Add("CertFileOut", "$CertGenWorking\$CertFileOut")
     if ($MachineKeySet -eq "FALSE") {
-        $GenerateCertificateFileOutputHash.Add("PFXFileOut", "$PFXFileOut")
+        $GenerateCertificateFileOutputHash.Add("PFXFileOut", "$CertGenWorking\$PFXFileOut")
     }
     if (!$ADCSWebEnrollmentUrl) {
         $CertUtilResponseFile = (Get-Item "$CertGenWorking\*.rsp").Name
-        $GenerateCertificateFileOutputHash.Add("CertUtilResponseFile", "$CertUtilResponseFile")
+        $GenerateCertificateFileOutputHash.Add("CertUtilResponseFile", "$CertGenWorking\$CertUtilResponseFile")
 
-        $GenerateCertificateFileOutputHash.Add("CertificateChainOut", "$CertificateChainOut")
+        $GenerateCertificateFileOutputHash.Add("CertificateChainOut", "$CertGenWorking\$CertificateChainOut")
     }
     if ($ADCSWebEnrollmentUrl) {
-        $GenerateCertificateFileOutputHash.Add("CertADCSWebResponseOutFile", "$CertADCSWebResponseOutFile")
+        $GenerateCertificateFileOutputHash.Add("CertADCSWebResponseOutFile", "$CertGenWorking\$CertADCSWebResponseOutFile")
     }
     if ($UseOpenSSL -eq "Yes") {
-        $GenerateCertificateFileOutputHash.Add("AllPublicKeysInChainOut", "$AllPublicKeysInChainOut")
+        $GenerateCertificateFileOutputHash.Add("AllPublicKeysInChainOut", "$CertGenWorking\$AllPublicKeysInChainOut")
 
         # Make CertName vs Contents Key/Value Pair hashtable available to scripts that source this script
         $CertNamevsContentsHash = $CertNamevsContentsHash
@@ -7633,15 +7654,15 @@ function Generate-Certificate {
             $EndPointCNFlag = certutil -dump $CertGenWorking\$obj1 | Select-String -Pattern "CN=$CertificateCN"
             if ($SubjectType -eq "CA" -and $RootCertFlag.Matches.Success -eq $true) {
                 $RootCAPublicCertFile = $obj1
-                $GenerateCertificateFileOutputHash.Add("RootCAPublicCertFile", "$RootCAPublicCertFile")
+                $GenerateCertificateFileOutputHash.Add("RootCAPublicCertFile", "$CertGenWorking\$RootCAPublicCertFile")
             }
             if ($SubjectType -eq "CA" -and $RootCertFlag.Matches.Success -ne $true) {
                 $IntermediateCAPublicCertFile = $obj1
-                $GenerateCertificateFileOutputHash.Add("IntermediateCAPublicCertFile", "$IntermediateCAPublicCertFile")
+                $GenerateCertificateFileOutputHash.Add("IntermediateCAPublicCertFile", "$CertGenWorking\$IntermediateCAPublicCertFile")
             }
             if ($SubjectType -eq "End Entity" -and $EndPointCNFlag.Matches.Success -eq $true) {
                 $EndPointPublicCertFile = $obj1
-                $GenerateCertificateFileOutputHash.Add("EndPointPublicCertFile", "$EndPointPublicCertFile")
+                $GenerateCertificateFileOutputHash.Add("EndPointPublicCertFile", "$CertGenWorking\$EndPointPublicCertFile")
             }
         }
 
@@ -7653,7 +7674,7 @@ function Generate-Certificate {
             if ($certPrint.Issuer -eq $certPrint.Subject) {
                 $RootCAPublicCertFile = $obj1
                 $RootCASubject = $certPrint.Subject
-                $GenerateCertificateFileOutputHash.Add("RootCAPublicCertFile", "$RootCAPublicCertFile")
+                $GenerateCertificateFileOutputHash.Add("RootCAPublicCertFile", "$CertGenWorking\$RootCAPublicCertFile")
             }
         }
         foreach ($obj1 in $AdditionalPublicKeysArray) {
@@ -7662,7 +7683,7 @@ function Generate-Certificate {
             if ($certPrint.Issuer -eq $RootCASubject -and $certPrint.Subject -ne $RootCASubject) {
                 $IntermediateCAPublicCertFile = $obj1
                 $IntermediateCASubject = $certPrint.Subject
-                $GenerateCertificateFileOutputHash.Add("IntermediateCAPublicCertFile", "$IntermediateCAPublicCertFile")
+                $GenerateCertificateFileOutputHash.Add("IntermediateCAPublicCertFile", "$CertGenWorking\$IntermediateCAPublicCertFile")
             }
         }
         foreach ($obj1 in $AdditionalPublicKeysArray) {
@@ -7671,19 +7692,19 @@ function Generate-Certificate {
             if ($certPrint.Issuer -eq $IntermediateCASubject) {
                 $EndPointPublicCertFile = $obj1
                 $EndPointSubject = $certPrint.Subject
-                $GenerateCertificateFileOutputHash.Add("EndPointPublicCertFile", "$EndPointPublicCertFile")
+                $GenerateCertificateFileOutputHash.Add("EndPointPublicCertFile", "$CertGenWorking\$EndPointPublicCertFile")
             }
         }
         #>
 
-        $GenerateCertificateFileOutputHash.Add("EndPointProtectedPrivateKey", "$ProtectedPrivateKeyOut")
+        $GenerateCertificateFileOutputHash.Add("EndPointProtectedPrivateKey", "$CertGenWorking\$ProtectedPrivateKeyOut")
     }
     if ($StripPrivateKeyOfPassword -eq "Yes" -or $StripPrivateKeyOfPassword -eq "y") {
-        $GenerateCertificateFileOutputHash.Add("EndPointUnProtectedPrivateKey", "$UnProtectedPrivateKeyOut")
+        $GenerateCertificateFileOutputHash.Add("EndPointUnProtectedPrivateKey", "$CertGenWorking\$UnProtectedPrivateKeyOut")
 
         # Add UnProtected Private Key to $CertNamevsContentsHash
         $UnProtectedPrivateKeyContent = ((Get-Content $CertGenWorking\$UnProtectedPrivateKeyOut) -join "`n").Trim()
-        $CertNamevsContentsHash.Add("EndPointUnProtectedPrivateKey", "$UnProtectedPrivateKeyContent")
+        $CertNamevsContentsHash.Add("EndPointUnProtectedPrivateKey", "$CertGenWorking\$UnProtectedPrivateKeyContent")
     }
 
     # Cleanup
@@ -9243,6 +9264,64 @@ function Get-VagrantBoxManualDownload {
     Get-Item "$DownloadDirectory\$OutFileName"
 
     ##### END Main Body #####
+}
+
+
+<#
+    .SYNOPSIS
+        This function downloads openssl.exe from either https://indy.fulgan.com/SSL/ or
+        http://wiki.overbyte.eu/wiki/index.php/ICS_Download" and adds it to $env:Path
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER OpenSSLWinBinariesUrl
+        This parameter is OPTIONAL, however, it has a default value of https://indy.fulgan.com/SSL/
+
+        This parameter takes a string that represents the Url that contains a link to a zip file
+        containing openssl.exe.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Get-WinOpenSSL
+        
+#>
+function Get-WinOpenSSL {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [ValidateSet("https://indy.fulgan.com/SSL/","http://wiki.overbyte.eu/wiki/index.php/ICS_Download")]
+        [string]$OpenSSLWinBinariesUrl = "https://indy.fulgan.com/SSL/"
+    )
+
+    if ($PSVersionTable.PSEdition -eq "Desktop") {
+        [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+    }
+
+    $IWRResult = Invoke-WebRequest -Uri $OpenSSLWinBinariesUrl -UseBasicParsing
+
+    if ($OpenSSLWinBinariesUrl -match "fulgan") {
+        $LatestOpenSSLWinBinaryUrl = $OpenSSLWinBinariesUrl + $($IWRResult.Links | Where-Object {$_.OuterHTML -match "win64\.zip"})[-1].href
+    }
+    if ($OpenSSLWinBinariesUrl -match "overbyte") {
+        $LatestOpenSSLWinBinaryUrl = $($IWRResult.Links | Where-Object {$_.OuterHTML -match "win64\.zip"})[0].href
+    }
+    $OutputFileName = $($LatestOpenSSLWinBinaryUrl -split '/')[-1]
+    $OutputFilePath = "$HOME\Downloads\$OutputFileName"
+
+    Invoke-WebRequest -Uri $LatestOpenSSLWinBinaryUrl -OutFile $OutputFilePath
+
+    $ExpansionDirectory = $OutputFilePath -replace '\.zip$',''
+    if (Test-Path $ExpansionDirectory) {Remove-Item "$ExpansionDirectory\*" -Recurse -Force}
+    $WinOpenSSLFiles = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force -PassThru
+
+    $WinOpenSSLParentDir = $WinOpenSSLFiles[0].Directory.FullName
+    [System.Collections.Arraylist][array]$CurrentEnvPathArray = $env:Path -split ';' | Where-Object {![System.String]::IsNullOrWhiteSpace($_)}
+    if ($CurrentEnvPathArray -notcontains $WinOpenSSLParentDir) {
+        $CurrentEnvPathArray.Insert(0,$WinOpenSSLParentDir)
+        $env:Path = $CurrentEnvPathArray -join ';'
+    }
 }
 
 
@@ -12661,7 +12740,7 @@ function New-RootCA {
         while (!$WebServTempl -or !$ComputerTempl) {
             # NOTE: ADSI type accelerator does not exist in PSCore
             if ($PSVersionTable.PSEdition -ne "Core") {
-                $ConfigContext = $([ADSI]"LDAP://RootDSE").ConfigurationNamingContext
+                $ConfigContext = $([System.DirectoryServices.DirectoryEntry]"LDAP://RootDSE").ConfigurationNamingContext
             }
             else {
                 $DomainSplit = $(Get-CimInstance win32_computersystem).Domain -split "\."
@@ -15508,6 +15587,7 @@ function Switch-DockerContainerType {
     ${Function:Get-EncryptionCert}.Ast.Extent.Text
     ${Function:Get-GuestVMAndHypervisorInfo}.Ast.Extent.Text
     ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
+    ${Function:Get-WinOpenSSL}.Ast.Extent.Text
     ${Function:Install-Docker}.Ast.Extent.Text
     ${Function:Join-LinuxToAD}.Ast.Extent.Text
     ${Function:Manage-HyperVVM}.Ast.Extent.Text
@@ -15524,8 +15604,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUORQdbpPvoLtgqWcDnYpHCpBy
-# y++gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmIAzovBd4QV+lObK86arr1UI
+# +M+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15582,11 +15662,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCUEQqXJR6KSEMda
-# 53joyY0x5bt5MA0GCSqGSIb3DQEBAQUABIIBALdiGlBVipKrEYsVTUYrFhQ0DsWJ
-# 6sZU5zGbEKTybUR69ZqVG1PSPjdVvVW3dauHWJXCjOU24AwcnDCSalcDiiW7WtTL
-# JP3D8Uw+562NWSoe8Ina5hxDgDh1pvfzmnDgQpg8p/RbFSVXbDACBfMloZ9BB+sp
-# e6KY0tA+aakHji7/S+c53MlexlJDyUzKCbIItM/ui6EqYfMK35OIE53UDYcuyzHE
-# UhS00kiLCFCQteNbjQKlIgsGw5Ni1ckQETJujE7lEd7M6fmMy9G1423FPauHMxtT
-# Tk0/C3Juihhi0QfAY2oQG2379ylFQH2kpXATbI7gr+64M5iKGy6nRgyjIvI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIabul7h+we4lzLI
+# KOuvrq66EySgMA0GCSqGSIb3DQEBAQUABIIBAFYeIJDaUxhzNrp2HjeFL0rhDfLF
+# FELl5DUdqgIq08W5xWY5p3eFZIvTFyd+m76l6KGc6WmBhUPHJRWbMOFaz0IQLdt/
+# twXXJoezmlqfV6p7oB3uB5GNJxRB/WCOQOb2QGeXko+3zeaZ4SG7we6BKM5jgF0i
+# wyA+wS+NnnkY6lZtiYZA4s6hjowE48/Otljgeg0RFsYJ63+OdRVgKSeNChs+71Kb
+# wUpqyae+Gz8x7VuOalsVRYiMNT+8naM2SYJAmwltZvMyVM4vBp5lb/BsNzLyxsKg
+# 9JnzipJWH8df5MXU8Wr1PMmBeqEaX698rqFsP0neuMi3MNO0wLrRonbdaok=
 # SIG # End signature block

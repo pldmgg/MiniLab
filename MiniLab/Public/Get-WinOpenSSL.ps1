@@ -1,67 +1,65 @@
-[System.Collections.ArrayList]$script:FunctionsForSBUse = @(
-    ${Function:ConfirmAWSVM}.Ast.Extent.Text
-    ${Function:ConfirmAzureVM}.Ast.Extent.Text
-    ${Function:ConfirmGoogleComputeVM}.Ast.Extent.Text
-    ${Function:ConvertSize}.Ast.Extent.Text
-    ${Function:DoDockerInstall}.Ast.Extent.Text
-    ${Function:EnableNestedVM}.Ast.Extent.Text
-    ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-    ${Function:FixVagrantPrivateKeyPerms}.Ast.Extent.Text
-    ${Function:GetDomainController}.Ast.Extent.Text
-    ${Function:GetElevation}.Ast.Extent.Text
-    ${Function:GetFileLockProcess}.Ast.Extent.Text
-    ${Function:GetIPRange}.Ast.Extent.Text
-    ${Function:GetModuleDependencies}.Ast.Extent.Text
-    ${Function:GetNativePath}.Ast.Extent.Text
-    ${Function:GetNestedVirtCapabilities}.Ast.Extent.Text
-    ${Function:GetPendingReboot}.Ast.Extent.Text
-    ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-    ${Function:GetWinPSInCore}.Ast.Extent.Text
-    ${Function:GetWorkingCredentials}.Ast.Extent.Text
-    ${Function:InstallFeatureDism}.Ast.Extent.Text
-    ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-    ${Function:InvokeModuleDependencies}.Ast.Extent.Text
-    ${Function:InvokePSCompatibility}.Ast.Extent.Text
-    ${Function:ManualPSGalleryModuleInstall}.Ast.Extent.Text
-    ${Function:MobyLinuxBetter}.Ast.Extent.Text
-    ${Function:NewUniqueString}.Ast.Extent.Text
-    ${Function:PauseForWarning}.Ast.Extent.Text
-    ${Function:ResolveHost}.Ast.Extent.Text
-    ${Function:TestHyperVExternalvSwitch}.Ast.Extent.Text
-    ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-    ${Function:UnzipFile}.Ast.Extent.Text
-    ${Function:Add-WinRMTrustedHost}.Ast.Extent.Text
-    ${Function:Create-Domain}.Ast.Extent.Text
-    ${Function:Create-RootCA}.Ast.Extent.Text
-    ${Function:Create-SubordinateCA}.Ast.Extent.Text
-    ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-    ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
-    ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-    ${Function:Generate-Certificate}.Ast.Extent.Text
-    ${Function:Get-DockerInfo}.Ast.Extent.Text
-    ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-    ${Function:Get-EncryptionCert}.Ast.Extent.Text
-    ${Function:Get-GuestVMAndHypervisorInfo}.Ast.Extent.Text
-    ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-    ${Function:Get-WinOpenSSL}.Ast.Extent.Text
-    ${Function:Install-Docker}.Ast.Extent.Text
-    ${Function:Join-LinuxToAD}.Ast.Extent.Text
-    ${Function:Manage-HyperVVM}.Ast.Extent.Text
-    ${Function:Move-DockerStorage}.Ast.Extent.Text
-    ${Function:New-DomainController}.Ast.Extent.Text
-    ${Function:New-RootCA}.Ast.Extent.Text
-    ${Function:New-Runspace}.Ast.Extent.Text
-    ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-    ${Function:New-SubordinateCA}.Ast.Extent.Text
-    ${Function:Recreate-MobyLinuxVM}.Ast.Extent.Text
-    ${Function:Switch-DockerContainerType}.Ast.Extent.Text
-)
+<#
+    .SYNOPSIS
+        This function downloads openssl.exe from either https://indy.fulgan.com/SSL/ or
+        http://wiki.overbyte.eu/wiki/index.php/ICS_Download" and adds it to $env:Path
+
+    .DESCRIPTION
+        See .SYNOPSIS
+
+    .PARAMETER OpenSSLWinBinariesUrl
+        This parameter is OPTIONAL, however, it has a default value of https://indy.fulgan.com/SSL/
+
+        This parameter takes a string that represents the Url that contains a link to a zip file
+        containing openssl.exe.
+
+    .EXAMPLE
+        # Open an elevated PowerShell Session, import the module, and -
+
+        PS C:\Users\zeroadmin> Get-WinOpenSSL
+        
+#>
+function Get-WinOpenSSL {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [ValidateSet("https://indy.fulgan.com/SSL/","http://wiki.overbyte.eu/wiki/index.php/ICS_Download")]
+        [string]$OpenSSLWinBinariesUrl = "https://indy.fulgan.com/SSL/"
+    )
+
+    if ($PSVersionTable.PSEdition -eq "Desktop") {
+        [Net.ServicePointManager]::SecurityProtocol = "tls12, tls11, tls"
+    }
+
+    $IWRResult = Invoke-WebRequest -Uri $OpenSSLWinBinariesUrl -UseBasicParsing
+
+    if ($OpenSSLWinBinariesUrl -match "fulgan") {
+        $LatestOpenSSLWinBinaryUrl = $OpenSSLWinBinariesUrl + $($IWRResult.Links | Where-Object {$_.OuterHTML -match "win64\.zip"})[-1].href
+    }
+    if ($OpenSSLWinBinariesUrl -match "overbyte") {
+        $LatestOpenSSLWinBinaryUrl = $($IWRResult.Links | Where-Object {$_.OuterHTML -match "win64\.zip"})[0].href
+    }
+    $OutputFileName = $($LatestOpenSSLWinBinaryUrl -split '/')[-1]
+    $OutputFilePath = "$HOME\Downloads\$OutputFileName"
+
+    Invoke-WebRequest -Uri $LatestOpenSSLWinBinaryUrl -OutFile $OutputFilePath
+
+    $ExpansionDirectory = $OutputFilePath -replace '\.zip$',''
+    if (Test-Path $ExpansionDirectory) {Remove-Item "$ExpansionDirectory\*" -Recurse -Force}
+    $WinOpenSSLFiles = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force -PassThru
+
+    $WinOpenSSLParentDir = $WinOpenSSLFiles[0].Directory.FullName
+    [System.Collections.Arraylist][array]$CurrentEnvPathArray = $env:Path -split ';' | Where-Object {![System.String]::IsNullOrWhiteSpace($_)}
+    if ($CurrentEnvPathArray -notcontains $WinOpenSSLParentDir) {
+        $CurrentEnvPathArray.Insert(0,$WinOpenSSLParentDir)
+        $env:Path = $CurrentEnvPathArray -join ';'
+    }
+}
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUV5m6s/sH1Mn/Cr/85leN4Ki1
-# MEGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUdz09SwMQJjJKSob+zqkLp3gz
+# 5Jegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -118,11 +116,11 @@
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNfuyfCci25wPdER
-# wipNKblEoweBMA0GCSqGSIb3DQEBAQUABIIBAH9RGHfBqNyjS63cjsOZ19C6sF1b
-# XP1in+xdkb11GcKWvIr28JoAwTw9ta5gef4VFK7fgfFG9u8NczYZbTBD4MisAI/m
-# quLFhF35ix1DX7gnn1/nR10yxlCMXBpGRX9tb0EUtxbSl7FYqf4D36hPZviAENtC
-# vCIGo4jYnVX60JOyk4vl4SkavAoRG3Z9T4U2mpNE6VLB0gGPKRTbBtuspQnslqgI
-# ze3b2xW1u8ePWKEO7el8h+kbqy8x0sktamnNxSt73WamI1m9NuIcMxEtt/RCYHei
-# T5p0yS5ohxM8+hwtBYKM3U0EU6Aje8zaEh5QhsJ0159jWLeX1GymVXr8A6M=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOFaOwHIOH/Y2dOK
+# b1puJ4t1q6jdMA0GCSqGSIb3DQEBAQUABIIBAKbQajVFYMlUeTpUWGD8umE1B+kO
+# m/OjYGn5XujIbxcivWOe2JWCatunMjynlPI37JKrWKW9AOYRcyqTuauChjtuF3SL
+# GHtcG4ZimTe7m+f1n2i945irg6pJSrIwhmZEHJoPVtdL/zKQsfFVN7GOgoo+HsAB
+# Qapzd8/kgjCrwmCRIUGmBm0YBYLRIZHXZ8eDISKtY4IpL5nDd4n/YI3wXT0iMWW9
+# +Uylm6UpE/vrezsdNMPF6aXg1Jv6dN2Xvtn2WroTH1ZSqyaI8W4MHWgCFrBZWMXd
+# 0Hs8auge4tZJVZuPTdhXJxWg4dfmXixPPefFdOe7SRTqERRJ0XYbTtFff8o=
 # SIG # End signature block

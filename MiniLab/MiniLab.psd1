@@ -73,7 +73,7 @@ FunctionsToExport = 'Add-WinRMTrustedHost','Create-Domain','Create-RootCA','Crea
                     'Create-TwoTierPKI','Create-TwoTierPKICFSSL','Deploy-HyperVVagrantBoxManually',
                     'Generate-Certificate','Get-DockerInfo','Get-DSCEncryptionCert',
                     'Get-EncryptionCert','Get-GuestVMAndHypervisorInfo',
-                    'Get-VagrantBoxManualDownload','Install-Docker',
+                    'Get-VagrantBoxManualDownload','Get-WinOpenSSL','Install-Docker',
                     'Join-LinuxToAD','Manage-HyperVVM','Move-DockerStorage',
                     'New-DomainController','New-RootCA','New-Runspace','New-SelfSignedCertificateEx',
                     'New-SubordinateCA','Recreate-MobyLinuxVM','Switch-DockerContainerType'

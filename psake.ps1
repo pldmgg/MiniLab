@@ -102,21 +102,10 @@ if ($ModulesToInstallAndImport.Count -gt 0) {
 # Public Functions
 '@
 
-    ###### BEGIN Unique Additions to this Module ######
-    # Add PowerShim Module
-    <#
-    $PowerShimFileContent = Get-Content "$env:BHModulePath\powershim.psm1"
-    $SigBlockLineNumber = $PowerShimFileContent.IndexOf('# SIG # Begin signature block')
-    $ContentSansSigBlock = $($($PowerShimFileContent[0..$($SigBlockLineNumber-1)]) -join "`n").Trim() -split "`n"
-    $UniqueCode = $ContentSansSigBlock -join "`n"
-
-    if ($UniqueCode) {
-        $BoilerPlateFunctionSourcing = $BoilerPlateFunctionSourcing + $UniqueCode
-    }
-    #>
-    ###### END Unique Additions to this Module ######
-
     Set-Content -Path "$env:BHModulePath\$env:BHProjectName.psm1" -Value $BoilerPlateFunctionSourcing
+
+    ###### BEGIN Unique Additions to this Module ######
+    ###### END Unique Additions to this Module ######
 
     [System.Collections.ArrayList]$FunctionTextToAdd = @()
     foreach ($ScriptFileItem in $PublicScriptFiles) {
@@ -225,8 +214,8 @@ Task Deploy -Depends Build {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUh69A0jphENvvIM10g4gR/1ZE
-# +2Ggggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUhZzPI1WKszd7HeO+IWorpCSK
+# JPygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -283,11 +272,11 @@ Task Deploy -Depends Build {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC0fMTUOL0sXn3WN
-# HdQrTxAt3YeeMA0GCSqGSIb3DQEBAQUABIIBAHCLt3EPj0rmFIwlaxzlJrvEyGtI
-# cmBYBlLlDrsoPLMognodzocQ+j4XDcifJEWtAii3+ey8DcshzOK5vgG5Sk0REl5j
-# VbKU9az+ebGt9k+h5wj9dttNnT3UxJrOpggwXoIDLXG8K05acmSEWu96ijr1fOpj
-# 9GlL2go9i0TEyD5W/I977NgsWz69XV4qE/Ocow16GDSB3f2G7H4vvoptsMbB5gIz
-# xjZXiMh6GA+Sr8l2G+Cxla6meIZmmVSAbeblA8CO0jRQdN1eHZir1GB7EKtTYAI0
-# vAHQfwiXJf/4NFQm+scVKjznWYwznWcUlKf7MRSxegDxLnA4B/n1vAeudu0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFF5v6s05Dxwy8NPv
+# cCxBk5OI6pivMA0GCSqGSIb3DQEBAQUABIIBAMDNPhCFUeBYLrp9gURz1OdIxZ/1
+# 833HlVLt0Y3W9clksk+eDGNYlxALlYbDk1j4+yCQtOnLxGR5/3/yv1oj3L+pewWU
+# HMqFzl4ppCTBBDi006bMVZWpR+8OuGWJ6jDV5C1IcYvnBDfGDo8Egq0nv5r2LHKr
+# aXrt2zb6x/BQC26Blc0mn0effXUxiZ6q23I2v4BiZF0TxwoZh5iUXewTZl/PdUF6
+# AHViYcElGIGZpidny+lybEUHQ2dsZIk0QZVJ3QirfkolJh9VFLdat0GqdZJJ2oLN
+# AyOXWZRZM4yFl+s5IkWjJ9OT+GpNVzOYsYH/H18khFj5lzvAKySqFGO5UTo=
 # SIG # End signature block
