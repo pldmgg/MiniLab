@@ -6834,8 +6834,14 @@ function Generate-Certificate {
             $OutputFilePath = "$HOME\Downloads\$OutputFileName"
             Invoke-WebRequest -Uri $LatestOpenSSLWinBinaryUrl -OutFile $OutputFilePath
             $ExpansionDirectory = $OutputFilePath -replace '\.zip$',''
-            if (Test-Path $ExpansionDirectory) {Remove-Item "$ExpansionDirectory\*" -Recurse -Force}
-            $WinOpenSSLFiles = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force -PassThru
+            if (Test-Path $ExpansionDirectory) {
+                Remove-Item "$ExpansionDirectory\*" -Recurse -Force
+            }
+            else {
+                $null = New-Item -ItemType Directory -Path $ExpansionDirectory
+            }
+            $null = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force
+            $WinOpenSSLFiles = Get-ChildItem -Path $ExpansionDirectory
             $WinOpenSSLParentDir = $WinOpenSSLFiles[0].Directory.FullName
             [System.Collections.Arraylist][array]$CurrentEnvPathArray = $env:Path -split ';' | Where-Object {![System.String]::IsNullOrWhiteSpace($_)}
             if ($CurrentEnvPathArray -notcontains $WinOpenSSLParentDir) {
@@ -6933,7 +6939,7 @@ function Generate-Certificate {
                 return
             }
         }
-        if (!$(Get-Module -ListAvailable -Name ActiveDirectory)) {
+        if (!$(Get-Module -Name ActiveDirectory)) {
             try {
                 if ($PSVersionTable.PSEdition -eq "Core") {
                     Import-WinModule ActiveDirectory -ErrorAction Stop
@@ -6943,9 +6949,7 @@ function Generate-Certificate {
                 }
             }
             catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
+                Write-Warning $_.Exception.Message
             }
         }
 
@@ -9313,8 +9317,14 @@ function Get-WinOpenSSL {
     Invoke-WebRequest -Uri $LatestOpenSSLWinBinaryUrl -OutFile $OutputFilePath
 
     $ExpansionDirectory = $OutputFilePath -replace '\.zip$',''
-    if (Test-Path $ExpansionDirectory) {Remove-Item "$ExpansionDirectory\*" -Recurse -Force}
-    $WinOpenSSLFiles = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force -PassThru
+    if (Test-Path $ExpansionDirectory) {
+        Remove-Item "$ExpansionDirectory\*" -Recurse -Force
+    }
+    else {
+        $null = New-Item -ItemType Directory -Path $ExpansionDirectory
+    }
+    $null = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force
+    $WinOpenSSLFiles = Get-ChildItem -Path $ExpansionDirectory
 
     $WinOpenSSLParentDir = $WinOpenSSLFiles[0].Directory.FullName
     [System.Collections.Arraylist][array]$CurrentEnvPathArray = $env:Path -split ';' | Where-Object {![System.String]::IsNullOrWhiteSpace($_)}
@@ -15604,8 +15614,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUmIAzovBd4QV+lObK86arr1UI
-# +M+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUAOkk4d2EbKxQBOJT+yVAOfOI
+# mW6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15662,11 +15672,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIabul7h+we4lzLI
-# KOuvrq66EySgMA0GCSqGSIb3DQEBAQUABIIBAFYeIJDaUxhzNrp2HjeFL0rhDfLF
-# FELl5DUdqgIq08W5xWY5p3eFZIvTFyd+m76l6KGc6WmBhUPHJRWbMOFaz0IQLdt/
-# twXXJoezmlqfV6p7oB3uB5GNJxRB/WCOQOb2QGeXko+3zeaZ4SG7we6BKM5jgF0i
-# wyA+wS+NnnkY6lZtiYZA4s6hjowE48/Otljgeg0RFsYJ63+OdRVgKSeNChs+71Kb
-# wUpqyae+Gz8x7VuOalsVRYiMNT+8naM2SYJAmwltZvMyVM4vBp5lb/BsNzLyxsKg
-# 9JnzipJWH8df5MXU8Wr1PMmBeqEaX698rqFsP0neuMi3MNO0wLrRonbdaok=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC1f0cmsH4gUxXhg
+# A52Phm0r9+MJMA0GCSqGSIb3DQEBAQUABIIBADEUXZmhHGjox3NI2QAXZsiOk76Y
+# CeHA4r/zZ12bejYzgX7H0cH2Lu5T7U9OyMZwyM0DeZ1Lg4+nG8nqf4OR+FsJOBs9
+# UBRAixG3QaFGnMlqH1YysHMbv4OoXxmcvaZYigBzxSf2RbIREEOsyD+vJBr8BzaY
+# HoKSBRjhf99tmplraA72cerST2NXsC0xoftLny7kiERvS5Dy59QGxelskXyOzrqP
+# OoARC9wAJUmNqr2BC3qYHr7fwhq6rtuJgNUAQAYszKztunGb4wsVOBa4YCFQOT8T
+# 1FWg+3xNLhNrB20Q+k/iAA1S3AiY6PHKpA541HcYqoqH+u0mbBSwYlJ7bzE=
 # SIG # End signature block

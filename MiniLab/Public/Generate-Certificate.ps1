@@ -2739,8 +2739,14 @@ function Generate-Certificate {
             $OutputFilePath = "$HOME\Downloads\$OutputFileName"
             Invoke-WebRequest -Uri $LatestOpenSSLWinBinaryUrl -OutFile $OutputFilePath
             $ExpansionDirectory = $OutputFilePath -replace '\.zip$',''
-            if (Test-Path $ExpansionDirectory) {Remove-Item "$ExpansionDirectory\*" -Recurse -Force}
-            $WinOpenSSLFiles = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force -PassThru
+            if (Test-Path $ExpansionDirectory) {
+                Remove-Item "$ExpansionDirectory\*" -Recurse -Force
+            }
+            else {
+                $null = New-Item -ItemType Directory -Path $ExpansionDirectory
+            }
+            $null = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force
+            $WinOpenSSLFiles = Get-ChildItem -Path $ExpansionDirectory
             $WinOpenSSLParentDir = $WinOpenSSLFiles[0].Directory.FullName
             [System.Collections.Arraylist][array]$CurrentEnvPathArray = $env:Path -split ';' | Where-Object {![System.String]::IsNullOrWhiteSpace($_)}
             if ($CurrentEnvPathArray -notcontains $WinOpenSSLParentDir) {
@@ -2838,7 +2844,7 @@ function Generate-Certificate {
                 return
             }
         }
-        if (!$(Get-Module -ListAvailable -Name ActiveDirectory)) {
+        if (!$(Get-Module -Name ActiveDirectory)) {
             try {
                 if ($PSVersionTable.PSEdition -eq "Core") {
                     Import-WinModule ActiveDirectory -ErrorAction Stop
@@ -2848,9 +2854,7 @@ function Generate-Certificate {
                 }
             }
             catch {
-                Write-Error $_
-                $global:FunctionResult = "1"
-                return
+                Write-Warning $_.Exception.Message
             }
         }
 
@@ -3635,8 +3639,8 @@ function Generate-Certificate {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUZ6gPiwe/1nDVLdRH5HV8cz30
-# LWygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjwPFK6jo8SLQvipRhj44dTXy
+# Yiagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -3693,11 +3697,11 @@ function Generate-Certificate {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAR6WjamYKCljhgf
-# g0NwikMfSPqYMA0GCSqGSIb3DQEBAQUABIIBAF5UblhQxS6MPD5FR2J85LzDNoXg
-# sSlL9FiCBFOTX0756Irp6+H23sBE5V1ymN5qEe7N2k/9aloeYIE91dk6c2xtA0LH
-# yjNS8uBJlbfcahFhgPjbGUSCm2A3qoytwAAi3TjvttajOUOluJ+NcxO6SNm7gerB
-# jjFgWboA3KzjmDnLmphk+F5rtGn9l2l8bcOUq/HgVC52fv5UyfxJHWrHNYqjyA1t
-# OxxwZLI4XPnQPiQFECWhWy0qzxNS49EzHAIVLaZzuIQ4IawC2mcDgwhnW8b7Y8EU
-# LNYKVmHOa102aLw4GoKQiGbjThU6GcTHAIKxmXwqL1v7z2VfP1ULEQ1m+yw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMiD1ITDBQ60bECt
+# JytpmOXSSRMcMA0GCSqGSIb3DQEBAQUABIIBAKuhjVDPYDrRflGK8Llz3vrl2WEp
+# 5LDp50HkqB+/Tqsvee3QtNn51wpUGPaqf34bSOZV6dhzlphFEHbXgtSo7W26Dzze
+# vIQ91TTYbVUfO7KaG2BEt/o4nfSuX8sdbwC73qdjHtW8YlgfmGNYyxNdVw2o30mt
+# 29hLP6mzMn3+y6O1k0wI76ZRo5im3lqZlO2uzymzzXfadr6FO+I4pPWnGibl9p72
+# cCbpyyNUaYlXWAkALFINlPXSWg6qmBXOTXX3ZQ1KGGZrQui4wAGViRe3F7vEd4dx
+# qyrhy5I10bxOpCehcPLxE5elP3aI8KTE0awALGC+GbGOsgs8cZngAQ/Ia1Y=
 # SIG # End signature block

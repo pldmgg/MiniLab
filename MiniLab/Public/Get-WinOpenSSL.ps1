@@ -44,8 +44,14 @@ function Get-WinOpenSSL {
     Invoke-WebRequest -Uri $LatestOpenSSLWinBinaryUrl -OutFile $OutputFilePath
 
     $ExpansionDirectory = $OutputFilePath -replace '\.zip$',''
-    if (Test-Path $ExpansionDirectory) {Remove-Item "$ExpansionDirectory\*" -Recurse -Force}
-    $WinOpenSSLFiles = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force -PassThru
+    if (Test-Path $ExpansionDirectory) {
+        Remove-Item "$ExpansionDirectory\*" -Recurse -Force
+    }
+    else {
+        $null = New-Item -ItemType Directory -Path $ExpansionDirectory
+    }
+    $null = Expand-Archive -Path $OutputFilePath -DestinationPath $ExpansionDirectory -Force
+    $WinOpenSSLFiles = Get-ChildItem -Path $ExpansionDirectory
 
     $WinOpenSSLParentDir = $WinOpenSSLFiles[0].Directory.FullName
     [System.Collections.Arraylist][array]$CurrentEnvPathArray = $env:Path -split ';' | Where-Object {![System.String]::IsNullOrWhiteSpace($_)}
@@ -58,8 +64,8 @@ function Get-WinOpenSSL {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUdz09SwMQJjJKSob+zqkLp3gz
-# 5Jegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUnLQ79/V9kDthv6V4hPI6vKtf
+# 6oagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -116,11 +122,11 @@ function Get-WinOpenSSL {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOFaOwHIOH/Y2dOK
-# b1puJ4t1q6jdMA0GCSqGSIb3DQEBAQUABIIBAKbQajVFYMlUeTpUWGD8umE1B+kO
-# m/OjYGn5XujIbxcivWOe2JWCatunMjynlPI37JKrWKW9AOYRcyqTuauChjtuF3SL
-# GHtcG4ZimTe7m+f1n2i945irg6pJSrIwhmZEHJoPVtdL/zKQsfFVN7GOgoo+HsAB
-# Qapzd8/kgjCrwmCRIUGmBm0YBYLRIZHXZ8eDISKtY4IpL5nDd4n/YI3wXT0iMWW9
-# +Uylm6UpE/vrezsdNMPF6aXg1Jv6dN2Xvtn2WroTH1ZSqyaI8W4MHWgCFrBZWMXd
-# 0Hs8auge4tZJVZuPTdhXJxWg4dfmXixPPefFdOe7SRTqERRJ0XYbTtFff8o=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFfzREE2dhZ9rOlm
+# gHnGVzhGOv4lMA0GCSqGSIb3DQEBAQUABIIBABQfj2hCMXPMNc7DZ6nE2oDJVIra
+# zOVTQmOrj9UzsPvPuHxuouc0+lRc4PsvCudqVwUbYuzuyKhdhGo6Rx362axkLgU2
+# TArk3VQkXLaAZAKdFlP/yZtgMrjOtzeLXUgGDOPwIMBQqqhRThLTl3pbmnTfba6O
+# z6mu+bzF2MTEI37LgcVTAiQx9MkjfqkfpnhI/g+ywgOb2L3Q7UceMM9+yzWw0H26
+# M/qlFep3jqxmHP43LfaC2luHoPEEpOkSBZ+R6MLdNwBp1+T5wbt9qqCBVt5dMOwJ
+# zYwCCKrjBt5PltygQDCHbSEgpI56zI48Rm77gzaWxNp/cXadFHm/nv0gTfM=
 # SIG # End signature block
