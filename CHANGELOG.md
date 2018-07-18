@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.6 (July 18, 2018)
+
+- Updated GetModuleDependencies Private function to help Module load faster in PSCore
+
 ## 0.9.5 (July 18, 2018)
 
 - Updated Generate-Certificate function to work with PowerShell Core on Windows
