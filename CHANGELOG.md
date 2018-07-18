@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.5 (July 18, 2018)
+
+- Updated Generate-Certificate function to work with PowerShell Core on Windows
+
 ## 0.9.4 (July 10, 2018)
 
 - Added Docker functions and associated comment-based help
