@@ -26,7 +26,7 @@ function DoDockerInstall {
 
 
     try {
-        $DockerForWindowsUninstallResult = Uninstall-Program -ProgramName "docker-for-windows"
+        $DockerForWindowsUninstallResult = Uninstall-Program -ProgramName "docker-for-windows" -ErrorAction SilentlyContinue
     }
     catch {
         if ($_.Exception.Message -match "^Unable to find an installed program matching the name") {
@@ -281,8 +281,8 @@ function DoDockerInstall {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUHY0VlaBYQJPBP8qusVdj5fUO
-# Y4Sgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUfWfRdYhMCJgG9pVfT6RXyjsW
+# us2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -339,11 +339,11 @@ function DoDockerInstall {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJRm0q8iGAXgseZp
-# 3/ApZo9abDIIMA0GCSqGSIb3DQEBAQUABIIBAE0zLXWyIOGMx53IEUbyxiIDpq8t
-# 72mztRU+LYMz+K8z0THwnNYRU0Bx38UBaevK/Q4XVdX+pqP6vRxOqvm8PgC9wTk3
-# E0aLzIUlx9/TvHKv7ZUvhr9TqLn7wWjrJNBJijfWAGunsR/4t3xxO3doyP8KfV8M
-# RO7FekAe5OMof/YlnkYNdfQxBWZcbYpNGsi2hLvoJEnsviqWwisoJMxngvqQ0h1u
-# vLCDQDVMwUgpWmJjOygsL7v6l4sb7eil5SYJqkpmxnHKVjwJFVSch4NUpNJmSkhm
-# ACfng2h8aA8vi51K9rZ/TO6pyDyARxd2fWOj6rT3t5GLd2OJ7Tl469V1SQQ=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFB6aSGMusda9K5Ie
+# 6+mAdHVLEa+uMA0GCSqGSIb3DQEBAQUABIIBAJ7ki2GytMNpcxdUm/umhGATrnSO
+# mN0F04n3w/SO2AjjHN6kT1q83K9tRHVm2g1FfmUX4Np58Pq/As26d55H7T/abV9D
+# Ze7z+fNBu+zRI65dR++ZhSiCs6HL05eGc68zHrZQpTUMfZsjOnwo7AkNshZHhQTJ
+# knGs7CHWNy6GKNHmcg2bkywGoOiOONRAPZejjNriUNKlvG+VqZg/ptdDwhbZ5UhM
+# Jxehcxxu7oil3kZ5HfBZvCn3xBWws+SpMnJgvFd+1I0KJsbFaVxxndx3TXTjRhw2
+# ckStX1bFkHRbjhUySqa99AJdDmKZeI0NwpgClQBX3iikODrfHBq2gn5yoSg=
 # SIG # End signature block

@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.8 (July 23, 2018)
+
+- Minor updates to the DoDockerInstall Private function
+
 ## 0.9.7 (July 23, 2018)
 
 - Updated InvokeModuleDependencies and InvokePSCompatibility Private functions to ensure Module Dependencies are installed even when function names overlap
