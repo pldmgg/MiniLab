@@ -376,7 +376,7 @@ function Create-Domain {
 
         # Make sure we have at least 35GB of Storage and 6GB of READILY AVAILABLE Memory
         # Check Storage...
-        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
         if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
             $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
         }
@@ -1044,7 +1044,7 @@ function Create-RootCA {
 
         # Make sure we have at least 35GB of Storage and 6GB of READILY AVAILABLE Memory
         # Check Storage...
-        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
         if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
             $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
         }
@@ -1719,7 +1719,7 @@ function Create-SubordinateCA {
 
         # Make sure we have at least 35GB of Storage and 6GB of READILY AVAILABLE Memory
         # Check Storage...
-        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
         if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
             $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
         }
@@ -2543,7 +2543,7 @@ function Create-TwoTierPKI {
 
         # Make sure we have at least 100GB of Storage and 12GB of READILY AVAILABLE Memory
         # Check Storage...
-        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
         if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
             $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
         }
@@ -11325,7 +11325,7 @@ function Move-DockerStorage {
     }
 
     $DockerInfo = Get-DockerInfo
-    $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+    $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
 
     if ($NewDockerDrive) {
         while ($LocalDrives.Name -notcontains $NewDockerDrive) {
@@ -11521,6 +11521,9 @@ function Move-DockerStorage {
             $global:FunctionResult = "1"
             return
         }
+
+        # Make sure we switch to Linuc Container Mode to ensure MobyLinuxVM is recreated in he new Storage Location
+        $null = Switch-DockerContainerType -ContainerType Linux
     }
 
     
@@ -15553,6 +15556,7 @@ function Switch-DockerContainerType {
 
 
 [System.Collections.ArrayList]$script:FunctionsForSBUse = @(
+    ${Function:AddWinRMTrustLocalHost}.Ast.Extent.Text
     ${Function:ConfirmAWSVM}.Ast.Extent.Text
     ${Function:ConfirmAzureVM}.Ast.Extent.Text
     ${Function:ConfirmGoogleComputeVM}.Ast.Extent.Text
@@ -15614,8 +15618,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUAOkk4d2EbKxQBOJT+yVAOfOI
-# mW6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUFhBmMdzObHL/9IqGnyKx0U8Y
+# sbugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15672,11 +15676,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFC1f0cmsH4gUxXhg
-# A52Phm0r9+MJMA0GCSqGSIb3DQEBAQUABIIBADEUXZmhHGjox3NI2QAXZsiOk76Y
-# CeHA4r/zZ12bejYzgX7H0cH2Lu5T7U9OyMZwyM0DeZ1Lg4+nG8nqf4OR+FsJOBs9
-# UBRAixG3QaFGnMlqH1YysHMbv4OoXxmcvaZYigBzxSf2RbIREEOsyD+vJBr8BzaY
-# HoKSBRjhf99tmplraA72cerST2NXsC0xoftLny7kiERvS5Dy59QGxelskXyOzrqP
-# OoARC9wAJUmNqr2BC3qYHr7fwhq6rtuJgNUAQAYszKztunGb4wsVOBa4YCFQOT8T
-# 1FWg+3xNLhNrB20Q+k/iAA1S3AiY6PHKpA541HcYqoqH+u0mbBSwYlJ7bzE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIdcYeX86zeHhzhI
+# Nh5DDU/DxihVMA0GCSqGSIb3DQEBAQUABIIBAKduwK3HQMrEnB9fc6xe7ToKC89i
+# 85uSwOBIaLU3gOhdzUzL/vwUMlya9OBwnqYf6JaeN0c54GCrjsmasytZWeMVBU+8
+# nH0terzMmOXOHSzWdaCs0X7XPVqsObELm2MfzvpfZKDsvL/oho9oT1QOQW8rZZSX
+# tZbliSjJO/4NrfGgK51Zf5YMNnMWGqJjJprcZppqIiOX0U7CgPR4iIEHVkIT9a8t
+# pmyuYoX0VK8hcWVZgxd+8+kvDdqFXDkMZjsT7YAvzKPJOGp15EErsImA8rZnvq/d
+# M4u4IEPwgN/Zi8ve2tAH8ZP6j6MhUguzY/m8HRsqnU0FBPlbdU2z3Kq72K0=
 # SIG # End signature block

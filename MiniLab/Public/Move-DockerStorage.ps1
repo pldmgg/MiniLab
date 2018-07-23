@@ -104,7 +104,7 @@ function Move-DockerStorage {
     }
 
     $DockerInfo = Get-DockerInfo
-    $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+    $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
 
     if ($NewDockerDrive) {
         while ($LocalDrives.Name -notcontains $NewDockerDrive) {
@@ -300,6 +300,9 @@ function Move-DockerStorage {
             $global:FunctionResult = "1"
             return
         }
+
+        # Make sure we switch to Linuc Container Mode to ensure MobyLinuxVM is recreated in he new Storage Location
+        $null = Switch-DockerContainerType -ContainerType Linux
     }
 
     
@@ -332,8 +335,8 @@ function Move-DockerStorage {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUFS8kuH7BDKfEg448E7uDO1N4
-# JMSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUn5z4y96U45qpIKxg1EGErgM5
+# uYKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -390,11 +393,11 @@ function Move-DockerStorage {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFERMhUQRNzw/jy4r
-# seQ02cjzvVW3MA0GCSqGSIb3DQEBAQUABIIBAGl/yyboAj4QjXu3XvLyCqC1D9nu
-# EbkDUjyt0VCMkxhZWNNibBUhfmeWcOxv9MW52nNWc3EJyorz20bZfOH3ui/jj4RB
-# 29kvgIygDidoTGRll7nuTfkJSjXrXvUBdxYAyYO4hQIrPLkZY6oNAZvhmIC7Bgi1
-# byVjLwAfU8C5kw7QFM3CL5N1zXfrlq4TDwhhbJI93W+9uTpOQT1q/1ORpn2r845E
-# xvDjWC3WaI/nmwIhkp8f6e37xdDLDX872J+cq2P2SFrPmWT3g7m2DUfVNrWSCZqK
-# gXyDLgXiyPL4x3wgaRcg9Dux2cp4rKUg+an9a+4WoW3J9u/48G2TcthYhZg=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCimYEgZkzJAd82N
+# Q6rAJnxYYj6SMA0GCSqGSIb3DQEBAQUABIIBACSvfRULTJn966R7lSf84KFSqn99
+# W85YBH5UnJ1z28GTuwC0GG2dmCSvDVai/0QVY33NEoA+qyR47yXn9Ztzo4Jvw8aj
+# zc1F/t2ZzXKCyupUAEulPBezv78gGmpPlJr9rGElYYmy+sKunXnA5nIWe+hHXtEM
+# vziYxiChPiDSC/LHi1aUMnzuLX4EWzsyGEI4oFHevGNWxcXJ0Zy65SI0nw8KNjDO
+# bLdZ64etbOybt05eQKC1IjkrFliHj8lAO+3OLfpIPWiAs9xseJ7EjhshrdrAjuYa
+# 8Vba6JhuuvlJ72MpAoYjyKZCooKkCR+3roEOLkmVhBqzp9BmsswwWl5yIK0=
 # SIG # End signature block

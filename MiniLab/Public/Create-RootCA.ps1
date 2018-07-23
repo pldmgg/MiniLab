@@ -258,7 +258,7 @@ function Create-RootCA {
 
         # Make sure we have at least 35GB of Storage and 6GB of READILY AVAILABLE Memory
         # Check Storage...
-        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
         if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
             $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
         }
@@ -657,8 +657,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUcubBLDxA2WNArM/yhiS0bo/s
-# yKugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUFfffZFygun8IYRvfyZ6vuPCj
+# Imegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -715,11 +715,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKRufj8dRYxN/nkX
-# t68SkQkx3+6oMA0GCSqGSIb3DQEBAQUABIIBALyIVGTvnP/jzHAdnuzF2a3qB94Q
-# 5zI+JSw+3PVaKSPLu+UZVNfgXSKF0TJtRAkKVe9lE0jpDiI5WJIYtdj6mQqfjiZ1
-# WgssmTji4TQAfrea294bcEnWdM8SIo10bSrP4ugiVoBPlTvtPWwhDcjrcBHAJDyx
-# +xsxkO3j4ncvGf4JBhbdw432uEdJdUqfzn+50oj9K6efRFhm2BT+9Nq9afdNEL+b
-# /IN/8kKkzcO0C5cRj0xobChMeV87nOiivSsoqiqZQp59kv3tW7syxdr3N3a47cyi
-# 6t59fP3HXw89ePdAyceflz87Uw/WNwrLOFC1UVP64CvcH5I9ZcDv/yWT2yw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFL7eapmqCUiSyFz1
+# LXqxu3nhDRctMA0GCSqGSIb3DQEBAQUABIIBAEeZ1cw4scl/69IDhLjbdlaV8KVO
+# A3eb/oyC5Q63yjxHp8e2oqsQkOG5cbf3f7oxwXAoKUfV9+i/fYEekUGyXyRJJs/G
+# C5RsB3fX20YFdDZ8bvzXWbOaMNO8y/qrV0g/A7kFIqkb/xnq1k8KPCprHDtXYVNS
+# p45n5REUXrFAT6ZTqAnvv1uPis17HXw3mfIa2mAWHrj2vbuQ02ohzvAEHwH+XwKZ
+# B+SClhhsoQZtm48atmmaw9f+4wiSnJTKEMThK8e5lwIForkSyz4QLBZkfL4YTise
+# r8JTAntrlN1oU2sITYlm/IM9w47oFGuh0hjedf8tmoJi6anRmLUyNrosZSo=
 # SIG # End signature block

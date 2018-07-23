@@ -1,5 +1,9 @@
 # Change log
 
+## 0.9.9 (July 23, 2018)
+
+- Updated InvokePSCompatibility Private to improve import speed in PSCore
+
 ## 0.9.8 (July 23, 2018)
 
 - Minor updates to the DoDockerInstall Private function

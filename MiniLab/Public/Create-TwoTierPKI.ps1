@@ -428,7 +428,7 @@ function Create-TwoTierPKI {
 
         # Make sure we have at least 100GB of Storage and 12GB of READILY AVAILABLE Memory
         # Check Storage...
-        $LocalDrives = Get-WmiObject Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
+        $LocalDrives = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Drivetype -eq 3} | foreach {Get-PSDrive $_.DeviceId[0] -ErrorAction SilentlyContinue}
         if ([bool]$(Get-Item $VMStorageDirectory).LinkType) {
             $VMStorageDirectoryDriveLetter = $(Get-Item $VMStorageDirectory).Target[0].Substring(0,1)
         }
@@ -1090,8 +1090,8 @@ function Create-TwoTierPKI {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKzODnQ9XiTPvjZn+S18DE1sO
-# EwWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUxbX1ABAHGcpHZiKB8aa3ZdSC
+# Vtegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1148,11 +1148,11 @@ function Create-TwoTierPKI {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKOAT3hble9B4h19
-# hy+EavIlML6HMA0GCSqGSIb3DQEBAQUABIIBAAW1sqjEG9CKiv6337o3Mr77MBQX
-# Ybcv1Xf07t+Rq0VQ3nlYdLcG2i30CnD6G0EuaS1RMg8PTCdTU9C4MpiHR8DF5GDG
-# rkZOX/Asocbjjrl9Hl5zdtGRZ1OZoTflT64+RYAw6W+E9kmokGqPjIsIOHOAeIBZ
-# pU07eYfZnjf3db9vA1Y4xKYUw1DppswtJuKGpS4y3PBTDaJqJbsigVQ7IMZ96dHS
-# 2h5BILQxF20sMlu2mC25q15qpNnlK1bI4GDWmARtBxn4EyivUztYkVFBx5teGvhL
-# XhVqYjTjpZRCj33i+uSo9zc5q0j6yKDFJ2iuDlNkpeKljhuz8NYbZjzZu3E=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGBbFcgpwy2c8k7d
+# sGxb6IV/hfQRMA0GCSqGSIb3DQEBAQUABIIBAC6Fss14Ri4L8b2ErBlQtBA+XTks
+# QutgPy2jtcK27daqe8iv2w7rC1e3jnTcBKdOCD1p2e3ythW0Iv9jY4lysx193fDR
+# Cy3qPymPzcrWj/lVbj0QPo5oX+3wrrTUu9wO7TwXDfSTVtSzHNEG2rSqbQaVjEmt
+# hTQrIITWZhDLBARIvnSY1j+dTvKDihN+NwCw9hUSn8I6Mt/uv5O3uT9jbsaPf+aJ
+# kdqUuqJRqWTx65yNiRVKUW9aBcAzGBuibktoNf8xuiPa17jRPgDoS66+4Sg4sLLY
+# sl9edQMKHNz8w0EdKkQjONNEqHF6XPOi8prCiu2fRoznOdBIMaUl+HEAoKo=
 # SIG # End signature block

@@ -1,68 +1,65 @@
-[System.Collections.ArrayList]$script:FunctionsForSBUse = @(
-    ${Function:AddWinRMTrustLocalHost}.Ast.Extent.Text
-    ${Function:ConfirmAWSVM}.Ast.Extent.Text
-    ${Function:ConfirmAzureVM}.Ast.Extent.Text
-    ${Function:ConfirmGoogleComputeVM}.Ast.Extent.Text
-    ${Function:ConvertSize}.Ast.Extent.Text
-    ${Function:DoDockerInstall}.Ast.Extent.Text
-    ${Function:EnableNestedVM}.Ast.Extent.Text
-    ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
-    ${Function:FixVagrantPrivateKeyPerms}.Ast.Extent.Text
-    ${Function:GetDomainController}.Ast.Extent.Text
-    ${Function:GetElevation}.Ast.Extent.Text
-    ${Function:GetFileLockProcess}.Ast.Extent.Text
-    ${Function:GetIPRange}.Ast.Extent.Text
-    ${Function:GetModuleDependencies}.Ast.Extent.Text
-    ${Function:GetNativePath}.Ast.Extent.Text
-    ${Function:GetNestedVirtCapabilities}.Ast.Extent.Text
-    ${Function:GetPendingReboot}.Ast.Extent.Text
-    ${Function:GetVSwitchAllRelatedInfo}.Ast.Extent.Text
-    ${Function:GetWinPSInCore}.Ast.Extent.Text
-    ${Function:GetWorkingCredentials}.Ast.Extent.Text
-    ${Function:InstallFeatureDism}.Ast.Extent.Text
-    ${Function:InstallHyperVFeatures}.Ast.Extent.Text
-    ${Function:InvokeModuleDependencies}.Ast.Extent.Text
-    ${Function:InvokePSCompatibility}.Ast.Extent.Text
-    ${Function:ManualPSGalleryModuleInstall}.Ast.Extent.Text
-    ${Function:MobyLinuxBetter}.Ast.Extent.Text
-    ${Function:NewUniqueString}.Ast.Extent.Text
-    ${Function:PauseForWarning}.Ast.Extent.Text
-    ${Function:ResolveHost}.Ast.Extent.Text
-    ${Function:TestHyperVExternalvSwitch}.Ast.Extent.Text
-    ${Function:TestIsValidIPAddress}.Ast.Extent.Text
-    ${Function:UnzipFile}.Ast.Extent.Text
-    ${Function:Add-WinRMTrustedHost}.Ast.Extent.Text
-    ${Function:Create-Domain}.Ast.Extent.Text
-    ${Function:Create-RootCA}.Ast.Extent.Text
-    ${Function:Create-SubordinateCA}.Ast.Extent.Text
-    ${Function:Create-TwoTierPKI}.Ast.Extent.Text
-    ${Function:Create-TwoTierPKICFSSL}.Ast.Extent.Text
-    ${Function:Deploy-HyperVVagrantBoxManually}.Ast.Extent.Text
-    ${Function:Generate-Certificate}.Ast.Extent.Text
-    ${Function:Get-DockerInfo}.Ast.Extent.Text
-    ${Function:Get-DSCEncryptionCert}.Ast.Extent.Text
-    ${Function:Get-EncryptionCert}.Ast.Extent.Text
-    ${Function:Get-GuestVMAndHypervisorInfo}.Ast.Extent.Text
-    ${Function:Get-VagrantBoxManualDownload}.Ast.Extent.Text
-    ${Function:Get-WinOpenSSL}.Ast.Extent.Text
-    ${Function:Install-Docker}.Ast.Extent.Text
-    ${Function:Join-LinuxToAD}.Ast.Extent.Text
-    ${Function:Manage-HyperVVM}.Ast.Extent.Text
-    ${Function:Move-DockerStorage}.Ast.Extent.Text
-    ${Function:New-DomainController}.Ast.Extent.Text
-    ${Function:New-RootCA}.Ast.Extent.Text
-    ${Function:New-Runspace}.Ast.Extent.Text
-    ${Function:New-SelfSignedCertificateEx}.Ast.Extent.Text
-    ${Function:New-SubordinateCA}.Ast.Extent.Text
-    ${Function:Recreate-MobyLinuxVM}.Ast.Extent.Text
-    ${Function:Switch-DockerContainerType}.Ast.Extent.Text
-)
+function AddWinRMTrustLocalHost {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory=$False)]
+        [string]$NewRemoteHost = "localhost"
+    )
+
+    # Make sure WinRM in Enabled and Running on $env:ComputerName
+    try {
+        $null = Enable-PSRemoting -Force -ErrorAction Stop
+    }
+    catch {
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            Import-WinModule NetConnection
+        }
+
+        $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
+        if ($NICsWPublicProfile.Count -gt 0) {
+            foreach ($Nic in $NICsWPublicProfile) {
+                Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
+            }
+        }
+
+        try {
+            $null = Enable-PSRemoting -Force
+        }
+        catch {
+            Write-Error $_
+            Write-Error "Problem with Enable-PSRemoting WinRM Quick Config! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+    }
+
+    # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
+    if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
+        $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+    }
+
+    # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
+    $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+    [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
+
+    $HostsToAddToWSMANTrustedHosts = @($NewRemoteHost)
+    foreach ($HostItem in $HostsToAddToWSMANTrustedHosts) {
+        if ($CurrentTrustedHostsAsArray -notcontains $HostItem) {
+            $null = $CurrentTrustedHostsAsArray.Add($HostItem)
+        }
+        else {
+            Write-Warning "Current WinRM Trusted Hosts Config already includes $HostItem"
+            return
+        }
+    }
+    $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
+    Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
+}
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUCcWNZJRNE5YZ/pLL39ey1Cez
-# 0Xagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgJPfoQv6PBa8VE2dwjhQaovv
+# x+igggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -119,11 +116,11 @@
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFD+uxJlYIYodrb28
-# H0/yeWffVdd7MA0GCSqGSIb3DQEBAQUABIIBAFfwHbARpSjUCydPMN4hShjF6XM5
-# ZbW9U/ghWWArXF/huY2HussQOjwe0tXcW7GMBRaDaVPEXB6QnkFDUaYOthcYMSpO
-# yLIka7EUhUjFTn89N1De74Q//7sP+i0RrlHzMxZZaAyD4YINMnsXVrF3A+LgUNzL
-# +yl+MrZyHsrQ4NfgsscF0r3fqWvumWc3goWTSaH5RkNdEJXI9ZeIXjSGZ90lblpL
-# mDR2CNEF5YqtU2twF6IFPL43UjTKPx/4A9v3juj5aQ0IG4Xs3gZ0tvSD5ZCsKJrM
-# 2Sba1tYRwXMgl4SqFi8OUL56/S6L5QV3zvlCncSb/kAOeO8pRJ4CB8yqQiA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEfbGSGMj6QfG5et
+# W/OsBh36F792MA0GCSqGSIb3DQEBAQUABIIBAAeQcNjvv34QidP/aJU/TfVS5QcA
+# 5pyXgqnsMzoJMiS/pFqbnJuXVzTzSJz7SO6h2QbpNbHm7bNDrLIU+ghKiqjFvEpx
+# Xq4BLDgzw3d219206JJP92YLF61iom7dAAJZ3J9qG4WhGkQaXUGZsmhpyNlH+vYt
+# 7dJ2PFz7X7QVc6k9FspKw+v5GHbFSaUCDfkEHoKQczspBCBlNRJWmWU/9fNsGLiA
+# Q+l1jB3IE7HMSXcbzvQFk13ttg9r3isy1CJK0HtH/qI5UdLzaJHp17rJL7hLA7k4
+# 0pHFkCIKA8EbC6Y3QradnjRSHRizmlZcs2PDSxEjYITDYFXH2tuUENJprHQ=
 # SIG # End signature block
