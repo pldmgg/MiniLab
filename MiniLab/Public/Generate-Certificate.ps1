@@ -2441,12 +2441,15 @@ function Generate-Certificate {
             [string]$DownloadDirectory = "$HOME\Downloads",
     
             [Parameter(Mandatory=$False)]
-            [switch]$AllowRestart
+            [switch]$AllowRestart,
+    
+            [Parameter(Mandatory=$False)]
+            [switch]$Force
         )
     
         Write-Host "Please wait..."
     
-        if (!$(Get-Module -ListAvailable -Name ActiveDirectory)) {
+        if (!$(Get-Module -ListAvailable -Name ActiveDirectory) -or $Force) {
             $OSInfo = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
             $OSCimInfo = Get-CimInstance Win32_OperatingSystem
             $OSArchitecture = $OSCimInfo.OSArchitecture
@@ -2458,7 +2461,11 @@ function Generate-Certificate {
             }
             
             if ($OSInfo.ProductName -notlike "*Server*") {
-                if (![bool]$(Get-WmiObject -query 'select * from win32_quickfixengineering' | Where-Object {$_.HotFixID -eq 'KB958830' -or $_.HotFixID -eq 'KB2693643'})) {
+                $KBCheck = [bool]$(Get-WmiObject -query 'select * from win32_quickfixengineering' | Where-Object {
+                    $_.HotFixID -eq 'KB958830' -or $_.HotFixID -eq 'KB2693643'
+                })
+    
+                if (!$KBCheck -or $Force) {
                     if ($([version]$OSCimInfo.Version).Major -lt 10 -and [version]$OSCimInfo.Version -ge [version]"6.3") {
                         if ($OSArchitecture -eq "64-bit") {
                             $OutFileName = "Windows8.1-KB2693643-x64.msu"
@@ -2470,7 +2477,15 @@ function Generate-Certificate {
                         $DownloadUrl = "https://download.microsoft.com/download/1/8/E/18EA4843-C596-4542-9236-DE46F780806E/$OutFileName"
                     }
                     if ($([version]$OSCimInfo.Version).Major -ge 10) {
-                        if ([int]$OSInfo.ReleaseId -ge 1709) {
+                        if ([int]$OSInfo.ReleaseId -ge 1803) {
+                            if ($OSArchitecture -eq "64-bit") {
+                                $OutFileName = "WindowsTH-RSAT_WS_1803-x64.msu"
+                            }
+                            if ($OSArchitecture -eq "32-bit") {
+                                $OutFileName = "WindowsTH-RSAT_WS_1803-x86.msu"
+                            }
+                        }
+                        if ([int]$OSInfo.ReleaseId -ge 1709 -and [int]$OSInfo.ReleaseId -lt 1803) {
                             if ($OSArchitecture -eq "64-bit") {
                                 $OutFileName = "WindowsTH-RSAT_WS_1709-x64.msu"
                             }
@@ -3639,8 +3654,8 @@ function Generate-Certificate {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjwPFK6jo8SLQvipRhj44dTXy
-# Yiagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUdiz3f2XrZE0N1gF023xXHF6z
+# aF+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -3697,11 +3712,11 @@ function Generate-Certificate {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMiD1ITDBQ60bECt
-# JytpmOXSSRMcMA0GCSqGSIb3DQEBAQUABIIBAKuhjVDPYDrRflGK8Llz3vrl2WEp
-# 5LDp50HkqB+/Tqsvee3QtNn51wpUGPaqf34bSOZV6dhzlphFEHbXgtSo7W26Dzze
-# vIQ91TTYbVUfO7KaG2BEt/o4nfSuX8sdbwC73qdjHtW8YlgfmGNYyxNdVw2o30mt
-# 29hLP6mzMn3+y6O1k0wI76ZRo5im3lqZlO2uzymzzXfadr6FO+I4pPWnGibl9p72
-# cCbpyyNUaYlXWAkALFINlPXSWg6qmBXOTXX3ZQ1KGGZrQui4wAGViRe3F7vEd4dx
-# qyrhy5I10bxOpCehcPLxE5elP3aI8KTE0awALGC+GbGOsgs8cZngAQ/Ia1Y=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHFM6SIofifiiRXY
+# i6+31sf12OaWMA0GCSqGSIb3DQEBAQUABIIBAF4fJC1NYoL+e248EsYhhnki4PSX
+# wKN5MNWU06DHJjtlyIV8B30nOAX+D2tGtGfuYtUhSYfvxcfOZu2S/KZ38gpy/392
+# KYzDYebhCrotNJFbtWphedalV659dXVuaq64Kox7ocy+2h4yHsm9voKXKKuI9jGo
+# HZ/aUhxEX00DFnNQ6+ShgDJY+eD21a/veFWIVbYafh7vdaLItk9weVfdzskNEXof
+# 3TJQEJBJn92TPepo4K/xcAN7XNwSOypuzncZ7VmVKR3h62uXD7i8E3/eZxYlWTpx
+# 7HRDt3pfYbrFfEgiqHEEP0M3o2DPHsQNPL7PN89UHP0+dxfuIguFcrXm/gw=
 # SIG # End signature block

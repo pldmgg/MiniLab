@@ -1,5 +1,9 @@
 # Change log
 
+## 1.0.0 (July 24, 2018)
+
+- Updated Install-RSAT function within Generate-Certificate function
+
 ## 0.9.9 (July 23, 2018)
 
 - Updated InvokePSCompatibility Private to improve import speed in PSCore
