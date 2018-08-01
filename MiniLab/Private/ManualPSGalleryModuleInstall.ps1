@@ -5,6 +5,9 @@ function ManualPSGalleryModuleInstall {
         [string]$ModuleName,
 
         [Parameter(Mandatory=$False)]
+        [switch]$PreRelease,
+
+        [Parameter(Mandatory=$False)]
         [string]$DownloadDirectory
     )
 
@@ -25,11 +28,39 @@ function ManualPSGalleryModuleInstall {
         $null = New-Item -ItemType Directory "$HOME\Documents\WindowsPowerShell\Modules" -Force
     }
 
-    $searchUrl = "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$ModuleName' and IsLatestVersion"
+    if ($PreRelease) {
+        $searchUrl = "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$ModuleName'"
+    }
+    else {
+        $searchUrl = "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$ModuleName' and IsLatestVersion"
+    }
     $ModuleInfo = Invoke-RestMethod $searchUrl
+    if (!$ModuleInfo -or $ModuleInfo.Count -eq 0) {
+        Write-Error "Unable to find Module Named $ModuleName! Halting!"
+        $global:FunctionResult = "1"
+        return
+    }
+    if ($PreRelease) {
+        if ($ModuleInfo.Count -gt 1) {
+            $ModuleInfo = $($ModuleInfo | Sort-Object -Property Updated)[-1]
+        }
+    }
+    
     $OutFilePath = Join-Path $DownloadDirectory $($ModuleInfo.title.'#text' + $ModuleInfo.properties.version + '.zip')
     if (Test-Path $OutFilePath) {Remove-Item $OutFilePath -Force}
-    Invoke-WebRequest $ModuleInfo.Content.src -OutFile $OutFilePath
+
+    try {
+        #Invoke-WebRequest $ModuleInfo.Content.src -OutFile $OutFilePath
+        # Download via System.Net.WebClient is a lot faster than Invoke-WebRequest...
+        $WebClient = [System.Net.WebClient]::new()
+        $WebClient.Downloadfile($ModuleInfo.Content.src, $OutFilePath)
+    }
+    catch {
+        Write-Error $_
+        $global:FunctionResult = "1"
+        return
+    }
+    
     if (Test-Path "$DownloadDirectory\$ModuleName") {Remove-Item "$DownloadDirectory\$ModuleName" -Recurse -Force}
     Expand-Archive $OutFilePath -DestinationPath "$DownloadDirectory\$ModuleName"
 
@@ -48,8 +79,8 @@ function ManualPSGalleryModuleInstall {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUd4lzn6JHaySdKkAc3smH5Gaz
-# OQSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUdyTcv1JpsCJnQ7fEZM9lncUV
+# qsSgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -106,11 +137,11 @@ function ManualPSGalleryModuleInstall {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEp6xH9IXHkIM6+A
-# Jxl/HyGzTRXYMA0GCSqGSIb3DQEBAQUABIIBAEW3b+SOwlE+vdADoe2nlO+dIK6c
-# H5YKlli9dfhkejvksawRmpy6/ApY9lcbcdsi2AAS0S83Qig6rvUhyeeJF1scLfBU
-# iRH0IPPv3x9TEApkPgHIaW5IvaoGnv0D5HcGOYP4GOx2ax2r0pKp9k6IJC0Vow/f
-# 4QbQtrJIYMMDzcaZ50nuXnX5IH0S2IXeoGbqmM9sgIctLfBgkXj7zKYgWO/Ft/7p
-# MWIgnVQ8R+hKIsGnSThPRamZpmjuNauwHWAtJSd14yzBM18JgXeW+gLIQaRdNr3G
-# LWFkyYe7vhS9CRPihJz7qMDaju5DgCMSSJMdYFZ3GibasPjapQRZIVjNtN4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGzAOxKCCq3IN0JE
+# gyTD6vSikcagMA0GCSqGSIb3DQEBAQUABIIBAA6pH2FvfV3K1pouydyVihMGmSlQ
+# 27l/F1cUWpjxfv5zOASUw89uGa6AbNM7kTw7kbGVc1ehLxTBvqegZDF563qojspW
+# thK427nN+GEs7PcXBIe1Z+/8p+lh5qBITN42gYzvecvMnTRJxvtoVRR6pE8IXQv/
+# dbhiA3DvStf3sGURR/t90v10HQVeiMVINwkEyXYGEv2hpaDDU5O1DE+RZUdNAcYX
+# kkpGnscj4YoQ0fYZC9cI+LmtrhtdhXIytfNYUgpStcEvBggSB5MYp9ksk8JaZd55
+# WDdYC+c/NFZ6W5YnOzKVlS4F8Pjz2755AWWWbDxT2BwW19dJu1fOPTCYMRg=
 # SIG # End signature block

@@ -1,5 +1,9 @@
 # Change log
 
+## 1.0.1 (August 1, 2018)
+
+- Updated WinCompat Functions
+
 ## 1.0.0 (July 24, 2018)
 
 - Updated Install-RSAT function within Generate-Certificate function

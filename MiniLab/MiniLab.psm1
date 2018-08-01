@@ -13668,6 +13668,11 @@ function New-RunSpace {
         $SyncHash."$RunSpaceName`Result" | Add-Member -Type NoteProperty -Name ErrorsDetailed -Value $null
         $SyncHash."$RunspaceName`Result".Errors = [System.Collections.ArrayList]::new()
         $SyncHash."$RunspaceName`Result".ErrorsDetailed = [System.Collections.ArrayList]::new()
+        $SyncHash."$RunspaceName`Result" | Add-Member -Type NoteProperty -Name ThisRunspace -Value $($(Get-Runspace)[-1])
+        [System.Collections.ArrayList]$LiveOutput = @()
+        $SyncHash."$RunspaceName`Result" | Add-Member -Type NoteProperty -Name LiveOutput -Value $LiveOutput
+        
+
         
         ##### BEGIN Generic Runspace Helper Functions #####
 
@@ -15633,8 +15638,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUvnuLgueqQdw+D+KGZ//vBbZT
-# rDCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKpZh5hKEcmgQjKe8llYR4GwC
+# 9q2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15691,11 +15696,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBsZKf342k4Uy9Ym
-# /XzGzeomoi83MA0GCSqGSIb3DQEBAQUABIIBADHG76V7vmXnCJTs564KpPkrflis
-# EVdAVYF23oyyi/ImtDuTFsOS5QYz4JzuTbOrMV5zcyaNupqIkmwHkkC2OLjAPjsk
-# VP2nU2TQkRqksMwyinLFf2IOVRsQD52+Q7jCa+BG9e+iHzDgyTg+nbQhWWt8pJX8
-# topBItyjQ47FL+y+bBOgk6NXRWY81ekyvQwFdp7oDwm5f3EvhMqyh0akTBCD3J9F
-# tErSaDurkBQfcxD1GyoUbIPVx6pzXsIMykVcZ/4eC1LMN9ELjugH896xVxsVbdtJ
-# E/Kfo67JmaALJws1/JiqggvHpfJqAOwJl99T5k6Yf6qbYL7cNx+TJyN8FEQ=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFyCIkDrZDfdWsin
+# WeSXicx6KcatMA0GCSqGSIb3DQEBAQUABIIBAAP7dqeo25HQNixQWtE9A7cyBntH
+# O8+X4idn9BpnJICw6X4gRHahfxthtmo75QqJsGVtfKuojWJ8I4e9HX5iSNfhq5QZ
+# EBCxA7L+rLhEoSBU4pZUcXQnlGBcKJiIvk2FmPAILV7eWLta4yhCdokNGPBqCuTT
+# EpYmPt7VH9h8iUAumTSg5tC6GOBpe02tHOw1oIAmr18CRWc61bQIGQbneRaiItaz
+# okIj0brKROrHooU9yHoIRZwR3SkNkJ11t7KjPvIm4tm/n56d5UhbEJGynvbSsAmh
+# vlv5He7akQrVXKmDrLRfN1Z+dARUxZCB9cXdphElub4om3AWw4RSvODqJ7s=
 # SIG # End signature block
