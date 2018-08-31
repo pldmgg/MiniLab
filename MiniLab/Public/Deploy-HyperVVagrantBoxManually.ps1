@@ -75,7 +75,7 @@
         This parameter takes an integer that represents the number of vCPUs to allocate
         to the VM. Valid values are : 1,2
 
-    .PARAMETER CPUs
+    .PARAMETER Generation
         This parameter is OPTIONAL, however, if the vagrant VM is Linux, it will default to 1, and if it is
         Windows, it will default to 2.
 
