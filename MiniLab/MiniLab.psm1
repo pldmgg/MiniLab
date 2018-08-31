@@ -3510,6 +3510,13 @@ function Create-TwoTierPKICFSSL {
         This parameter takes an integer that represents the number of vCPUs to allocate
         to the VM. Valid values are : 1,2
 
+    .PARAMETER CPUs
+        This parameter is OPTIONAL, however, if the vagrant VM is Linux, it will default to 1, and if it is
+        Windows, it will default to 2.
+
+        This parameter takes an integer that represents the Hyper-V VM Generation of the Vagrant Box.
+        Valid values are : 1,2
+
     .PARAMETER TemporaryDownloadDirectory
         This parameter is OPTIONAL, but is defacto MANDATORY and defaults to "$HOME\Downloads".
 
@@ -3590,6 +3597,10 @@ function Deploy-HyperVVagrantBoxManually {
         [Parameter(Mandatory=$True)]
         [ValidateSet(1,2)]
         [int]$CPUs,
+
+        [Parameter(Mandatory=$False)]
+        [ValidateSet(1,2)]
+        [int]$Generation,
 
         [Parameter(Mandatory=$False)]
         [string]$TemporaryDownloadDirectory,
@@ -3975,11 +3986,17 @@ function Deploy-HyperVVagrantBoxManually {
         # Instead of actually importing the VM, it's easier (and more reliable) to just create a new one using the existing
         # .vhd/.vhdx so we don't have to deal with potential Hyper-V Version Incompatibilities
         $SwitchName = $vSwitchToUse.Name
-        if ($VagrantBox -match "Win|Windows") {
-            $VMGen = 2
+
+        if (!$Generation) {
+            if ($VagrantBox -match "Win|Windows") {
+                $VMGen = 2
+            }
+            else {
+                $VMGen = 1
+            }
         }
         else {
-            $VMGen = 1
+            $VMGen = $Generation
         }
 
         # Create the NEW VM
@@ -11060,6 +11077,10 @@ function Manage-HyperVVM {
                 Write-Host "Attach DVD $IsoFile"
                 Hyper-V\Add-VMDvdDrive -VMName $VMName -Path $IsoFile
             }
+
+            # Ensure $IsoFile is the first boot device
+            $iso = Get-VMFirmware -VMName $vm.Name | Select-Object -ExpandProperty BootOrder | Where-Object { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
+            Set-VMFirmware -VMName $vm.Name -EnableSecureBoot Off -FirstBootDevice $iso
         }
 
         <#
@@ -15638,8 +15659,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKpZh5hKEcmgQjKe8llYR4GwC
-# 9q2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5JbhOg1auGSO+utASEnbZKBV
+# rFygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15696,11 +15717,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFFyCIkDrZDfdWsin
-# WeSXicx6KcatMA0GCSqGSIb3DQEBAQUABIIBAAP7dqeo25HQNixQWtE9A7cyBntH
-# O8+X4idn9BpnJICw6X4gRHahfxthtmo75QqJsGVtfKuojWJ8I4e9HX5iSNfhq5QZ
-# EBCxA7L+rLhEoSBU4pZUcXQnlGBcKJiIvk2FmPAILV7eWLta4yhCdokNGPBqCuTT
-# EpYmPt7VH9h8iUAumTSg5tC6GOBpe02tHOw1oIAmr18CRWc61bQIGQbneRaiItaz
-# okIj0brKROrHooU9yHoIRZwR3SkNkJ11t7KjPvIm4tm/n56d5UhbEJGynvbSsAmh
-# vlv5He7akQrVXKmDrLRfN1Z+dARUxZCB9cXdphElub4om3AWw4RSvODqJ7s=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBWAr3XEAVpaefNq
+# eJCHMyZ02AHcMA0GCSqGSIb3DQEBAQUABIIBACojY2dLDlvGqd+k7AH4krt37S3B
+# AEz1SlqrvemaHVZOkp7x9CtU3eGy9Bh/LK6ZqAUo6VNFkBihBhlA6kxCEHe84CrL
+# KvsvV7SzBdA3gyoqavy28qVlRxWjTKIX2H3qcvTJQ+T/a+eWFbMKi4kDhOjgT5NH
+# JBXoiC+p+158+4BYl0fpzg6Wr75+G1i43+lIGAElplrB99/lKTEKCqLoGKfHCn75
+# 2lMbwcnr7L1WeRONlo6HEQycgBbWk8HJkZqWBI1GVOH+UQLjcbFm0NTbAeB4Jfq5
+# JInJmUmKoyYFjXtbTAbtw0x5SWuLGKl5c02L7S29+k7PzKLvt1U1MbgJnMA=
 # SIG # End signature block

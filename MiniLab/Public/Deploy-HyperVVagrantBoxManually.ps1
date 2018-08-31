@@ -75,6 +75,13 @@
         This parameter takes an integer that represents the number of vCPUs to allocate
         to the VM. Valid values are : 1,2
 
+    .PARAMETER CPUs
+        This parameter is OPTIONAL, however, if the vagrant VM is Linux, it will default to 1, and if it is
+        Windows, it will default to 2.
+
+        This parameter takes an integer that represents the Hyper-V VM Generation of the Vagrant Box.
+        Valid values are : 1,2
+
     .PARAMETER TemporaryDownloadDirectory
         This parameter is OPTIONAL, but is defacto MANDATORY and defaults to "$HOME\Downloads".
 
@@ -155,6 +162,10 @@ function Deploy-HyperVVagrantBoxManually {
         [Parameter(Mandatory=$True)]
         [ValidateSet(1,2)]
         [int]$CPUs,
+
+        [Parameter(Mandatory=$False)]
+        [ValidateSet(1,2)]
+        [int]$Generation,
 
         [Parameter(Mandatory=$False)]
         [string]$TemporaryDownloadDirectory,
@@ -540,11 +551,17 @@ function Deploy-HyperVVagrantBoxManually {
         # Instead of actually importing the VM, it's easier (and more reliable) to just create a new one using the existing
         # .vhd/.vhdx so we don't have to deal with potential Hyper-V Version Incompatibilities
         $SwitchName = $vSwitchToUse.Name
-        if ($VagrantBox -match "Win|Windows") {
-            $VMGen = 2
+
+        if (!$Generation) {
+            if ($VagrantBox -match "Win|Windows") {
+                $VMGen = 2
+            }
+            else {
+                $VMGen = 1
+            }
         }
         else {
-            $VMGen = 1
+            $VMGen = $Generation
         }
 
         # Create the NEW VM
@@ -660,8 +677,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5eajS+Do194sm/en/2FVna5+
-# Aq2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU7xqI483iOzto53JLbBmujIqK
+# cg6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -718,11 +735,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBDSoNdQRxZpixaP
-# UmiP2Gf4HocUMA0GCSqGSIb3DQEBAQUABIIBAEfd6sjyB7Ldx3PAVJLMrhq8YTIo
-# ccN/nNpQ5ilaKmHvDxBzcnTMzyJ72MPl7lSmpcML78WfUcYlqM5R5+Y5h+zIOo0G
-# Qx+b7reNi6jQtn/AoyOeSUIiCs4uB23LXL0wtfhjoH42eqltWWp+Z71v0DKWP1dQ
-# J/GuYoYjn13ygsaU8vwwdygvh7nwvusrHWc1ugOlh/J2iGVl4pesmuaiWdpRtJEB
-# 9msTzQLgFkgk/8lYfikpYM65ATgjLBkMxAspnw8LLzCnqkYEhklmtlMPrTPz/1Ld
-# ovkLyhnsd8oBO4Nmr2T7Kn/dg4rVpWiNLTDQOOCMsfe6yktUtTRxMg072c0=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBQHZtu/e5VWD2Gl
+# mHjpNQ9mzEKgMA0GCSqGSIb3DQEBAQUABIIBALwIo7Rf8ANYCwPyk81qpT0iQBw8
+# cyb9hzmeYc7vxUxSnJBPZFpWlqe6KPAbV8pTJK1YhoPbGho9zneKHmv3E5m5eX0Q
+# GKZpucgaGz9PJCTBxvFrzZw3bcaJGXtpg+uvewcoJ4YmtvMzH2LbRRwSwNJfg/qO
+# Uef9FvZ5FYJCGbsyNAUwUOiywVI/baM1QH5Y45sT3dk7dKpV+4pqPMxvMaWeghWV
+# 9RkvzTsgmCldLpJWqjoJtcFl5lC3anjsmhLJyuQXOBPUkme7aSpoTUIfN+bPWAH+
+# hEREw3fUWmMXRZiGfPCWbrjCrR7T5GkHXV4E0B1sHGghmzsQ/HgqtwiKiZ8=
 # SIG # End signature block

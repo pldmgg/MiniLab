@@ -1,5 +1,9 @@
 # Change log
 
+## 1.0.2 (August 31, 2018)
+
+- Minor updates to Manage-HyperVVM.ps1 and Deploy-HyperVVgrantBoxManually.ps1
+
 ## 1.0.1 (August 1, 2018)
 
 - Updated WinCompat Functions

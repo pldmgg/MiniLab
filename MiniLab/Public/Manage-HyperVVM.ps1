@@ -505,6 +505,10 @@ function Manage-HyperVVM {
                 Write-Host "Attach DVD $IsoFile"
                 Hyper-V\Add-VMDvdDrive -VMName $VMName -Path $IsoFile
             }
+
+            # Ensure $IsoFile is the first boot device
+            $iso = Get-VMFirmware -VMName $vm.Name | Select-Object -ExpandProperty BootOrder | Where-Object { $_.FirmwarePath.EndsWith("Scsi(0,1)") }
+            Set-VMFirmware -VMName $vm.Name -EnableSecureBoot Off -FirstBootDevice $iso
         }
 
         <#
@@ -681,8 +685,8 @@ function Manage-HyperVVM {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQULU9XX1Cms5VHEKEjukI7X/NT
-# ONGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUJX6YK5yCKNKKhe2xwq156tDo
+# LDygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -739,11 +743,11 @@ function Manage-HyperVVM {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJaH+868T7MxW2Sg
-# gaAtJocJiwM7MA0GCSqGSIb3DQEBAQUABIIBAB3IrgZYB+2k7IBhL8n8GPtu4ROl
-# ZI+/1bm1u8958aTE1uye4uI3kO8JpDAthDMKHeQwmY8qPQSqIm0thv4SNxPvt3qi
-# ymyqlkxffPj0Qz6GjhTbu34PR21GK70sVD43xAB0n1GmU3KbJ9W6eCFXjHmKfkVf
-# YVj/fSiOXtMATr5m6+JG/A9gVfe3gPjZANCOEUE4SoPa+ejnjtoJqT6jxZh6Wlnp
-# FmPMrYZ5VVH3GNzUJVp/RJmWKqeok3qg5yJ+I6JATXc1X/X8k50n0xGWL4U6inO9
-# SwFbP01ffsBQnbvB92/iIKidCGjF7/dDPX/VEIb4EGbX5fbLfxKlIYIQy0k=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDEXmZzqUmKFpSte
+# Nj8PmPVvHMSyMA0GCSqGSIb3DQEBAQUABIIBAAujLqntqimDSa/8JR44KfG/IuXT
+# VK5YqvFgj6xgeQ/hXs6Cwywbijh4dgpz6hm2KN8dwvO8/CIesQm2hGcQM+Hkb88b
+# V6v3oYNvMBw+Cj7/+e1MOEAQQ1cMbwwWH1V4wbAeN1TBnmqhXgNTyrK1kbVGlZE4
+# XopgwCdc//+ZACKLL3qiFL5tGTAOmCwaAXtMYOiRLHUhZt+s1uGfugGR10CPxaP3
+# 1eW13FEJ2c3NYud4F0m8MlRwJrNWnn9zFXKpjdYdnccIcRuuqaGVNi7TtcllDbPd
+# IfmsC7jffj6kcadIJ/A/kQ9sUKaPK9bleKNXGvh9u2KY9ZMNkDWCAEfmvSc=
 # SIG # End signature block
