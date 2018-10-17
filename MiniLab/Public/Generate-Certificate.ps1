@@ -2939,8 +2939,8 @@ function Generate-Certificate {
                 else {
                     if ([bool]$(Get-Command Get-ADObject -ErrorAction SilentlyContinue)) {
                         try {
-                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate}
-                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate} -Properties *
+                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter "cn -eq '$cnForBasisTemplate'"
+                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter "cn -eq '$cnForBasisTemplate'" -Properties *
                             $displayNameForBasisTemplate = $AllCertificateTemplateProperties.DisplayName
                         }
                         catch {
@@ -2957,8 +2957,8 @@ function Generate-Certificate {
                 else {
                     if ([bool]$(Get-Command Get-ADObject -ErrorAction SilentlyContinue)) {
                         try {
-                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate}
-                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate} -Properties *
+                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter "displayName -eq '$displayNameForBasisTemplate'"
+                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter "displayName -eq '$displayNameForBasisTemplate'" -Properties *
                             $cnForBasisTemplate = $AllCertificateTemplateProperties.CN
                         }
                         catch {
@@ -3654,8 +3654,8 @@ function Generate-Certificate {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUdiz3f2XrZE0N1gF023xXHF6z
-# aF+gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0Qnogkjiy1nTXrFBBgiL/LuH
+# Ugqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -3712,11 +3712,11 @@ function Generate-Certificate {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHFM6SIofifiiRXY
-# i6+31sf12OaWMA0GCSqGSIb3DQEBAQUABIIBAF4fJC1NYoL+e248EsYhhnki4PSX
-# wKN5MNWU06DHJjtlyIV8B30nOAX+D2tGtGfuYtUhSYfvxcfOZu2S/KZ38gpy/392
-# KYzDYebhCrotNJFbtWphedalV659dXVuaq64Kox7ocy+2h4yHsm9voKXKKuI9jGo
-# HZ/aUhxEX00DFnNQ6+ShgDJY+eD21a/veFWIVbYafh7vdaLItk9weVfdzskNEXof
-# 3TJQEJBJn92TPepo4K/xcAN7XNwSOypuzncZ7VmVKR3h62uXD7i8E3/eZxYlWTpx
-# 7HRDt3pfYbrFfEgiqHEEP0M3o2DPHsQNPL7PN89UHP0+dxfuIguFcrXm/gw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCzPUu8osVHvDfrY
+# E2/WvSh/04fWMA0GCSqGSIb3DQEBAQUABIIBAF4aPT8L/QXNCEXhU00Fv6ZeRMt2
+# Wdb5aRkLMUywQIqZ1zSHsMyRilhQv75BCeloAMo+8jlvww4Ub0ryqC3/awScmNJZ
+# w4GyZjnDIDad74EWEowp9LX6zz61nn88UW5I+jiP541bUHOGe4UbPmgUvV6jG95E
+# PsHc+FwNDgMvQ/pAElADdfwY+IBFIcdgCQPUDtT/Z8Kyve7/FnaVJLMiY3GKnbak
+# QZXO4+JawUg1JFo8nxugnsR/Fg49vuhJmIlDdVavz7kUmx/7CsNv7B8SaQMP/0t/
+# Y9TI7ty6UNOSFKhvAHrr4jdWS3YjbSa+I5VRitO5aCLSXjRUrhtLedeeIJ8=
 # SIG # End signature block

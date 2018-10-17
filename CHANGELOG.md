@@ -1,5 +1,9 @@
 # Change log
 
+## 1.0.3 (October 17, 2018)
+
+- Fixed Get-ADObject filters in Generate-Certificate function
+
 ## 1.0.2 (August 31, 2018)
 
 - Minor updates to Manage-HyperVVM.ps1 and Deploy-HyperVVgrantBoxManually.ps1

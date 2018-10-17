@@ -3510,7 +3510,7 @@ function Create-TwoTierPKICFSSL {
         This parameter takes an integer that represents the number of vCPUs to allocate
         to the VM. Valid values are : 1,2
 
-    .PARAMETER CPUs
+    .PARAMETER Generation
         This parameter is OPTIONAL, however, if the vagrant VM is Linux, it will default to 1, and if it is
         Windows, it will default to 2.
 
@@ -7051,8 +7051,8 @@ function Generate-Certificate {
                 else {
                     if ([bool]$(Get-Command Get-ADObject -ErrorAction SilentlyContinue)) {
                         try {
-                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate}
-                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {cn -eq $cnForBasisTemplate} -Properties *
+                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter "cn -eq '$cnForBasisTemplate'"
+                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter "cn -eq '$cnForBasisTemplate'" -Properties *
                             $displayNameForBasisTemplate = $AllCertificateTemplateProperties.DisplayName
                         }
                         catch {
@@ -7069,8 +7069,8 @@ function Generate-Certificate {
                 else {
                     if ([bool]$(Get-Command Get-ADObject -ErrorAction SilentlyContinue)) {
                         try {
-                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate}
-                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter {displayName -eq $displayNameForBasisTemplate} -Properties *
+                            $CertificateTemplateLDAPObject = Get-ADObject -SearchBase $LDAPSearchBase -Filter "displayName -eq '$displayNameForBasisTemplate'"
+                            $AllCertificateTemplateProperties = Get-ADObject -SearchBase $LDAPSearchBase -Filter "displayName -eq '$displayNameForBasisTemplate'" -Properties *
                             $cnForBasisTemplate = $AllCertificateTemplateProperties.CN
                         }
                         catch {
@@ -15659,8 +15659,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5JbhOg1auGSO+utASEnbZKBV
-# rFygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUVEECNXyxrD5wCWGQEbSWHO4O
+# +9qgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15717,11 +15717,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBWAr3XEAVpaefNq
-# eJCHMyZ02AHcMA0GCSqGSIb3DQEBAQUABIIBACojY2dLDlvGqd+k7AH4krt37S3B
-# AEz1SlqrvemaHVZOkp7x9CtU3eGy9Bh/LK6ZqAUo6VNFkBihBhlA6kxCEHe84CrL
-# KvsvV7SzBdA3gyoqavy28qVlRxWjTKIX2H3qcvTJQ+T/a+eWFbMKi4kDhOjgT5NH
-# JBXoiC+p+158+4BYl0fpzg6Wr75+G1i43+lIGAElplrB99/lKTEKCqLoGKfHCn75
-# 2lMbwcnr7L1WeRONlo6HEQycgBbWk8HJkZqWBI1GVOH+UQLjcbFm0NTbAeB4Jfq5
-# JInJmUmKoyYFjXtbTAbtw0x5SWuLGKl5c02L7S29+k7PzKLvt1U1MbgJnMA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIATOi4Il0es4Gz+
+# QpLklNAm6f5SMA0GCSqGSIb3DQEBAQUABIIBAL6EUx0CYyLMPad3piZtib96ZoXf
+# W7fLeGj+Mi+Yan8YvCUMKHi9xQ/1Y4mkXQbMZVWLKFu5ZtlhRbR01tYiQ9cdFMeG
+# Iy7x04ywIRQMM5FIM3FiUwS/AKNdPj5t0TFfJF94TFbqx4yu8zX8OX+KScduNZVJ
+# JZ52s1wesc90PVcWum7d7SO2Wmm2YZpFQvyCIJBCONJ1dBSSsfi09CBeOrZ5XmOD
+# D3YSIGmTME28bwg4eGQLlMH7M5+m/vO6a+w7LAFcB8vKHp63wnBAE1ILUOZ4jd15
+# UheovbR1sJpcfRa85R4pMSEE+5P5KuuSt6JJTumflgwLAOrLMhn54+LMeE4=
 # SIG # End signature block
