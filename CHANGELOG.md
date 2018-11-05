@@ -1,5 +1,9 @@
 # Change log
 
+## 1.0.4 (November 5, 2018)
+
+- Fixed Get-ADObject filters in Generate-Certificate function
+
 ## 1.0.3 (October 17, 2018)
 
 - Fixed Get-ADObject filters in Generate-Certificate function
