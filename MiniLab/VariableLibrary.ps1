@@ -1,9 +1,11 @@
 [System.Collections.ArrayList]$script:FunctionsForSBUse = @(
     ${Function:AddWinRMTrustLocalHost}.Ast.Extent.Text
+    ${Function:AddWinRMTrustedHost}.Ast.Extent.Text
     ${Function:ConfirmAWSVM}.Ast.Extent.Text
     ${Function:ConfirmAzureVM}.Ast.Extent.Text
     ${Function:ConfirmGoogleComputeVM}.Ast.Extent.Text
     ${Function:ConvertSize}.Ast.Extent.Text
+    ${Function:ConvertSubnetMask}.Ast.Extent.Text
     ${Function:DoDockerInstall}.Ast.Extent.Text
     ${Function:EnableNestedVM}.Ast.Extent.Text
     ${Function:FixNTVirtualMachinesPerms}.Ast.Extent.Text 
@@ -31,7 +33,6 @@
     ${Function:TestHyperVExternalvSwitch}.Ast.Extent.Text
     ${Function:TestIsValidIPAddress}.Ast.Extent.Text
     ${Function:UnzipFile}.Ast.Extent.Text
-    ${Function:Add-WinRMTrustedHost}.Ast.Extent.Text
     ${Function:Create-Domain}.Ast.Extent.Text
     ${Function:Create-RootCA}.Ast.Extent.Text
     ${Function:Create-SubordinateCA}.Ast.Extent.Text
@@ -61,8 +62,8 @@
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUCcWNZJRNE5YZ/pLL39ey1Cez
-# 0Xagggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU1uhxOSqHlZCrYeM2Mq8pJgVD
+# 1Qqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -119,11 +120,11 @@
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFD+uxJlYIYodrb28
-# H0/yeWffVdd7MA0GCSqGSIb3DQEBAQUABIIBAFfwHbARpSjUCydPMN4hShjF6XM5
-# ZbW9U/ghWWArXF/huY2HussQOjwe0tXcW7GMBRaDaVPEXB6QnkFDUaYOthcYMSpO
-# yLIka7EUhUjFTn89N1De74Q//7sP+i0RrlHzMxZZaAyD4YINMnsXVrF3A+LgUNzL
-# +yl+MrZyHsrQ4NfgsscF0r3fqWvumWc3goWTSaH5RkNdEJXI9ZeIXjSGZ90lblpL
-# mDR2CNEF5YqtU2twF6IFPL43UjTKPx/4A9v3juj5aQ0IG4Xs3gZ0tvSD5ZCsKJrM
-# 2Sba1tYRwXMgl4SqFi8OUL56/S6L5QV3zvlCncSb/kAOeO8pRJ4CB8yqQiA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBybJf8dlLeMsLY9
+# 5ND4/EVbQn+KMA0GCSqGSIb3DQEBAQUABIIBAFOdTWSMlKnUnOEWMEcAPkCkEhIh
+# xCkC5Am8rm3FmWULroVTbya5yyZKHph2fH4g+kzmvC8AbHDVdbKh0h5LTnbi4gs1
+# 65JLXrV0M3B5GDJYjTkR3Mq88kRUNwp9TcO67CggdSxjZ/PPc6Tq+zYMGxHeCLEP
+# leDULwlSfMi0BlHuz2UZXKuQvC+p629Vd+s+AaEEH5kjtTfGm+8XvGdiEBZ2ZltI
+# pjHmSCazIzmdDucaSzINWnobk7/bfQtdiXXc4GeAgSemlcHv04rtA4W4dfTmZW1v
+# PD9ZGgIHS2sAoclgoaXkWP+s2E0l+WLzBlTafnM6mzHdeYmlRxj1OnoNO5Y=
 # SIG # End signature block

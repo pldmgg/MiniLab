@@ -17,14 +17,14 @@
     .EXAMPLE
         # Open an elevated PowerShell Session, import the module, and -
 
-        PS C:\Users\zeroadmin> Add-WinRMTrustedHost -NewRemoteHost 192.168.2.49
+        PS C:\Users\zeroadmin> AddWinRMTrustedHost -NewRemoteHost 192.168.2.49
         
 #>
-function Add-WinRMTrustedHost {
+function AddWinRMTrustedHost {
     [CmdletBinding()]
     Param (
         [Parameter(Mandatory=$True)]
-        [string]$NewRemoteHost
+        [string[]]$NewRemoteHost
     )
 
     # Make sure WinRM in Enabled and Running on $env:ComputerName
@@ -66,7 +66,7 @@ function Add-WinRMTrustedHost {
         }
         else {
             Write-Warning "Current WinRM Trusted Hosts Config already includes $HostItem"
-            return
+            continue
         }
     }
     $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
@@ -76,8 +76,8 @@ function Add-WinRMTrustedHost {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUrIfD6Tw3f1Y092PGmHgVc/tg
-# jsmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQULNu0UfWVcMpjSaNi/cwkBhnq
+# lOugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -134,11 +134,11 @@ function Add-WinRMTrustedHost {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMv3zvYXHSzR9X6R
-# 8wqgMI58E+NEMA0GCSqGSIb3DQEBAQUABIIBAAefpU03JHVhjrdnJApzlHUQLi81
-# JaSbinrZvxhzn9Jb8TtQVocutSojLwN9avoSMmtJIdxJ9qJWab1HF87p1REvJJS7
-# e3LTqT61pX/ZL2aoMZa+eZL4nKBbw2raTXX4Oh/Nm9Gv8HUDflapWySPbX1VEIxR
-# UpTo3XkiKRp6XPc9vZFnQNHj5aYOU/UwRdvwfhG6NgnHNgYA+CouXJ8L+saT2jS3
-# dKFbbxxnsnRP1tKdSmFEy2jn/nkW30831AWRcisJQWpN/htoRT5aWOWI00STqN+G
-# WHRJHlcw59Tl/4lespnBnXJ6Qi8lenb/2k/CQN66x35Lmmdx9Qgl3OCKtXA=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFMxqqeXBm5pv11ta
+# Vgk/P5yvYtwUMA0GCSqGSIb3DQEBAQUABIIBAJZAoNDw0o3vysxGfXIhxwuCJgM/
+# 0OCWYCCCtwSRz4ZrbG7sbGiyZhowA4igEh3HR8SjSaX4T9df7vUdg4EYM1yEnPJ/
+# 7ncXc+2weuCTqpW7zmEJUpUi7BL5AGJdWwVHg95OaB8pKVk40UfSUgu71XBFAaSF
+# 4i5YmkNHhLOt3b3eNiC9kCG+RPi/FvDm5QSQqirVEoW3KMWIWImZtiWEbZF1Jv4v
+# hI3C9zi+Gdu+fMtkEEfxNd+u9gNQUzqOO37uV38jRzw2bqrbo2E+8+AWLLnv4m57
+# NfMbCxemkxODMjCx0mhzCGW+rdvI6Cic/Fxil4ZhxDiTFGRZ//7iBABdwrk=
 # SIG # End signature block

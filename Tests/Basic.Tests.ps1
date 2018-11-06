@@ -54,11 +54,13 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Module = Get-Module $env:BHProjectName
         $Module.Name -eq $env:BHProjectName | Should Be $True
         $Commands = $Module.ExportedCommands.Keys
+        $Commands -contains 'AddWinRMTrustedHost' | Should Be $False
         $Commands -contains 'AddWinRMTrustLocalHost' | Should Be $False
         $Commands -contains 'ConfirmAWSVM' | Should Be $False
         $Commands -contains 'ConfirmAzureVM' | Should Be $False
         $Commands -contains 'ConfirmGoogleComputeVM' | Should Be $False
         $Commands -contains 'ConvertSize' | Should Be $False
+        $Commands -contains 'ConvertSubnetMask' | Should Be $False
         $Commands -contains 'DoDockerinstall' | Should Be $False
         $Commands -contains 'EnableNestedVM' | Should Be $False
         $Commands -contains 'FixNTVirtualMachinesPerms' | Should Be $False
@@ -86,7 +88,6 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
         $Commands -contains 'TestIsValidIPAddress' | Should Be $False
         $Commands -contains 'UnzipFile' | Should Be $False
         
-        $Commands -contains 'Add-WinRMTrustedHost' | Should Be $True
         $Commands -contains 'Create-Domain' | Should Be $True
         $Commands -contains 'Create-RootCA' | Should Be $True
         $Commands -contains 'Create-SubordinateCA' | Should Be $True
@@ -115,11 +116,13 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 
     It "Module '$env:BHProjectName' Private Functions Are Available in Internal Scope" {
         $Module = Get-Module $env:BHProjectName
+        [bool]$Module.Invoke({Get-Item function:AddWinRMTrustedHost}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:AddWinRMTrustLocalHost}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:ConfirmAWSVM}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:ConfirmAzureVM}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:ConfirmGoogleComputeVM}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:ConvertSize}) | Should Be $True
+        [bool]$Module.Invoke({Get-Item function:ConvertSubnetMask}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:DoDockerInstall}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:EnableNestedVM}) | Should Be $True
         [bool]$Module.Invoke({Get-Item function:FixNTVirtualMachinesPerms}) | Should Be $True
@@ -153,8 +156,8 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUAmTQZ4GojewUg2jQ44WsbBfC
-# vy6gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUE1VmVykRK9yoMmWZ9jtt8qmE
+# ZYugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -211,11 +214,11 @@ Describe -Name "General Project Validation: $env:BHProjectName" -Tag 'Validation
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNzNz3Wt87Pz2Cp6
-# 0A3bLBFcT3ofMA0GCSqGSIb3DQEBAQUABIIBAGV2y0jdr/bRMO/jlZyXOZir5Aor
-# bkJ6kYt5LsG0vxl1ryf6/nkv8ax2e4xOFJSzLJC+lrvKX9KRNUBekaR77eMsVwBa
-# pfaECBUTiv3zJkoNX6HpnD1w0ByVjmCRicWFxnI+RSwbRXMtd4Iu+uLJyHAJssoy
-# +fIfbGGcVMP2micsBDZgpoAemHYLcheP4qEfv3vAyiPUt5C4UZetXgozRHdbpNML
-# 40zdKMXfYBbm9jW1IGQRSOdJJK0N1ih6k2VTH28CBK9ohGf/1t+rEs6PP/MOUz15
-# jtjqLz2qH9IZSsSIJzmaFEv8zqmBMP7QyW1zsoOVQKTfnESnTefFOdvrTow=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFEeY4JFYA/koZ2td
+# /9RSiJTFqP0yMA0GCSqGSIb3DQEBAQUABIIBAAOOs+r2Kro8Q7w/bXcGIrVXt0m6
+# Ra2lTHxGCXyBW3Gd9gaZ2maifxY1OUv6fNJHVdw3Pvb1cNmT/Jy+/A3JJpDQN1RJ
+# 8NayzMsbKgrSCgmP/Y5wlOttlpBakCaicvFFDH+UNluAWIzGpkyQ8v9JIVg5xsQb
+# RQ+6j0O5QFLOZsg2KSUUGqy9T1RFFCzUqQJfgqup0HGS8zONrzpkH/FiFFOGfNdZ
+# PtLJglz1KLjNzJhyZPYYEMWClMA7GG1N3uiMDi9vqAKyqrTfLT0QbvF7FT4yE3kq
+# pXv3BamzXYt3zClVLGFhOsCQCGQdO2eyDG8887uVefSGLTTCcaqeQBjIH1Y=
 # SIG # End signature block

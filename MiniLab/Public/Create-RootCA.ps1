@@ -630,6 +630,61 @@ function Create-RootCA {
                 $global:FunctionResult = "1"
                 return
             }
+
+            # Make sure there is a Reverse DNS PTR record for $IPofServerToBeRootCA
+            if (!$DesiredHostNameRootCA) {
+                try {
+                    $RootCANetworkInfo = ResolveHost -HostNameOrIP $IPofServerToBeRootCA
+                    $RootCAHostName = $RootCANetworkInfo.HostName
+                }
+                catch {
+                    Write-Error $_
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+            else {
+                $RootCAHostName = $DesiredHostNameRootCA
+            }
+
+            $RootCAPTRRecordFQDN = $RootCAHostName + '.' + $FinalDomainName
+            $ThisModuleFunctionsStringArray = $(Get-Module MiniLab).Invoke({$FunctionsForSBUse})
+            try {
+                $UpdateDNSPTRPSSession = New-PSSession -ComputerName $IPofDomainController -Credential $DomainAdminCredentials
+
+                $UpdatePTRResult = Invoke-Command -Session $UpdateDNSPTRPSSession -ScriptBlock {
+                    $PTRRecords = Get-DnsServerResourceRecord -ZoneName $using:FinalDomainName -RRType A
+                    $PTRecordIPs = $PTRRecords.RecordData.IPv4Address.IPAddressToString | Sort-Object | Get-Unique
+
+                    if ($PTRecordIPs -notcontains $using:IPOfServerToBeRootCA) {
+                        $using:ThisModuleFunctionsStringArray | Where-Object {$_ -ne $null} | foreach {Invoke-Expression $_ -ErrorAction SilentlyContinue}    
+
+                        $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+                            $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+                        } | Sort-Object Metric1)[0].InterfaceIndex
+                        $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+                        $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                        $Prefix = $(Get-NetIPAddress -IPAddress $PrimaryIP).PrefixLength
+
+                        $ip = [ipaddress]$PrimaryIP
+                        $MaskString = $(ConvertSubnetMask -CIDR $Prefix).Mask
+                        $mask = [ipaddress]$MaskString
+                        $netid = ([ipaddress]($ip.Address -band $mask.Address)).IPAddressToString
+                        $binary = [convert]::ToString($mask.Address, 2)
+                        $mask_length = ($binary -replace 0,$null).Length
+                        $NetworkAndSubnetMaskCidr = '{0}/{1}' -f $netid, $mask_length
+                        $NetIdOctetArray = $netid -split '\.'
+                        $ZoneNameCheck = $NetIdOctetArray[2] + '.' + $NetIdOctetArray[1] + '.' + $NetIdOctetArray[0] + '.' + 'in-addr.arpa'
+
+                        Add-DnsServerResourceRecord -Name $using:RootCAHostName -Ptr -ZoneName $ZoneNameCheck -AllowUpdateAny -PtrDomainName $using:RootCAPTRRecordFQDN
+                    }
+                }
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
         }
     }
 
@@ -642,7 +697,7 @@ function Create-RootCA {
     Get-PSSession | Remove-PSSession
 
     Write-Host "Creating the New Root CA..."
-    $NewRootCAResult = New-RootCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofServerToBeRootCA
+    $NewRootCAResult = New-RootCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofServerToBeRootCA -ExpectedDomain $FinalDomainName
 
     #endregion >> Create the Root CA
 
@@ -657,8 +712,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUFfffZFygun8IYRvfyZ6vuPCj
-# Imegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5V045+V8393NCfYrTFWQQFVw
+# jlygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -715,11 +770,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFL7eapmqCUiSyFz1
-# LXqxu3nhDRctMA0GCSqGSIb3DQEBAQUABIIBAEeZ1cw4scl/69IDhLjbdlaV8KVO
-# A3eb/oyC5Q63yjxHp8e2oqsQkOG5cbf3f7oxwXAoKUfV9+i/fYEekUGyXyRJJs/G
-# C5RsB3fX20YFdDZ8bvzXWbOaMNO8y/qrV0g/A7kFIqkb/xnq1k8KPCprHDtXYVNS
-# p45n5REUXrFAT6ZTqAnvv1uPis17HXw3mfIa2mAWHrj2vbuQ02ohzvAEHwH+XwKZ
-# B+SClhhsoQZtm48atmmaw9f+4wiSnJTKEMThK8e5lwIForkSyz4QLBZkfL4YTise
-# r8JTAntrlN1oU2sITYlm/IM9w47oFGuh0hjedf8tmoJi6anRmLUyNrosZSo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDU6SW59HvyN2AYB
+# YBw7aYQocBgkMA0GCSqGSIb3DQEBAQUABIIBAGQzf4m1QVJdXJDfOmR3Uw/th1lQ
+# mIbn6bADbfX48ql9uBrfuWwMGLQj4saf4eQcmaRqHZ5yzwHRZ/+9R79FxLtkxOww
+# yWPa6KH4He984D6y5iwqfEY6ceoQqgaHFTEFusvpR/WnlhQqCwSFYrh/YaGIx3br
+# TCkUX3IB9FKUxzsoLwrxOdA/VOE0fn5B1ZXdmASuYzg/c+ohUWR4L8Nqi6DlvwYy
+# qmBm30st9o6f9LwyGYV/6CMD1fGPkfq9wYXHl9jjdq6VapcApzUBzyLp/cGDNVDW
+# KOog2KrCOOZNQuJaC2TqjfF1vhK7F1C7AY+vWE581Knvk0tq1iweO2WHYhM=
 # SIG # End signature block

@@ -1,86 +1,76 @@
-function ManualPSGalleryModuleInstall {
-    [CmdletBinding()]
-    Param (
-        [Parameter(Mandatory=$True)]
-        [string]$ModuleName,
+# Credit: https://github.com/BornToBeRoot/PowerShell/blob/master/Module/LazyAdmin/Functions/Network/Convert-Subnetmask.ps1
+function ConvertSubnetmask
+{
+    [CmdLetBinding(DefaultParameterSetName='CIDR')]
+    param( 
+        [Parameter( 
+            ParameterSetName='CIDR',       
+            Position=0,
+            Mandatory=$true,
+            HelpMessage='CIDR like /24 without "/"')]
+        [ValidateRange(0,32)]
+        [Int32]$CIDR,
 
-        [Parameter(Mandatory=$False)]
-        [switch]$PreRelease,
-
-        [Parameter(Mandatory=$False)]
-        [string]$DownloadDirectory
+        [Parameter(
+            ParameterSetName='Mask',
+            Position=0,
+            Mandatory=$true,
+            HelpMessage='Subnetmask like 255.255.255.0')]
+        [ValidateScript({
+            if($_ -match "^(254|252|248|240|224|192|128).0.0.0$|^255.(254|252|248|240|224|192|128|0).0.0$|^255.255.(254|252|248|240|224|192|128|0).0$|^255.255.255.(255|254|252|248|240|224|192|128|0)$")
+            {
+                return $true
+            }
+            else 
+            {
+                throw "Enter a valid subnetmask (like 255.255.255.0)!"    
+            }
+        })]
+        [String]$Mask
     )
 
-    if (!$DownloadDirectory) {
-        $DownloadDirectory = $(Get-Location).Path
+    Begin {
+
     }
 
-    if (!$(Test-Path $DownloadDirectory)) {
-        Write-Error "The path $DownloadDirectory was not found! Halting!"
-        $global:FunctionResult = "1"
-        return
-    }
+    Process {
+        switch($PSCmdlet.ParameterSetName)
+        {
+            "CIDR" {                          
+                # Make a string of bits (24 to 11111111111111111111111100000000)
+                $CIDR_Bits = ('1' * $CIDR).PadRight(32, "0")
+                
+                # Split into groups of 8 bits, convert to Ints, join up into a string
+                $Octets = $CIDR_Bits -split '(.{8})' -ne ''
+                $Mask = ($Octets | ForEach-Object -Process {[Convert]::ToInt32($_, 2) }) -join '.'
+            }
 
-    if (![bool]$($($env:PSModulePath -split ";") -match [regex]::Escape("$HOME\Documents\WindowsPowerShell\Modules"))) {
-        $env:PSModulePath = "$HOME\Documents\WindowsPowerShell\Modules;$env:PSModulePath"
-    }
-    if (!$(Test-Path "$HOME\Documents\WindowsPowerShell\Modules")) {
-        $null = New-Item -ItemType Directory "$HOME\Documents\WindowsPowerShell\Modules" -Force
-    }
+            "Mask" {
+                # Convert the numbers into 8 bit blocks, join them all together, count the 1
+                $Octets = $Mask.ToString().Split(".") | ForEach-Object -Process {[Convert]::ToString($_, 2)}
+                $CIDR_Bits = ($Octets -join "").TrimEnd("0")
 
-    if ($PreRelease) {
-        $searchUrl = "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$ModuleName'"
-    }
-    else {
-        $searchUrl = "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$ModuleName' and IsLatestVersion"
-    }
-    $ModuleInfo = Invoke-RestMethod $searchUrl
-    if (!$ModuleInfo -or $ModuleInfo.Count -eq 0) {
-        Write-Error "Unable to find Module Named $ModuleName! Halting!"
-        $global:FunctionResult = "1"
-        return
-    }
-    if ($PreRelease) {
-        if ($ModuleInfo.Count -gt 1) {
-            $ModuleInfo = $($ModuleInfo | Sort-Object -Property Updated | Where-Object {$_.properties.isPrerelease.'#text' -eq 'true'})[-1]
+                # Count the "1" (111111111111111111111111 --> /24)                     
+                $CIDR = $CIDR_Bits.Length             
+            }               
+        }
+
+        [pscustomobject] @{
+            Mask = $Mask
+            CIDR = $CIDR
         }
     }
-    
-    $OutFilePath = Join-Path $DownloadDirectory $($ModuleInfo.title.'#text' + $ModuleInfo.properties.version + '.zip')
-    if (Test-Path $OutFilePath) {Remove-Item $OutFilePath -Force}
 
-    try {
-        #Invoke-WebRequest $ModuleInfo.Content.src -OutFile $OutFilePath
-        # Download via System.Net.WebClient is a lot faster than Invoke-WebRequest...
-        $WebClient = [System.Net.WebClient]::new()
-        $WebClient.Downloadfile($ModuleInfo.Content.src, $OutFilePath)
+    End {
+        
     }
-    catch {
-        Write-Error $_
-        $global:FunctionResult = "1"
-        return
-    }
-    
-    if (Test-Path "$DownloadDirectory\$ModuleName") {Remove-Item "$DownloadDirectory\$ModuleName" -Recurse -Force}
-    Expand-Archive $OutFilePath -DestinationPath "$DownloadDirectory\$ModuleName"
-
-    if ($DownloadDirectory -ne "$HOME\Documents\WindowsPowerShell\Modules") {
-        if (Test-Path "$HOME\Documents\WindowsPowerShell\Modules\$ModuleName") {
-            Remove-Item "$HOME\Documents\WindowsPowerShell\Modules\$ModuleName" -Recurse -Force
-        }
-        Copy-Item -Path "$DownloadDirectory\$ModuleName" -Recurse -Destination "$HOME\Documents\WindowsPowerShell\Modules"
-
-        Remove-Item "$DownloadDirectory\$ModuleName" -Recurse -Force
-    }
-
-    Remove-Item $OutFilePath -Force
 }
 
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKehst4FRbIpIf5iTmu6+Y6IV
-# maigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUC0W+cc+aCagQGLxzTLwqde2/
+# bTOgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -137,11 +127,11 @@ function ManualPSGalleryModuleInstall {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFG2P7uvTxEH17rkh
-# 2UG+pv1iX+6bMA0GCSqGSIb3DQEBAQUABIIBAH6Hm5HLF6QPiFfWK06x8u13CjTo
-# L40m7p1UTfu7MxK+pBNxKxa8C3Bn7UpXqS860RVUIFtTjUUDlXeqkjshFZ0EnKzW
-# LQsuq2lUyXqJq9xm/6TX4zg4ybd60LIhmuRkVTY2FoRKz4bc0NAop6wunjAHyh18
-# ZgHdqU9kiqoaqWhFa1VSK8KP/1a6BEIa3jTuTJYlsHtvg2Rfu2+w4w1wHM2JOV3z
-# 7v1gFHmzZHGkFTzrJoSXH78jhB6Ib5jiTvLGf2T7pfrwp3/MdebcvL1Nj0r1x683
-# c/ID7/4sIp6as84dsgljKrXGST8fZq1orFsBm3GgmZctmyZnLou4LOmJewo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFCpZZhhukQ4m5kxX
+# 9xGWn+t13Cg6MA0GCSqGSIb3DQEBAQUABIIBAHTOORaNFw2kbOz0nZ1XmN6AQKUV
+# DoyqkBeN4uPzxYfrS/Y9jlWIgFnuRuOESx6rFOBBCv811GInVLwOF6uNtR14+msV
+# dQU/nxg98VfEQUwVr3cvT3IUE4eib+mWWjN2Nb6yFaMTASnPYsaz7tYWkh34SNiP
+# ozh+ZmHs5IZgtZdGbTLm6JCLMAKlycjxwS1TGaN3ZwyerD4ILYfOUNPRi9nNJcDr
+# R8ehfqLCE2v1xM2Br9qRnGlZC2Nt6vWJaIV6dNTHL5GzKlsnJbgmAIxKGsIxT11F
+# hKDLOzWxYQKYD2Qa8Cvbc++U4q/gIlnGKTbIW94ux2beWkzcFWKNPXvCPe0=
 # SIG # End signature block

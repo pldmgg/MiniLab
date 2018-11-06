@@ -90,6 +90,13 @@
         of certificate's issuer can be downloaded). The current default configuration does not mahe this Url active, but it still
         needs to be configured.
 
+    .PARAMETER ExpectedDomain
+        This parameter is OPTIONAL.
+
+        Sometimes it takes a few minutes for the DNS Server on the network to update the DNS entry for this server. And sometimes the SubCA
+        needs its DNS Client Cache cleared before the ResolveHost function can resolve it properly. Providing the expected domain will make
+        the function wait until DNS is ready before proceeding the SubCA install and config.
+
     .EXAMPLE
         # Make the localhost a Root CA
 
@@ -168,7 +175,10 @@ function New-RootCA {
 
         [Parameter(Mandatory=$False)]
         [ValidatePattern('http.*?\/<CaName><CertificateName>.crt$')]
-        [string]$AIAUrl
+        [string]$AIAUrl,
+
+        [Parameter(Mandatory=$False)]
+        [string]$ExpectedDomain = $(Get-CimInstance Win32_Computersystem).Domain
     )
     
     #region >> Helper Functions
@@ -630,68 +640,64 @@ function New-RootCA {
 
     [System.Collections.ArrayList]$NetworkInfoPSObjects = @()
     foreach ($NetworkLocationObj in $NetworkLocationObjsToResolve) {
-        if ($($NetworkLocation -split "\.")[0] -ne $env:ComputerName -and
-        $NetworkLocation -ne $PrimaryIP -and
-        $NetworkLocation -ne "$env:ComputerName.$($(Get-CimInstance win32_computersystem).Domain)"
+        if ($($NetworkLocationObj.NetworkLocation -split "\.")[0] -ne $env:ComputerName -and
+        $NetworkLocationObj.NetworkLocation -ne $PrimaryIP -and
+        $NetworkLocationObj.NetworkLocation -ne "$env:ComputerName.$($(Get-CimInstance win32_computersystem).Domain)"
         ) {
             try {
                 $NetworkInfo = ResolveHost -HostNameOrIP $NetworkLocationObj.NetworkLocation
+                $NetworkInfo
                 $DomainName = $NetworkInfo.Domain
                 $FQDN = $NetworkInfo.FQDN
                 $IPAddr = $NetworkInfo.IPAddressList[0]
                 $DomainShortName = $($DomainName -split "\.")[0]
                 $DomainLDAPString = $(foreach ($StringPart in $($DomainName -split "\.")) {"DC=$StringPart"}) -join ','
-
-                if (!$NetworkInfo -or $DomainName -eq "Unknown" -or !$DomainName -or $FQDN -eq "Unknown" -or !$FQDN) {
-                    throw "Unable to gather Domain Name and/or FQDN info about '$NetworkLocation'! Please check DNS. Halting!"
-                }
             }
             catch {
                 Write-Error $_
                 $global:FunctionResult = "1"
                 return
             }
+            
+            $Counter = 0
+            while ($DomainName -ne $ExpectedDomain -and $FQDN -notmatch $ExpectedDomain -and $Counter -le 10) {
+                try {
+                    $NetworkInfo = ResolveHost -HostNameOrIP $NetworkLocationObj.NetworkLocation
+                    $NetworkInfo
+                    $DomainName = $NetworkInfo.Domain
+                    $FQDN = $NetworkInfo.FQDN
+                    $IPAddr = $NetworkInfo.IPAddressList[0]
+                    $DomainShortName = $($DomainName -split "\.")[0]
+                    $DomainLDAPString = $(foreach ($StringPart in $($DomainName -split "\.")) {"DC=$StringPart"}) -join ','
+
+                    if (!$NetworkInfo -or $DomainName -eq "Unknown" -or !$DomainName -or $FQDN -eq "Unknown" -or !$FQDN) {
+                        throw "Unable to gather Domain Name and/or FQDN info about '$NetworkLocation'! Please check DNS. Halting!"
+                    }
+                    $Counter++
+                    Start-Sleep -Seconds 60
+                }
+                catch {
+                    $Counter++
+                    Start-Sleep -Seconds 60
+                }
+
+                Clear-DNSClientCache
+            }
+            if ($Counter -ge 11 -or $DomainName -ne $ExpectedDomain -or $FQDN -notmatch $ExpectedDomain) {
+                Write-Error "DNS is reporting that $($NetworkLocationObj.NetworkLocation) is not on $ExpectedDomain! Halting!"
+                $global:FunctionResult = "1"
+                return
+            }
 
             # Make sure WinRM in Enabled and Running on $env:ComputerName
             try {
-                $null = Enable-PSRemoting -Force -ErrorAction Stop
+                $null = AddWinRMTrustedHost -NewRemoteHost $NetworkLocationObj.NetworkLocation
             }
             catch {
-                $NICsWPublicProfile = @(Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 0})
-                if ($NICsWPublicProfile.Count -gt 0) {
-                    foreach ($Nic in $NICsWPublicProfile) {
-                        Set-NetConnectionProfile -InterfaceIndex $Nic.InterfaceIndex -NetworkCategory 'Private'
-                    }
-                }
-
-                try {
-                    $null = Enable-PSRemoting -Force
-                }
-                catch {
-                    Write-Error $_
-                    Write-Error "Problem with Enabble-PSRemoting WinRM Quick Config! Halting!"
-                    $global:FunctionResult = "1"
-                    return
-                }
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
             }
-
-            # If $env:ComputerName is not part of a Domain, we need to add this registry entry to make sure WinRM works as expected
-            if (!$(Get-CimInstance Win32_Computersystem).PartOfDomain) {
-                $null = reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
-            }
-
-            # Add the New Server's IP Addresses to $env:ComputerName's TrustedHosts
-            $CurrentTrustedHosts = $(Get-Item WSMan:\localhost\Client\TrustedHosts).Value
-            [System.Collections.ArrayList][array]$CurrentTrustedHostsAsArray = $CurrentTrustedHosts -split ','
-
-            $ItemsToAddToWSMANTrustedHosts = @($IPAddr,$FQDN,$($($FQDN -split "\.")[0]))
-            foreach ($NetItem in $ItemsToAddToWSMANTrustedHosts) {
-                if ($CurrentTrustedHostsAsArray -notcontains $NetItem) {
-                    $null = $CurrentTrustedHostsAsArray.Add($NetItem)
-                }
-            }
-            $UpdatedTrustedHostsString = $($CurrentTrustedHostsAsArray | Where-Object {![string]::IsNullOrWhiteSpace($_)}) -join ','
-            Set-Item WSMan:\localhost\Client\TrustedHosts $UpdatedTrustedHostsString -Force
         }
         else {
             $DomainName = $(Get-CimInstance win32_computersystem).Domain
@@ -813,6 +819,7 @@ function New-RootCA {
         }
 
         # Transfer any Required Modules that were installed on $env:ComputerName from an external source
+        <#
         $NeededModules = @("PSPKI")
         [System.Collections.ArrayList]$ModulesToTransfer = @()
         foreach ($ModuleResource in $NeededModules) {
@@ -835,22 +842,35 @@ function New-RootCA {
             
             $null = $ModulesToTransfer.Add($ModuleBase)
         }
+        #>
         
-        $ProgramFilesPSModulePath = "C:\Program Files\WindowsPowerShell\Modules"
+        $HomePSModulePath = "$HOME\Documents\WindowsPowerShell\Modules"
+        [array]$ModulesToTransfer = @("$HomePSModulePath\PSPKI")
         foreach ($ModuleDirPath in $ModulesToTransfer) {
+            if (!$(Test-Path $ModuleDirPath)) {
+                try {
+                    ManualPSGalleryModuleInstall -ModuleName $($ModuleDirPath | Split-Path -Leaf) -DownloadDirectory "$HOME\Downloads" -ErrorAction Stop -WarningAction SilentlyContinue
+                }
+                catch {
+                    Write-Error $_
+                    $global:FunctionResult = "1"
+                    return
+                }
+            }
+
             $CopyItemSplatParams = @{
                 Path            = $ModuleDirPath
                 Recurse         = $True
-                Destination     = "$ProgramFilesPSModulePath\$($ModuleDirPath | Split-Path -Leaf)"
-                ToSession       = $RootCAPSSession
+                Destination     = "$HomePSModulePath\$($ModuleDirPath | Split-Path -Leaf)"
+                ToSession       = $SubCAPSSession
                 Force           = $True
             }
             Copy-Item @CopyItemSplatParams
         }
 
         # Initialize the Remote Environment
-        $FunctionsForRemoteUse = $script:FunctionsForSBUse
-        $FunctionsForRemoteUse.Add($(${Function:SetupRootCA}.Ast.Extent.Text))
+        [System.Collections.ArrayList]$FunctionsForRemoteUse = $(Get-Module MiniLab).Invoke({$FunctionsForSBUse})
+        $null = $FunctionsForRemoteUse.Add(${Function:SetupRootCA}.Ast.Extent.Text)
         $Output = Invoke-Command -Session $RootCAPSSession -ScriptBlock {
             $using:FunctionsForRemoteUse | foreach { Invoke-Expression $_ }
             $script:ModuleDependenciesMap = $args[0]
@@ -869,8 +889,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWyqUGe5YAHpBXL3J1Wa5C0eJ
-# nTugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPz7mkie5dM9/0E0kaSdcTpKv
+# U26gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -927,11 +947,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNJ0wwaLtOw04KYO
-# ts0cZH2jxbS0MA0GCSqGSIb3DQEBAQUABIIBACkmQNlBGSFo2hmpQZMVU+WPPHll
-# ID0wlLNiDdIBlTRECqaiRLWKoslSin28624r08pi5INCFoTtttaA6jIwFgOKnCcV
-# e66MK+c4j/hVSq8qw/JwrOQZ2E31RR346SEOvrHjSuBAaUYJB6Rni7rtyubn3H6c
-# RtQIl3EeUfu9A6zE6zyFSj5KXot474d7Pyxz9xfKObz7TMer4cFokf18gl+BvvPr
-# PTVN/8iIfKsMP3FbiGRlI/DRCW5U/e5eeKmnjYwmuRpxb0n6128PXM6bYignfSIQ
-# lepmhKPS4/aJQwJrlo2hdeWM9SDJGjrsis6Tmd/TNLE8hXcwFpeqN5ct/eg=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIdEc0GpL2d0Sfh4
+# UaVwxM6g3twgMA0GCSqGSIb3DQEBAQUABIIBADH5pAmXNpTRgS7nXUa1vIkxhUQC
+# DP7+sQqiRiIeGD1puUE4bnjwp8KNQxl5t8lgV8CsSE8EGdF3AN4Bo3kbuspzwGl4
+# uZuIH/EboluatvOTdOtwv2IoBLN9fpXr4dLeQm3beZ3cWDCklp7dmPHvbbe/kmhZ
+# O+RXIXtTpRfAlLTqqu65OhqO2aWzsQFuJyA1DlWi4ZM5hMxnjeD3GX/KmhCRAvBg
+# L/wyTj1FOGxesl4SHEnw0Z/Yl1TBS2Y2JN4Eo6AnTppZVDkoAm7n+TN++vFOkRra
+# IiwuGELXZIekC7s17iUPVFpaSVL5irYGjl1B2evIZJe2JQzHnkhmL8y8cM4=
 # SIG # End signature block

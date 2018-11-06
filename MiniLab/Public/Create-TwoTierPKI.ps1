@@ -386,7 +386,6 @@ function Create-TwoTierPKI {
 
     #endregion >> Prep
 
-
     # Create the new VMs if desired
     if ($CreateNewVMs) {
         # Check to Make Sure Hyper-V is installed
@@ -1012,35 +1011,34 @@ function Create-TwoTierPKI {
         }
 
         #endregion >> Make Sure WinRM/WSMan Is Ready on the Remote Hosts
-
-        # Finish setting splat params for Create-Domain, Create-RootCA, and Create-SubordinateCA functions...
-        if ($NewDomain) {
-            $CreateDCSplatParams.Add("IPofServerToBeDomainController",$IPofServerToBeDomainController)
-            $CreateDCSplatParams.Add("NewDomain",$FinalDomainName)
-
-            #Write-Host "Splat Params for Create-Domain are:" -ForegroundColor Yellow
-            #$CreateDCSplatParams
-        }
-
-        $CreateRootCASplatParams.Add("IPofServerToBeRootCA",$IPofServerToBeRootCA)
-        $CreateRootCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
-        $CreateRootCASplatParams.Add("ExistingDomain",$FinalDomainName)
-        #Write-Host "Splat Params for Create-RootCA are:" -ForegroundColor Yellow
-        #$CreateRootCASplatParams
-
-        $CreateSubCASplatParams.Add("IPofServerToBeSubCA",$IPofServerToBeSubCA)
-        $CreateSubCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
-        $CreateSubCASplatParams.Add("IPofRootCA",$IPofServerToBeRootCA)
-        $CreateSubCASplatParams.Add("ExistingDomain",$FinalDomainName)
-        #Write-Host "Splat Params for Create-SubordinateCA are:" -ForegroundColor Yellow
-        #$CreateSubCASplatParams
-
         
         #endregion >> Deploy New VMs
     }
 
     #region >> Create the Services
-    
+
+    # Finish setting splat params for Create-Domain, Create-RootCA, and Create-SubordinateCA functions...
+    if ($NewDomain) {
+        $CreateDCSplatParams.Add("IPofServerToBeDomainController",$IPofServerToBeDomainController)
+        $CreateDCSplatParams.Add("NewDomain",$FinalDomainName)
+
+        #Write-Host "Splat Params for Create-Domain are:" -ForegroundColor Yellow
+        #$CreateDCSplatParams
+    }
+
+    $CreateRootCASplatParams.Add("IPofServerToBeRootCA",$IPofServerToBeRootCA)
+    $CreateRootCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
+    $CreateRootCASplatParams.Add("ExistingDomain",$FinalDomainName)
+    #Write-Host "Splat Params for Create-RootCA are:" -ForegroundColor Yellow
+    #$CreateRootCASplatParams
+
+    $CreateSubCASplatParams.Add("IPofServerToBeSubCA",$IPofServerToBeSubCA)
+    $CreateSubCASplatParams.Add("IPofDomainController",$IPofServerToBeDomainController)
+    $CreateSubCASplatParams.Add("IPofRootCA",$IPofServerToBeRootCA)
+    $CreateSubCASplatParams.Add("ExistingDomain",$FinalDomainName)
+    #Write-Host "Splat Params for Create-SubordinateCA are:" -ForegroundColor Yellow
+    #$CreateSubCASplatParams
+
     if ($NewDomain) {
         try {
             $CreateDCResult = Create-Domain @CreateDCSplatParams
@@ -1090,8 +1088,8 @@ function Create-TwoTierPKI {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUxbX1ABAHGcpHZiKB8aa3ZdSC
-# Vtegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUDUzMmziLqi2LakUHaPtSBvVJ
+# 2DCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1148,11 +1146,11 @@ function Create-TwoTierPKI {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGBbFcgpwy2c8k7d
-# sGxb6IV/hfQRMA0GCSqGSIb3DQEBAQUABIIBAC6Fss14Ri4L8b2ErBlQtBA+XTks
-# QutgPy2jtcK27daqe8iv2w7rC1e3jnTcBKdOCD1p2e3ythW0Iv9jY4lysx193fDR
-# Cy3qPymPzcrWj/lVbj0QPo5oX+3wrrTUu9wO7TwXDfSTVtSzHNEG2rSqbQaVjEmt
-# hTQrIITWZhDLBARIvnSY1j+dTvKDihN+NwCw9hUSn8I6Mt/uv5O3uT9jbsaPf+aJ
-# kdqUuqJRqWTx65yNiRVKUW9aBcAzGBuibktoNf8xuiPa17jRPgDoS66+4Sg4sLLY
-# sl9edQMKHNz8w0EdKkQjONNEqHF6XPOi8prCiu2fRoznOdBIMaUl+HEAoKo=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIkGxKjk3xuwH3Cq
+# sZDzK+ZycHHLMA0GCSqGSIb3DQEBAQUABIIBAK6/ZZni81zWuczwQl4vVAVyFR8/
+# yBrIS4xei05SLlRNC/H6B8jb+7zDHVsbNCd4z42X165n8QUIfm7Cwxgp/yXNGJQt
+# hhB3NoICcQutP5H51MoLKAigBh29qRzpq2bFSM2irkxJZPIrCIvqhK/d+m2gAp++
+# ofrk97ANkTVUPg007zGRVIYLa0u2qroXh9KCq5wxaPWIZtJ4OVvMJB32I0LLojqG
+# Y34z40vc1R6MpbAHIHm+kQ4N/jJmkThMm2xVXshn55sp7nQ7ZWvT/DM7c6AhrsOZ
+# EZc2yhtrCel7kCm0TD2zZJnWbJUNQyIH/Bepl4Bd2ffE1h3tvIpDWhHADvY=
 # SIG # End signature block

@@ -646,6 +646,61 @@ function Create-SubordinateCA {
             $global:FunctionResult = "1"
             return
         }
+
+        # Make sure there is a Reverse DNS PTR record for $IPofServerToBeSubCA
+        if (!$DesiredHostNameSubCA) {
+            try {
+                $SubCANetworkInfo = ResolveHost -HostNameOrIP $IPofServerToBeSubCA
+                $SubCAHostName = $SubCANetworkInfo.HostName
+            }
+            catch {
+                Write-Error $_
+                $global:FunctionResult = "1"
+                return
+            }
+        }
+        else {
+            $SubCAHostName = $DesiredHostNameSubCA
+        }
+
+        $SubCAPTRRecordFQDN = $SubCAHostName + '.' + $FinalDomainName
+        $ThisModuleFunctionsStringArray = $(Get-Module MiniLab).Invoke({$FunctionsForSBUse})
+        try {
+            $UpdateDNSPTRPSSession = New-PSSession -ComputerName $IPofDomainController -Credential $DomainAdminCredentials
+
+            $UpdatePTRResult = Invoke-Command -Session $UpdateDNSPTRPSSession -ScriptBlock {
+                $PTRRecords = Get-DnsServerResourceRecord -ZoneName $using:FinalDomainName -RRType A
+                $PTRecordIPs = $PTRRecords.RecordData.IPv4Address.IPAddressToString | Sort-Object | Get-Unique
+
+                if ($PTRecordIPs -notcontains $using:IPOfServerToBeSubCA) {
+                    $using:ThisModuleFunctionsStringArray | Where-Object {$_ -ne $null} | foreach {Invoke-Expression $_ -ErrorAction SilentlyContinue}    
+
+                    $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+                        $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+                    } | Sort-Object Metric1)[0].InterfaceIndex
+                    $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+                    $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                    $Prefix = $(Get-NetIPAddress -IPAddress $PrimaryIP).PrefixLength
+
+                    $ip = [ipaddress]$PrimaryIP
+                    $MaskString = $(ConvertSubnetMask -CIDR $Prefix).Mask
+                    $mask = [ipaddress]$MaskString
+                    $netid = ([ipaddress]($ip.Address -band $mask.Address)).IPAddressToString
+                    $binary = [convert]::ToString($mask.Address, 2)
+                    $mask_length = ($binary -replace 0,$null).Length
+                    $NetworkAndSubnetMaskCidr = '{0}/{1}' -f $netid, $mask_length
+                    $NetIdOctetArray = $netid -split '\.'
+                    $ZoneNameCheck = $NetIdOctetArray[2] + '.' + $NetIdOctetArray[1] + '.' + $NetIdOctetArray[0] + '.' + 'in-addr.arpa'
+
+                    Add-DnsServerResourceRecord -Name $using:SubCAHostName -Ptr -ZoneName $ZoneNameCheck -AllowUpdateAny -PtrDomainName $using:SubCAPTRRecordFQDN
+                }
+            }
+        }
+        catch {
+            Write-Error $_
+            $global:FunctionResult = "1"
+            return
+        }
     }
 
     #endregion >> Join the Servers to Domain And Rename If Necessary
@@ -657,7 +712,7 @@ function Create-SubordinateCA {
     Get-PSSession | Remove-PSSession
 
     Write-Host "Creating the New Subordinate CA..."
-    $NewSubCAResult = New-SubordinateCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofRootCA -SubCAIPOrFQDN $IPofServerToBeSubCA
+    $NewSubCAResult = New-SubordinateCA -DomainAdminCredentials $DomainAdminCredentials -RootCAIPOrFQDN $IPofRootCA -SubCAIPOrFQDN $IPofServerToBeSubCA -ExpectedDomain $FinalDomainName
 
     #endregion >> Create the Sub CA
 
@@ -672,8 +727,8 @@ function Create-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUXsBhY1Uz4SMCw1/u/d3PzJjr
-# mEmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUYtmODcL457fGgYpqkeh2aQiK
+# xAKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -730,11 +785,11 @@ function Create-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFJZedBFD+kVYANnS
-# 4jzWhsQuQ+NZMA0GCSqGSIb3DQEBAQUABIIBALtzLds+F4SmZXAu1Z3UjQwQpTLH
-# TjMVST5yYulG5CfAY4bHfdNisC0xMmX/89qOBRpGEKote1qhvCYHa1g5juzlLvq6
-# gUjlWA+aKq6yOMJs8i4/Bm3AuJt7qdDU4vAwq1xMZGw3oT5Or7X3mANSWiX0Gpyl
-# S20ml6b+KjcBwqT7I2ZMGyn7TvT2aa7NvdDXOIHPfajRrMtjr2M2Mvq+BceO6VJg
-# g8AZv0/T9zNJyE6TDRrDIII0qt+cXXl5hNmXrrN0XBOedlkzp2b4X3cM7jSSWwgg
-# nUZtM0jM9gBH6XXK6MnqNnenojqHDN9Zf2SJMwrpzdl+08CEzdhEB763bjw=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFM+s32OlBFszrCg8
+# 2neyodppsyYZMA0GCSqGSIb3DQEBAQUABIIBAJ0aefO/BNK+94ivVciyEMXMYP7D
+# VlwVA0EhHIOhaBkDXnuV5O3CzQJdxgx/GAU7BKRbQ79FJcoBqfSv8DRyIM4t8INv
+# WyAckAFKe0Rf3e3a8nxYR3X9amiA23a6t3RdpZX8GFjcC/mYXwdagIqMdA1+cNkz
+# nVO5WAbpfuf2PxfZG1VLRDkHZZow/gwNFlcb5zpdCr8CTAcJNUleXEYevuAnCcas
+# HkJXE1j42s1P02h63/2pkcZPmOrQswhxla7arcCGrdGX/z/1Mlbz/eWnQt2UdcDj
+# 7Cr4GOjqI9HTHKDr3vhZ4i1KAsgr/+b3cnpIbaxmslLyWupb2AlC8w68lzI=
 # SIG # End signature block

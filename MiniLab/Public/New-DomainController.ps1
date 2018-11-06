@@ -189,7 +189,13 @@ function New-DomainController {
         switch ($DSCResource) {
             'PSDesiredStateConfiguration' {
                 try {
-                    $PSDSCVersion = $ModMapObj.ManifestFileItem.FullName | Split-Path -Parent | Split-Path -Leaf
+                    $PSDSCVersionPrep = $ModMapObj.ManifestFileItem.FullName
+                    if ($PSDSCVersionPrep) {
+                        $PSDSCVersion = $PSDSCVersionPrep | Split-Path -Parent | Split-Path -Leaf
+                    }
+                    else {
+                        throw
+                    }
                 }
                 catch {
                     try {
@@ -750,6 +756,39 @@ function New-DomainController {
     }
 
     if ([bool]$(Get-PSSession -Name "ToDCPostDomainCreation" -ErrorAction SilentlyContinue)) {
+        # Make sure we have a Primary Reverse lookup zone
+        $ThisModuleFunctionsStringArray = $(Get-Module MiniLab).Invoke({$FunctionsForSBUse})
+
+        try {
+            $AddReverseLookupZoneResult = Invoke-Command -Session $(Get-PSSession -Name "ToDCPostDomainCreation") -ScriptBlock {
+                $using:ThisModuleFunctionsStringArray | Where-Object {$_ -ne $null} | foreach {Invoke-Expression $_ -ErrorAction SilentlyContinue}    
+
+                $PrimaryIfIndex = $(Get-CimInstance Win32_IP4RouteTable | Where-Object {
+                    $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0'
+                } | Sort-Object Metric1)[0].InterfaceIndex
+                $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
+                $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+                $Prefix = $(Get-NetIPAddress -IPAddress $PrimaryIP).PrefixLength
+
+                $ip = [ipaddress]$PrimaryIP
+                $MaskString = $(ConvertSubnetMask -CIDR $Prefix).Mask
+                $mask = [ipaddress]$MaskString
+                $netid = ([ipaddress]($ip.Address -band $mask.Address)).IPAddressToString
+                $binary = [convert]::ToString($mask.Address, 2)
+                $mask_length = ($binary -replace 0,$null).Length
+                $NetworkAndSubnetMaskCidr = '{0}/{1}' -f $netid, $mask_length
+                $NetIdOctetArray = $netid -split '\.'
+                $ZoneNameCheck = $NetIdOctetArray[2] + '.' + $NetIdOctetArray[1] + '.' + $NetIdOctetArray[0] + '.' + 'in-addr.arpa'
+
+                if ($(Get-DnsServerZone).ZoneName -notcontains $ZoneNameCheck) {
+                    Add-DnsServerPrimaryZone -DynamicUpdate Secure -NetworkId $NetworkAndSubnetMaskCidr -ReplicationScope Domain
+                }
+            }
+        }
+        catch {
+            Write-Warning "Problem adding Primary Reverse Lookup Zone"
+        }
+
         "DC Installation Success"
     }
     else {
@@ -762,8 +801,8 @@ function New-DomainController {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUOQZcupZ4snTZ+qjsWw/DIXee
-# 4xWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUMTYtjlY6XeEks2rtS0zqEmgX
+# igegggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -820,11 +859,11 @@ function New-DomainController {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFK3UUUlzjzZte2t1
-# L6lSzCTDcmcBMA0GCSqGSIb3DQEBAQUABIIBAHubHKoGAuPj/Gc3lXdtUOwDP+Ju
-# tiAvlRzEG/ws8TlJDvLQXdGaJ/RH0WedwcyMJHzm6kVBtICsmKy7NMpN6ODnQcY2
-# xBbCz8avztBPDdP3lRwEeitUjFrEpfo7mWJa4l0rsjAq1MIDRdM7DNV4/zoD6Zoj
-# 0P8xfybTwn+7S44kzET+RKhUx/Pptju6ZK6ZghOR3T2yDomrwcAWuH2VveQUQY1N
-# r1BTrMWj400c5iHF2HYrFl+9Z+W9ghhv8yB5FqvOICpEbNp2R+7o5Z9LTtZyC7GF
-# CF/rwwEFC0SUlY+Bv2c5MieaUMmNlRl14s+1PwBCHDiLCGHd2OtuYSvH1IQ=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFI16ZtQXZrZGbDQS
+# wyKqHc+mag1nMA0GCSqGSIb3DQEBAQUABIIBAHZssLcX4HkBGo+5OoRtG2ZZAchB
+# Cyce+mK9RT/cRHuxoVbrXbm1YXasAv0IEASGwXT8uLuASP/9gZ188WYGQ0lYlv+/
+# wY+KPfA3CAujG+1IUnkdY6VpGduV6TbOZWK6+GN4Kk95G9s2LnQor5kgguqiYzUa
+# bFmntHQBTm1ZsQRHE1VkjwONl/5UYrey7x0G8bumIfo7hBKsLwLHorn9k6Nalm2W
+# nKtmNLg+wZCMW3Y5AAnB9hSLOS0I3fV3XNmnrw9qQg6mX/OzQcLVb/wAd1LUlf1T
+# 6M137ybl8CAiSB3A4SJOK8xGL2jo9a1/wcb2b/GK+KKK66N7fO7jGHs+Hc0=
 # SIG # End signature block
