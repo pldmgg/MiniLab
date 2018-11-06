@@ -1,5 +1,9 @@
 # Change log
 
+## 1.1.0 (November 6, 2018)
+
+- Significant updates for Azure issues
+
 ## 1.0.4 (November 5, 2018)
 
 - Fixed Get-ADObject filters in Generate-Certificate function
