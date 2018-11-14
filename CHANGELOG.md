@@ -1,5 +1,9 @@
 # Change log
 
+## 1.1.1 (November 14, 2018)
+
+- Fix Authenticode Signature
+
 ## 1.1.0 (November 6, 2018)
 
 - Significant updates for Azure issues
