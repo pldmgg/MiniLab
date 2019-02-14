@@ -85,6 +85,12 @@
         This parameter takes a string that represents an IPv4 address referring to the Root CA on the domain specified by the
         -ExistingDomain parameter.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -141,6 +147,9 @@ function Create-SubordinateCA {
         [string]$IPofRootCA,
 
         [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
+
+        [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
     )
 
@@ -171,6 +180,15 @@ function Create-SubordinateCA {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -727,8 +745,8 @@ function Create-SubordinateCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUYtmODcL457fGgYpqkeh2aQiK
-# xAKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUKJ2Q0FGH9MoDEymLRXSjBfcM
+# IpWgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -785,11 +803,11 @@ function Create-SubordinateCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFM+s32OlBFszrCg8
-# 2neyodppsyYZMA0GCSqGSIb3DQEBAQUABIIBAJ0aefO/BNK+94ivVciyEMXMYP7D
-# VlwVA0EhHIOhaBkDXnuV5O3CzQJdxgx/GAU7BKRbQ79FJcoBqfSv8DRyIM4t8INv
-# WyAckAFKe0Rf3e3a8nxYR3X9amiA23a6t3RdpZX8GFjcC/mYXwdagIqMdA1+cNkz
-# nVO5WAbpfuf2PxfZG1VLRDkHZZow/gwNFlcb5zpdCr8CTAcJNUleXEYevuAnCcas
-# HkJXE1j42s1P02h63/2pkcZPmOrQswhxla7arcCGrdGX/z/1Mlbz/eWnQt2UdcDj
-# 7Cr4GOjqI9HTHKDr3vhZ4i1KAsgr/+b3cnpIbaxmslLyWupb2AlC8w68lzI=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFBAXdHc1Qwkn4514
+# BzO/dxoMK4Y3MA0GCSqGSIb3DQEBAQUABIIBAL5TCdPeby+GDB3/AMb6o1Xi0M6b
+# wlfRr9wMtWfHJ8RPRbhf032wtfrZHhoFQFnk9e4wnvhJTLHPWaYjZ3TLYbtGHSZk
+# wFxo2B5u+tgt9j1vfY77CJDNfiDNvFngIy4goCSFCkQO2ScWz3dWS1pKBorB7G2w
+# t3u/3hgwHO5+orB7RdKDbKFkIxGDPkIBlYYz6ZhFJB2QhWLv8hyX7goQZYbvkZz6
+# f7nHhl9FquckFfi9/L1+82d4dqjWo697dkc6pf0fPlxHpFE12vGXd/Ba/X15DHLp
+# jXhR0sY3p+ht1OHjeQES88neYF6Jy5g/mFHSe1T2igEY3RATsoNC+qHNHYo=
 # SIG # End signature block

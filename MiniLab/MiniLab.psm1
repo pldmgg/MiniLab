@@ -119,6 +119,12 @@ if ($ModulesToInstallAndImport.Count -gt 0) {
         This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
         that will become the new Primary Domain Controller.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -171,6 +177,9 @@ function Create-Domain {
 
         [Parameter(Mandatory=$False)]
         [string]$IPofServerToBeDomainController,
+        
+        [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
 
         [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
@@ -202,6 +211,15 @@ function Create-Domain {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -787,6 +805,12 @@ function Create-Domain {
         This parameter takes a string that represents an IPv4 address referring to a Domain Controller (not readonly) on the
         domain specified by the -ExistingDomain parameter.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -839,6 +863,9 @@ function Create-RootCA {
         [string]$IPofDomainController,
 
         [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
+
+        [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
     )
 
@@ -869,6 +896,15 @@ function Create-RootCA {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -1507,6 +1543,12 @@ function Create-RootCA {
         This parameter takes a string that represents an IPv4 address referring to the Root CA on the domain specified by the
         -ExistingDomain parameter.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -1563,6 +1605,9 @@ function Create-SubordinateCA {
         [string]$IPofRootCA,
 
         [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
+
+        [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
     )
 
@@ -1593,6 +1638,15 @@ function Create-SubordinateCA {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -2260,6 +2314,12 @@ function Create-SubordinateCA {
         This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
         that will become the new Subordinate CA.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -2370,6 +2430,9 @@ function Create-TwoTierPKI {
         [string]$IPofServerToBeSubCA,
 
         [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
+
+        [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
     )
 
@@ -2402,6 +2465,15 @@ function Create-TwoTierPKI {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($($PSBoundParameters['CreateNewVMs'] -or $PSBoundParameters['NewDomain']) -and
     !$PSBoundParameters['VMStorageDirectory']
@@ -4007,9 +4079,15 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
         elseif ($ExternalvSwitches.Count -eq 0) {
-            $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $PrimaryInterfaceAlias
-            $ExternalSwitchCreated = $True
-            $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
+            $DefaultSwitchCheck = $(Get-VMSwitch).Name -contains "Default Switch"
+            if (!$DefaultSwitchCheck) {
+                $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $PrimaryInterfaceAlias
+                $ExternalSwitchCreated = $True
+                $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
+            }
+            else {
+                $vSwitchToUse = Get-VMSwitch -Name "Default Switch"
+            }
         }
         else {
             $vSwitchToUse = $ExternalvSwitches[0]
@@ -13287,7 +13365,7 @@ function New-RootCA {
                 Path            = $ModuleDirPath
                 Recurse         = $True
                 Destination     = "$HomePSModulePath\$($ModuleDirPath | Split-Path -Leaf)"
-                ToSession       = $SubCAPSSession
+                ToSession       = $RootCAPSSession
                 Force           = $True
             }
             Copy-Item @CopyItemSplatParams
@@ -15766,8 +15844,8 @@ function Switch-DockerContainerType {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUqShE++/He8HfaW20k7ctaXIM
-# cMKgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUjsx1p1uoDly6hQK8ZkbF+yQB
+# /eugggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -15824,11 +15902,11 @@ function Switch-DockerContainerType {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDmJ76lWNa8alDju
-# LNPIE6oLxmdDMA0GCSqGSIb3DQEBAQUABIIBAGbifwAAIc3HZZERpFmBzYH6VGhD
-# 1PVKh38hFPHgnoSRGmWcM9GxhBD7lfLfdR5kF6sYvQyuCdaZ1WxeA7b9D0Sq6uVW
-# ptY7NBPySQTDJMZkbjXlS/HPTtLJmEowjZpYs3zdhzQGySQwgeL3E5rV6zYb7YaY
-# V3PLw5HwhY9GZ1CMzFA5JvhqhmJVtaW11sxd9c1JHnKTNjCe9q+JiMYo8LAMARqG
-# gtumVQy6VDRYOnvnZ8bpJDBGHZGnsKHtulDoY7dl6otx1OvUjqFDBiKGPMQFA2E4
-# YT1LVOWQy0yRwkOAzGBXg98zlQnyP0uW+8tXCKHjOEiFKzRerZQL+KLXjNE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFH7Mj8xZ0Pu8cMpp
+# z4rO45nkSTYMMA0GCSqGSIb3DQEBAQUABIIBAAiyLRRVoxluMeOVAtXKXMELiKkp
+# 0ewQnDuQSuQoQzGSyLEWPxxrXSLTVk7yTH9TEBJStK3NKhCHzxLkqTpzZPBaIXD7
+# dHkZt0daeUgXrE8mcwo3mL7eLM+ONFTNQIq5QmsoB4ETudPjf/4waagVEt8/W7+C
+# C9IhdTUoyGI0MX4h8XCSkKjoiiY4pT13oYrJpDNP0wCvdxQLOT1tuOe/BE5594Fz
+# bZK7YnxAEwyS0yGKEL+q3voViCOisJZIcb5gS9R8WEdhsZTyVBrLZAH1Qsro1FpH
+# tN4In7uQac1+pxar94qrtOIAegqpwNQW2owMLwDuB2sAyvgwzOMGYcheTp0=
 # SIG # End signature block

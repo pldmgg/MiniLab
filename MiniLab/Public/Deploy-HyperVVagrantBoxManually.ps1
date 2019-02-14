@@ -540,9 +540,15 @@ function Deploy-HyperVVagrantBoxManually {
             }
         }
         elseif ($ExternalvSwitches.Count -eq 0) {
-            $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $PrimaryInterfaceAlias
-            $ExternalSwitchCreated = $True
-            $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
+            $DefaultSwitchCheck = $(Get-VMSwitch).Name -contains "Default Switch"
+            if (!$DefaultSwitchCheck) {
+                $null = New-VMSwitch -Name "ToExternal" -NetAdapterName $PrimaryInterfaceAlias
+                $ExternalSwitchCreated = $True
+                $vSwitchToUse = Get-VMSwitch -Name "ToExternal"
+            }
+            else {
+                $vSwitchToUse = Get-VMSwitch -Name "Default Switch"
+            }
         }
         else {
             $vSwitchToUse = $ExternalvSwitches[0]
@@ -677,8 +683,8 @@ function Deploy-HyperVVagrantBoxManually {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgS/WKLy9I0pgiygPKa9t5KK4
-# fougggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUrzriWrZSqdLWhEu2uxAxFSp2
+# Puigggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -735,11 +741,11 @@ function Deploy-HyperVVagrantBoxManually {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFNj7TZ3M/n5xf+bo
-# vnYpmfM9jR3BMA0GCSqGSIb3DQEBAQUABIIBAKvxvUiz5hbDowy6QHeCNuGaVclS
-# XzaB05HWnmlbsrcBneP1jrXU8BHt9sQL/AIDA35SGszQsm8E4CvcAj4qxR5pz+9m
-# WNPiQKg+8DKUOZ1+AgdP3KTtizlJUleqr5ZzrSHlUrXs0+bnJy/K0tF9/9Q9rQIp
-# ZzV7YfqR9BxOemVgq9GnSQmgPhXSRKd1N3JF3qhKeppgOmw8VDrUz+CH9wJbwl8p
-# 0drSGl4FW3wnrJcexG471N7t8gdpKNJKew9L082lYH3mNEInnBDVg9u7S0cCzxw+
-# kMQr4C2e6TvDOXc53IO3ceZR3Sv5TSrkE0AXXBxV2MDHcTZPDR2Bi/wsnEE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFO443lQWdCy7OdXy
+# muWq+jOSf/ziMA0GCSqGSIb3DQEBAQUABIIBAF6ggXr4qFjKzlsQoT6UEgmsec+M
+# rN33bI0pwFtmkZZYzARSsyVehM1e8ZdEpD5orqWloxtXBxtKldYxwe45jdEjgGeW
+# Pmui5cVsgZGG2fPCllMRWwTc7wnIhz5aO/R9pLN+7pat5lxDUvTQs0VfejtgD+mF
+# Qkcwy96Bv4BubfmAYZZR94VgdJgi4czrZ1Ek5M+Gn1sFF4V/Oxlys+9fV8N2G9Do
+# 2j4vB0cyQ6bbJQgT8DXVAkTFNansY0vvSv7lnv8icCOEOrC60TAUWBQIQ38BoO/v
+# v7DWY3ojR+7mMsxUAXSjDVqjgLHqF4l5MQZCUOR08jJU3Xy1UywzY0EiXXs=
 # SIG # End signature block

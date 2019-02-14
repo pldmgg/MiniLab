@@ -77,6 +77,12 @@
         This parameter takes a string that represents an IPv4 address referring to a Domain Controller (not readonly) on the
         domain specified by the -ExistingDomain parameter.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -129,6 +135,9 @@ function Create-RootCA {
         [string]$IPofDomainController,
 
         [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
+
+        [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
     )
 
@@ -159,6 +168,15 @@ function Create-RootCA {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($PSBoundParameters['CreateNewVMs']-and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -712,8 +730,8 @@ function Create-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU5V045+V8393NCfYrTFWQQFVw
-# jlygggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUUd1IwXxoKr6hB5BTqsnsncaT
+# UOGgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -770,11 +788,11 @@ function Create-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFDU6SW59HvyN2AYB
-# YBw7aYQocBgkMA0GCSqGSIb3DQEBAQUABIIBAGQzf4m1QVJdXJDfOmR3Uw/th1lQ
-# mIbn6bADbfX48ql9uBrfuWwMGLQj4saf4eQcmaRqHZ5yzwHRZ/+9R79FxLtkxOww
-# yWPa6KH4He984D6y5iwqfEY6ceoQqgaHFTEFusvpR/WnlhQqCwSFYrh/YaGIx3br
-# TCkUX3IB9FKUxzsoLwrxOdA/VOE0fn5B1ZXdmASuYzg/c+ohUWR4L8Nqi6DlvwYy
-# qmBm30st9o6f9LwyGYV/6CMD1fGPkfq9wYXHl9jjdq6VapcApzUBzyLp/cGDNVDW
-# KOog2KrCOOZNQuJaC2TqjfF1vhK7F1C7AY+vWE581Knvk0tq1iweO2WHYhM=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHI65GrdtSuMajnT
+# m6cljNwgoNuaMA0GCSqGSIb3DQEBAQUABIIBAI3OlDCzBc5Xu9I6TX0xTiJIheER
+# IlaY3apTzzsKl3VxntiIhodifcSPjG4MNF3rjO8w/eX1GvwY9irWJtQnHQ3CN02V
+# H4w7EBTMRYyRYOz6wfDQTNxp5mcw5Sog7vabW7ECN2wuFAmBQ6KLwd1Cfx4X1ai4
+# Pkj8NnO8OgJyR7N6/BvV9/kT6mL8IRkf5eiLJykx2uV6ENW0cUttemUfuJKczJ6K
+# bsbZNR2ut73EbChMZPmvfzNOiILe8TOY/ZzSXheF9CJQdYj/YjrGH417stSwQIlO
+# df2pATNF9C/dPMRaj12qnYjPrLHvWbBX/LlLPnuExTNkKLuvwRoPEwgOwkc=
 # SIG # End signature block

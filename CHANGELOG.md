@@ -1,5 +1,9 @@
 # Change log
 
+## 1.1.2 (February 14, 2019)
+
+- Minor update to Create-RootCA function
+
 ## 1.1.1 (November 14, 2018)
 
 - Fix Authenticode Signature

@@ -81,6 +81,12 @@
         This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
         that will become the new Primary Domain Controller.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -133,6 +139,9 @@ function Create-Domain {
 
         [Parameter(Mandatory=$False)]
         [string]$IPofServerToBeDomainController,
+        
+        [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
 
         [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
@@ -164,6 +173,15 @@ function Create-Domain {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($PSBoundParameters['CreateNewVMs'] -and !$PSBoundParameters['VMStorageDirectory']) {
         $VMStorageDirectory = Read-Host -Prompt "Please enter the full path to the directory where all VM files will be stored"
@@ -672,8 +690,8 @@ function Create-Domain {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUoZZ+U+pAhVbVBXFNzlOJHnSI
-# YQqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUdpgVDVw6/J9OMKX8YjuLhcRa
+# Nq2gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -730,11 +748,11 @@ function Create-Domain {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPJEWti9m6YEKmNH
-# dPDTlkBuSje8MA0GCSqGSIb3DQEBAQUABIIBAJ3efMiDsiMN1TWt4M0/T9PYe4tS
-# oqctu+PF4SK5H/dUDO+y6dnqHuGu3M5Jbr1pZetYAbbwBz8/8+RDAA0icHtNk9LZ
-# jT7tSs6OXdKwHAwILWfeMqAmjy5mX2U8yP6+ewYS0V1Q/jMIsn6d68EESeS4XJ4X
-# VDnVT3n/0FNbh2cGcCKafRyPf1Lvu6o0BG/4633AMyivDNWM1CBNuB4N7BzgPK+i
-# MEZFKyjtj8ECrX8YOaTpNupt1zEksO2e1Krj4rU5w14v2fJvw9tYgrayTKVit6vR
-# ex4O714KsjMm6fQEd6BqfZFEhx1EIcVAdm84i3ksNt+Jrx1tGripRyYf1sE=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIcA97sjCDeEMu5c
+# o0h5LHTe650uMA0GCSqGSIb3DQEBAQUABIIBAESZJoT0o1DH+0H1STlwkaqJPIT5
+# wJxhLIcfhsiw73vtarC44AvIRbVdCJG8Pv52yEzpc65vMt+XBP78HyDwfrdJhKra
+# 1qg338dvp600g1Ucsmk14+QHYovVa70WcuFbOol93CiTDxEEQIA0Hnj4HVAwkN0k
+# 8JXj+xl3bNK0f6dZRq2kdbLDTpANEKH42Y7n9wZh9QTksgM4OQg4l7w8Ib16C793
+# AIVpjpAy8f4NlZSRP+q3Pdw/UniYnaERL9MCW3yEp9wDgt7etGGLdj+oNfJcPsP5
+# r0DmbkzEwnSw9L1AcKYmOYhDmUSUjceSBVENNUIhjXWOUvVaAXYM8xrplAI=
 # SIG # End signature block

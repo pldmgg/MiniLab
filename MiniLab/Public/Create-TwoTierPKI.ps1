@@ -111,6 +111,12 @@
         This parameter takes a string that represents an IPv4 Address referring to an EXISTING Windows Server on the network
         that will become the new Subordinate CA.
 
+    .PARAMETER PrimaryHyperVHostIPOverride
+        This parameter is OPTIONAL.
+
+        This parameter takes a string that represents an IPv4 Address that you would like to use as your External Netowrk on your
+        Hyper-V host.
+
     .PARAMETER SkipHyperVInstallCheck
         This parameter is OPTIONAL.
 
@@ -221,6 +227,9 @@ function Create-TwoTierPKI {
         [string]$IPofServerToBeSubCA,
 
         [Parameter(Mandatory=$False)]
+        [string]$PrimaryHyperVHostIPOverride,
+
+        [Parameter(Mandatory=$False)]
         [switch]$SkipHyperVInstallCheck
     )
 
@@ -253,6 +262,15 @@ function Create-TwoTierPKI {
     } | Sort-Object Metric1)[0].InterfaceIndex
     $NicInfo = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.InterfaceIndex -eq $PrimaryIfIndex}
     $PrimaryIP = $NicInfo.IPAddress | Where-Object {TestIsValidIPAddress -IPAddress $_}
+
+    if ($PrimaryHyperVHostIPOverride) {
+        if (!$(TestIsValidIPAddress -IPAddress $PrimaryHyperVHostIPOverride)) {
+            Write-Error "'$PrimaryHyperVHostIPOverride' is not a valid IPv4 ip address! Halting!"
+            $global:FunctionResult = "1"
+            return
+        }
+        $PrimaryIP = $PrimaryHyperVHostIPOverride
+    }
 
     if ($($PSBoundParameters['CreateNewVMs'] -or $PSBoundParameters['NewDomain']) -and
     !$PSBoundParameters['VMStorageDirectory']
@@ -1088,8 +1106,8 @@ function Create-TwoTierPKI {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUDUzMmziLqi2LakUHaPtSBvVJ
-# 2DCgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU9ePRJLl9LtY5ncpbmbw5h3k/
+# 9Jqgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -1146,11 +1164,11 @@ function Create-TwoTierPKI {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIkGxKjk3xuwH3Cq
-# sZDzK+ZycHHLMA0GCSqGSIb3DQEBAQUABIIBAK6/ZZni81zWuczwQl4vVAVyFR8/
-# yBrIS4xei05SLlRNC/H6B8jb+7zDHVsbNCd4z42X165n8QUIfm7Cwxgp/yXNGJQt
-# hhB3NoICcQutP5H51MoLKAigBh29qRzpq2bFSM2irkxJZPIrCIvqhK/d+m2gAp++
-# ofrk97ANkTVUPg007zGRVIYLa0u2qroXh9KCq5wxaPWIZtJ4OVvMJB32I0LLojqG
-# Y34z40vc1R6MpbAHIHm+kQ4N/jJmkThMm2xVXshn55sp7nQ7ZWvT/DM7c6AhrsOZ
-# EZc2yhtrCel7kCm0TD2zZJnWbJUNQyIH/Bepl4Bd2ffE1h3tvIpDWhHADvY=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKYVVmPW1/EDJwc3
+# us64FWsV66XKMA0GCSqGSIb3DQEBAQUABIIBAG3g5xAwoh3QDxS1PwRgwB5OMRFi
+# 2uRrQRkT+aA5NRX/Kp4AmaOMmq8nXGYWgyLBym6Th6/jItmd1Tf3fldpqkGyHCbA
+# FDPbEowMEO96Za9reRvvJtD6nvnyscp/6BYi1zI4IKy27IiU6SVcXpGpdIvu27sn
+# Y/VAFRbC/8vYjjvu9rSEQvMtAY1UTJpqNRaGRPAtpbPqKDcFsSX3sBDvIxWa96r2
+# 35ZCoXnBWCrUC2v3xSlG4L4zHMx2t3/PcSWop/Cbg97/cbBKf5GonsW5iClzePi6
+# Tkh2C+LnAWAqivZxLC5rRFKVnH/vCQM6GJc3jOupct6xhzEITGP0q6/mCE4=
 # SIG # End signature block

@@ -862,7 +862,7 @@ function New-RootCA {
                 Path            = $ModuleDirPath
                 Recurse         = $True
                 Destination     = "$HomePSModulePath\$($ModuleDirPath | Split-Path -Leaf)"
-                ToSession       = $SubCAPSSession
+                ToSession       = $RootCAPSSession
                 Force           = $True
             }
             Copy-Item @CopyItemSplatParams
@@ -889,8 +889,8 @@ function New-RootCA {
 # SIG # Begin signature block
 # MIIMiAYJKoZIhvcNAQcCoIIMeTCCDHUCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUPz7mkie5dM9/0E0kaSdcTpKv
-# U26gggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUI0opChSBJ4gNCKgXs95vjPmm
+# 4Rmgggn9MIIEJjCCAw6gAwIBAgITawAAAB/Nnq77QGja+wAAAAAAHzANBgkqhkiG
 # 9w0BAQsFADAwMQwwCgYDVQQGEwNMQUIxDTALBgNVBAoTBFpFUk8xETAPBgNVBAMT
 # CFplcm9EQzAxMB4XDTE3MDkyMDIxMDM1OFoXDTE5MDkyMDIxMTM1OFowPTETMBEG
 # CgmSJomT8ixkARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMT
@@ -947,11 +947,11 @@ function New-RootCA {
 # ARkWA0xBQjEUMBIGCgmSJomT8ixkARkWBFpFUk8xEDAOBgNVBAMTB1plcm9TQ0EC
 # E1gAAAH5oOvjAv3166MAAQAAAfkwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwx
 # CjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGC
-# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIdEc0GpL2d0Sfh4
-# UaVwxM6g3twgMA0GCSqGSIb3DQEBAQUABIIBADH5pAmXNpTRgS7nXUa1vIkxhUQC
-# DP7+sQqiRiIeGD1puUE4bnjwp8KNQxl5t8lgV8CsSE8EGdF3AN4Bo3kbuspzwGl4
-# uZuIH/EboluatvOTdOtwv2IoBLN9fpXr4dLeQm3beZ3cWDCklp7dmPHvbbe/kmhZ
-# O+RXIXtTpRfAlLTqqu65OhqO2aWzsQFuJyA1DlWi4ZM5hMxnjeD3GX/KmhCRAvBg
-# L/wyTj1FOGxesl4SHEnw0Z/Yl1TBS2Y2JN4Eo6AnTppZVDkoAm7n+TN++vFOkRra
-# IiwuGELXZIekC7s17iUPVFpaSVL5irYGjl1B2evIZJe2JQzHnkhmL8y8cM4=
+# NwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFHaHxiew+QNm7d/X
+# xLrOzvjj3Jd0MA0GCSqGSIb3DQEBAQUABIIBAFc+IjXfvRjH+ortaF/ZI8r5ce2G
+# u1JGFzKF7CW7P7sjnkNT6RfdeR/5KmJSh77je5MX6gy1vqyvZ2lrMhtnhAQhyrDw
+# cW2xKP16zGzwTQWkoDa0a5ukjzSlqxu29TCKb/+00ljY0/uqMuZvdIGLAN2V+hSP
+# D1NQOn6ab05R62ZPReYl/YG8j8bOBbcOPiZf4gTAgnrggaIT91q2YjD0+lwRiK6w
+# sv/IDxINPPDfluoF8aU98yEFCFo26Xz33BO6x25harxgy4wROeNrHjLs6OuAeNOL
+# L+LO/mzIxRkFNwvBIYlxoaG6VNuDW/F+exUTCwUVAyp6cxnAfS/VjwvYi+s=
 # SIG # End signature block
