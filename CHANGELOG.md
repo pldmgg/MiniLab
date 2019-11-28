@@ -1,5 +1,9 @@
 # Change log
 
+## 1.1.3 (November 28, 2019)
+
+- Minor update to Generate-Certificate function
+
 ## 1.1.2 (February 14, 2019)
 
 - Minor update to Create-RootCA function
